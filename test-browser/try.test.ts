@@ -280,7 +280,7 @@ async function nodeJoin(family: string): Promise<Joined> {
 before(async () => {
   if (!existsSync(join(PAGES, "try", "index.html")))
     throw new Error(
-      `${PAGES} holds no try/; run npm run build:package and npm run build:pages first`,
+      `${PAGES} holds no try/; run npm run build:try first`,
     );
   const copy = await mkdtemp(join(tmpdir(), "try-"));
   try {
@@ -1019,12 +1019,16 @@ test("after a reload, the pods made in this browser are still on the left", asyn
   );
 });
 
-test("File, Delete all data empties the pods column, leaves no pod nor answers in the browser and says how many went, a later visit still has no pods, and Reset all data brings the four samples back", async () => {
+test("File, Delete all data empties the pods column, leaves no pod nor answers in the browser and says how many went, a later visit still has no pods, and Reset all data brings the four samples back; Help, About links the code to this repository", async () => {
   const context = await browser.newContext();
   try {
     const page = watched(await context.newPage());
     await page.goto(`${served.url}try/index.html`);
     await settled(page);
+    assert.equal(
+      await page.getAttribute('#about a:has-text("The code")', "href"),
+      "https://github.com/jayostis/cascade-starter-kit",
+    );
     const before = await texts(page, "nav a");
     /** Opens File, picks `item`, and presses the confirming box's one button; waits for the page it draws in place. */
     const fromFile = async (item: string): Promise<void> => {
