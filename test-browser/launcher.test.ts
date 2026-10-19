@@ -26,9 +26,7 @@ let browser: Browser;
 
 before(async () => {
   if (!existsSync(join(PAGES, "try", "index.html")))
-    throw new Error(
-      `${PAGES} holds no try/; run npm run build:try first`,
-    );
+    throw new Error(`${PAGES} holds no try/; run npm run build:try first`);
   served = await servePages(PAGES);
   browser = await chromium.launch();
 });

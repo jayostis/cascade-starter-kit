@@ -279,9 +279,7 @@ async function nodeJoin(family: string): Promise<Joined> {
 
 before(async () => {
   if (!existsSync(join(PAGES, "try", "index.html")))
-    throw new Error(
-      `${PAGES} holds no try/; run npm run build:try first`,
-    );
+    throw new Error(`${PAGES} holds no try/; run npm run build:try first`);
   const copy = await mkdtemp(join(tmpdir(), "try-"));
   try {
     await cp(join(PAGES, ALEX, "pod"), copy, { recursive: true });
