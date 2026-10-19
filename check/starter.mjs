@@ -15,7 +15,7 @@ import { parseArgs } from "node:util";
 import * as oxigraph from "oxigraph";
 import { answerSignIn } from "@the-cascade-protocol/sandbox/testing";
 import { tarballAddress } from "../dist/pack/address.js";
-import { agentPrompt, KITS, startLine } from "../dist/src/create.js";
+import { agentPrompt, KITS, startLine } from "../dist/create/src/create.js";
 
 /** What the tables the app holds now name each code, set once the app is installed. */
 let heldNames = async () => new Map();

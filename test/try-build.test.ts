@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Pod, Tables } from "cascade-runtime/published";
-import { tryLooks } from "../src/node/try.js";
+import { tryLooks } from "../try/build/try.js";
 
 test("a first-paint lookup that fails at the site build fails the build, naming each failure", async () => {
   const down = new Error("the tables are down");

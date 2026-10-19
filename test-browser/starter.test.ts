@@ -15,13 +15,12 @@ import {
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { type Browser, chromium } from "playwright";
-import { findRoot } from "@cascade-runtime/runtime/node";
 
-const ROOT = findRoot(dirname(fileURLToPath(import.meta.url)));
+const ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const KEY = "sk-test-key-that-must-not-leave";
 const ASKS = "open Ines Calloway's pod";
 
@@ -101,7 +100,7 @@ async function startStarter(
 ): Promise<Started> {
   const folder = again ?? (await mkdtemp(join(tmpdir(), "t273-")));
   if (again === undefined) {
-    await cp(join(ROOT, "packages", "cascade-runtime", "starter"), folder, {
+    await cp(join(ROOT, "app"), folder, {
       recursive: true,
       filter: (from) => !/[\\/](node_modules|pods|\.env)$/.test(from),
     });

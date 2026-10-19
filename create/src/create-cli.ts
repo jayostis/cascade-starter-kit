@@ -30,11 +30,11 @@ process.exitCode = await create(process.argv.slice(2), {
     : {}),
   install: npmInstall,
   tables: async (pods, phase) => {
-    const { setUpTables } = await import("./node/kits.js");
+    const { setUpTables } = await import("cascade-runtime/fixtures");
     await setUpTables(pods, phase);
   },
   load: async (kit, folder) => {
-    const { replayKit } = await import("./node/kits.js");
+    const { replayKit } = await import("cascade-runtime/fixtures");
     await replayKit(kit, folder);
   },
 });

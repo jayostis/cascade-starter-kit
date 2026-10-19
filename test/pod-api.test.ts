@@ -51,7 +51,7 @@ type Api = Record<
 type Host = Record<string, unknown> & { tables: unknown };
 
 const { podApi, maps, trendOf, notOpenedHere } = (await import(
-  new URL("../../starter/pod-api.mjs", import.meta.url).href
+  new URL("../../app/pod-api.mjs", import.meta.url).href
 )) as {
   podApi: (host: Host) => Api;
   maps: (output: Output) => Output;
@@ -59,7 +59,7 @@ const { podApi, maps, trendOf, notOpenedHere } = (await import(
   notOpenedHere: (name: string) => string;
 };
 const { apiRoute, podApiOver } = (await import(
-  new URL("../../starter/pod-api-http.mjs", import.meta.url).href
+  new URL("../../app/pod-api-http.mjs", import.meta.url).href
 )) as {
   apiRoute: (
     api: Api,
@@ -70,7 +70,7 @@ const { apiRoute, podApiOver } = (await import(
   podApiOver: (origin: string) => Api;
 };
 const { nodeHost } = (await import(
-  new URL("../../starter/node-host.mjs", import.meta.url).href
+  new URL("../../app/node-host.mjs", import.meta.url).href
 )) as {
   nodeHost: (options: { folder: string; opensEncrypted?: boolean }) => Host & {
     pods: {
@@ -79,7 +79,7 @@ const { nodeHost } = (await import(
   };
 };
 const { entryId, testsIn } = (await import(
-  new URL("../../starter/summary.mjs", import.meta.url).href
+  new URL("../../app/summary.mjs", import.meta.url).href
 )) as {
   entryId: (entry: string) => string;
   testsIn: (labs: unknown[]) => { code: string; notation?: string }[];

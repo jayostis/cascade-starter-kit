@@ -13,7 +13,7 @@ import { settled } from "./settled.js";
 type Api = { close(): Promise<void> };
 
 const { podServer, QUESTIONS, WARNING } = (await import(
-  new URL("../../starter/mcp-server.mjs", import.meta.url).href
+  new URL("../../app/mcp-server.mjs", import.meta.url).href
 )) as {
   podServer: (
     api: Api,
@@ -23,15 +23,15 @@ const { podServer, QUESTIONS, WARNING } = (await import(
   WARNING: string;
 };
 const { podApi } = (await import(
-  new URL("../../starter/pod-api.mjs", import.meta.url).href
+  new URL("../../app/pod-api.mjs", import.meta.url).href
 )) as { podApi: (host: object) => Api };
 const { nodeHost } = (await import(
-  new URL("../../starter/node-host.mjs", import.meta.url).href
+  new URL("../../app/node-host.mjs", import.meta.url).href
 )) as {
   nodeHost: (options: { folder: string; opensEncrypted: boolean }) => object;
 };
 const { trendUrl } = (await import(
-  new URL("../../starter/pods.mjs", import.meta.url).href
+  new URL("../../app/pods.mjs", import.meta.url).href
 )) as { trendUrl: (pod: string, trend: object) => string };
 
 const STATIN = "story-statin";

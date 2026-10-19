@@ -17,10 +17,10 @@ import {
 import { pulled } from "./hospitals.js";
 
 const view = await import(
-  new URL("../../starter/summary.mjs", import.meta.url).href
+  new URL("../../app/summary.mjs", import.meta.url).href
 );
 const { trendPath } = (await import(
-  new URL("../../starter/pods.mjs", import.meta.url).href
+  new URL("../../app/pods.mjs", import.meta.url).href
 )) as { trendPath: (pod: string, trend: object) => string };
 
 const ALLERGIES = "pod/My active allergies";

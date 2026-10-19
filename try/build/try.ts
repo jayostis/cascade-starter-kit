@@ -17,21 +17,19 @@ import {
   WORKER,
   WORKER_DATA,
   WORKER_PAGE,
-} from "../try-page.js";
+} from "./try-page.js";
 
 const APP = fileURLToPath(new URL("../../../try/app.js", import.meta.url));
 const HOST = fileURLToPath(
   new URL("../../../try/browser-host.js", import.meta.url),
 );
 const RUNTIME_PACKAGE = fileURLToPath(
-  new URL("../../../../cascade-runtime/package.json", import.meta.url),
+  new URL("../../package.json", import.meta.resolve("cascade-runtime")),
 );
 const VIEW = fileURLToPath(
-  new URL("../../../../cascade-runtime/starter/summary.mjs", import.meta.url),
+  new URL("../../../app/summary.mjs", import.meta.url),
 );
-const API = fileURLToPath(
-  new URL("../../../../cascade-runtime/starter/pod-api.mjs", import.meta.url),
-);
+const API = fileURLToPath(new URL("../../../app/pod-api.mjs", import.meta.url));
 const HERE = fileURLToPath(new URL(".", import.meta.url));
 /** The demo hospitals' service worker, and their page side: the worker's registration, the world date, and the rule that names a pull after its hospital. */
 const SANDBOX_WEB = {

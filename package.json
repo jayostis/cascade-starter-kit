@@ -1,0 +1,39 @@
+{
+  "name": "cascade-starter-kit",
+  "private": true,
+  "type": "module",
+  "description": "The app a person starts from on cascade-runtime: the template, try/ in a browser, and create-cascade-app.",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "workspaces": [
+    "app",
+    "try",
+    "create"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b",
+    "lint": "eslint . && prettier --check .",
+    "format": "prettier --write .",
+    "test": "tsc -b && node scripts/test.mjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@modelcontextprotocol/client": "2.3.1",
+    "@the-cascade-protocol/sandbox": "github:jayostis/cascade-sandbox#a33529e58830cb8b9c04f9c19c9e666f45634e3c",
+    "@types/node": "22.20.5",
+    "cascade-reference-tables": "github:jayostis/cascade-reference-tables#e0a351577b0ce6085b20e80355b54093edd79003",
+    "esbuild": "0.28.2",
+    "eslint": "10.12.0",
+    "eslint-config-prettier": "10.1.8",
+    "htm": "3.1.1",
+    "oxigraph": "0.5.11",
+    "playwright": "1.63.0",
+    "preact": "11.0.0",
+    "prettier": "3.9.9",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.71.0"
+  }
+}
