@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
@@ -8,7 +8,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { loadHospital, loadStories } from "@the-cascade-protocol/sandbox/node";
 import { openPod, type Pod, pullFiles } from "cascade-runtime";
 import { pulled } from "./hospitals.js";
-import { settled } from "./settled.js";
+import { removed } from "./settled.js";
 
 type Api = { close(): Promise<void> };
 
@@ -212,7 +212,6 @@ test("an encrypted pod is listed, and a tool asked about it says in one line tha
       await elsewhere.close();
     }
   } finally {
-    await settled(folder);
-    await rm(folder, { recursive: true, force: true });
+    await removed(folder);
   }
 });

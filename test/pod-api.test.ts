@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -16,7 +16,7 @@ import {
   Unopened,
 } from "cascade-runtime";
 import { answering, type Loaded, pulled, routed, rowOf } from "./hospitals.js";
-import { settled } from "./settled.js";
+import { removed } from "./settled.js";
 
 type Input = Record<string, unknown>;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -341,10 +341,7 @@ after(async () => {
   await Promise.all(
     servers.map((each) => new Promise((done) => each.close(done))),
   );
-  for (const each of [folder, ...folders]) {
-    await settled(each);
-    await rm(each, { recursive: true, force: true });
-  }
+  for (const each of [folder, ...folders]) await removed(each);
 });
 
 const HOSTS = ["in-process", "http"];
