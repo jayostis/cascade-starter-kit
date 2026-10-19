@@ -12,5 +12,10 @@
     "strict": false,
     "noUncheckedIndexedAccess": false
   },
-  "include": ["check/*.mjs", "create/*.mjs", "scripts/pin.mjs"]
+  "include": [
+    "check/*.mjs",
+    "create/*.mjs",
+    "scripts/pin.mjs",
+    "scripts/pin-lib.mjs"
+  ]
 }

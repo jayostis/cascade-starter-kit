@@ -193,7 +193,7 @@ export async function create(
     fixtures = await terminal.fixtures(target);
   } catch (error) {
     terminal.err(
-      `the app is installed, but its cascade-runtime/fixtures could not be loaded: ${(error as Error).message}\nRun \`npm run reset\` in it to load its pods.\n`,
+      `the app is installed, but its cascade-runtime/fixtures could not be loaded: ${(error as Error).message}\nRun \`npm install\` in it, then \`npm run reset\` to load its pods.\n`,
     );
     return 1;
   }

@@ -13,10 +13,13 @@ through what the installed package exports.
   `cascade-runtime-*.tgz` of a runtime-js `build-<sha>` pre-release. Every test
   and try/ run on it, installed once at the root, and a made app runs on it
   unless `create --tarball` names another.
-- **It moves by pull request,** never by hand on main:
-  `node scripts/pin.mjs <runtime-js commit>` rewrites it and
-  `package-lock.json`, and the checks run on the new build. `pin.yml` opens
-  that pull request for runtime-js's newest build.
+- **It moves by pull request, by a local script,** never by hand on main. On a
+  branch, `node scripts/pin.mjs <runtime-js commit>` (the commit of a
+  `build-<sha>` pre-release, e.g. the newest of `gh release list -R
+jayostis/cascade-runtime-js`) rewrites it and `package-lock.json`; it refuses
+  a commit with no release and leaves both files as they were if the install
+  fails. Commit the two files and open a pull request: its checks run on the
+  new build.
 - **Nothing reaches into the package:** no `cascade-runtime/dist/…`, no
   `@cascade-runtime/*`, no runtime-js workspace path. A need the exports do not
   meet is a runtime-js change first.

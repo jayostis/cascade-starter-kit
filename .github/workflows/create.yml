@@ -44,12 +44,39 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest", "windows-latest"]' || '["ubuntu-latest", "windows-latest", "macos-latest"]') }}
+        os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     env:
       GIT_CONFIG_COUNT: 1
       GIT_CONFIG_KEY_0: core.longpaths
       GIT_CONFIG_VALUE_0: "true"
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - uses: actions/download-artifact@v7
+        with:
+          name: create
+          path: ${{ runner.temp }}/create
+      - name: The starter's check, against the tarball
+        working-directory: ${{ runner.temp }}
+        run: node "$GITHUB_WORKSPACE/check/starter.mjs" create/create-cascade-app-*.tgz
+
+  # Nothing needs macOS, so a release does not wait for it, and a failure still fails the run.
+  other-systems:
+    name: create (macos-latest)
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    needs: pack
+    runs-on: macos-latest
     defaults:
       run:
         shell: bash

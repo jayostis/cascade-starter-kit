@@ -21,9 +21,10 @@ numbered v1, and no claim is made that it is fit for clinical use.
 ## The runtime it runs on
 
 One pin, `app/package.json` `dependencies["cascade-runtime"]`: the tarball of a
-runtime-js `build-<sha>` pre-release. It moves by pull request
-(`node scripts/pin.mjs <commit>`). The tests, try/ and every made app run on
-it.
+runtime-js `build-<sha>` pre-release. It moves by pull request: on a branch,
+`node scripts/pin.mjs <commit>`, commit `app/package.json` and
+`package-lock.json`, and open a pull request. The tests, try/ and every made
+app run on it.
 
 ## Making an app
 

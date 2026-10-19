@@ -220,6 +220,19 @@ test("a pod that does not load leaves the app made, and says which", async () =>
   );
 });
 
+test("an app whose fixtures cannot be loaded is left made, and the hint starts with npm install", async () => {
+  const terminal = {
+    ...recording(),
+    fixtures: async () => {
+      throw new Error("no such export");
+    },
+  };
+  const folder = join(parent, "no-fixtures");
+  assert.equal(await create([folder], terminal), 1);
+  assert.match(terminal.text(), /could not be loaded: no such export/);
+  assert.match(terminal.text(), /`npm install` in it, then `npm run reset`/);
+});
+
 test("it refuses a folder it cannot use and writes nothing", async () => {
   const taken = join(parent, "taken");
   await mkdir(taken);
