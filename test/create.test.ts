@@ -9,12 +9,13 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { after, before, test } from "node:test";
 import {
   agentPrompt,
   create,
+  type Fixtures,
   KITS,
   type Terminal,
 } from "../create/src/create.js";
@@ -32,8 +33,15 @@ after(async () => {
   await rm(parent, { recursive: true, force: true });
 });
 
-/** A terminal that keeps what is written and records each install and load, which do nothing; a load of `failing` writes into its folder, then rejects. */
-function recording(failing?: string): Terminal & {
+/**
+ * A terminal that keeps what is written and records each install, the folder whose fixtures it gave and each load. The
+ * install does nothing; the fixtures time and phase as the runtime's do, set up the tables with `tables` and load a kit
+ * by doing nothing, but a load of `failing` writes into its folder, then rejects.
+ */
+function recording(
+  failing?: string,
+  tables: Fixtures["setUpTables"] = async () => undefined,
+): Terminal & {
   readonly done: string[];
   text(): string;
 } {
@@ -46,23 +54,32 @@ function recording(failing?: string): Terminal & {
       done.push(`install ${folder}`);
       return true;
     },
-    load: async (kit, folder) => {
-      if (kit === failing) {
-        await mkdir(folder, { recursive: true });
-        await writeFile(join(folder, "half"), "");
-        throw new Error("the kit is broken");
-      }
-      done.push(`load ${kit} into ${folder}`);
+    fixtures: async (folder) => {
+      done.push(`fixtures of ${folder}`);
+      const { phaseOn, seconds } = await import("cascade-runtime/fixtures");
+      return {
+        phaseOn,
+        seconds,
+        setUpTables: tables,
+        replayKit: async (kit, folder) => {
+          if (kit === failing) {
+            await mkdir(folder, { recursive: true });
+            await writeFile(join(folder, "half"), "");
+            throw new Error("the kit is broken");
+          }
+          done.push(`load ${kit} into ${folder}`);
+        },
+      };
     },
     done,
     text: () => written.join(""),
   };
 }
 
-test("given a folder, it makes the project and names it, with the view's packages at the versions the repository tests", async () => {
+test("given a folder, it makes the project and names it, with the template's packages, its pinned runtime among them, at the versions the repository tests", async () => {
   const folder = join(parent, "my-app");
   const terminal = recording();
-  assert.equal(await create([folder, "--tarball", ADDRESS], terminal), 0);
+  assert.equal(await create([folder], terminal), 0);
 
   const manifest = JSON.parse(
     await readFile(join(folder, "package.json"), "utf8"),
@@ -71,13 +88,10 @@ test("given a folder, it makes the project and names it, with the view's package
     await readFile(new URL("../../app/package.json", import.meta.url), "utf8"),
   ) as { dependencies: Record<string, string> };
   assert.equal(manifest.name, "my-app");
-  assert.equal(manifest.dependencies["cascade-runtime"], ADDRESS);
   const { devDependencies } = JSON.parse(
     await readFile(new URL("../../package.json", import.meta.url), "utf8"),
   ) as { devDependencies: Record<string, string> };
-  for (const [name, version] of Object.entries(template.dependencies))
-    if (name !== "cascade-runtime")
-      assert.equal(manifest.dependencies[name], version, name);
+  assert.deepEqual(manifest.dependencies, template.dependencies);
   for (const name of ["preact", "htm"])
     assert.equal(devDependencies[name], template.dependencies[name], name);
   const ignored = (await readFile(join(folder, ".gitignore"), "utf8")).split(
@@ -87,6 +101,7 @@ test("given a folder, it makes the project and names it, with the view's package
     assert.ok(ignored.includes(entry), `.gitignore does not list ${entry}`);
   assert.deepEqual(terminal.done, [
     `install ${folder}`,
+    `fixtures of ${folder}`,
     `load alex-rivera into ${join(folder, "pods", "alex-rivera")}`,
     `load priya-natarajan into ${join(folder, "pods", "priya-natarajan")}`,
     `load martin-okafor into ${join(folder, "pods", "martin-okafor")}`,
@@ -108,28 +123,39 @@ test("given a folder, it makes the project and names it, with the view's package
   );
 });
 
-test("a terminal that sets up the tables reports each phase with its seconds, before the first kit's line, and a failure leaves the kits to try", async () => {
-  for (const fails of [false, true]) {
-    const terminal = recording();
-    const folder = join(parent, `tables-${fails}`);
-    let pods = "";
-    assert.equal(
-      await create([folder, "--tarball", ADDRESS], {
-        ...terminal,
-        tables: async (given, phase) => {
-          pods = given;
-          await phase(
-            "Reading the tables…",
-            async () => 3,
-            () => "3 versions",
-          );
-          await phase("Checking the feed…", async () => undefined);
-          if (fails) throw new Error("no room");
-          await phase("Listing the codes…", async () => undefined);
-        },
-      }),
-      0,
+test("--tarball names the made app's runtime instead of the pin: an address as it is, a file by its absolute path", async () => {
+  for (const [given, runtime] of [
+    [ADDRESS, ADDRESS],
+    ["runtime.tgz", `file:${resolve("runtime.tgz").replaceAll("\\", "/")}`],
+  ] as const) {
+    const folder = join(
+      parent,
+      `tarball-${given === ADDRESS ? "url" : "file"}`,
     );
+    assert.equal(await create([folder, "--tarball", given], recording()), 0);
+    const { dependencies } = JSON.parse(
+      await readFile(join(folder, "package.json"), "utf8"),
+    ) as { dependencies: Record<string, string> };
+    assert.equal(dependencies["cascade-runtime"], runtime);
+  }
+});
+
+test("the tables are set up first, each phase reported with its seconds before the first kit's line, and a failure leaves the kits to try", async () => {
+  for (const fails of [false, true]) {
+    let pods = "";
+    const terminal = recording(undefined, async (given, phase) => {
+      pods = given;
+      await phase(
+        "Reading the tables…",
+        async () => 3,
+        () => "3 versions",
+      );
+      await phase("Checking the feed…", async () => undefined);
+      if (fails) throw new Error("no room");
+      await phase("Listing the codes…", async () => undefined);
+    });
+    const folder = join(parent, `tables-${fails}`);
+    assert.equal(await create([folder], terminal), 0);
     assert.equal(pods, join(folder, "pods"));
     const text = terminal.text();
     assert.match(text, /Reading the tables… 3 versions, \d+\.\d s\n/);
@@ -144,7 +170,7 @@ test("a terminal that sets up the tables reports each phase with its seconds, be
         text.indexOf("Loading the pod alex-rivera"),
       "a setup line came after the first kit's",
     );
-    assert.equal(terminal.done.length, 1 + KITS.length, "the kits loaded");
+    assert.equal(terminal.done.length, 2 + KITS.length, "the kits loaded");
   }
 });
 
@@ -157,13 +183,13 @@ test("a terminal offers a model once the app is made, and says how to add one la
     const offered: string[] = [];
     const folder = join(parent, `model-${taken}`);
     assert.equal(
-      await create([folder, "--tarball", ADDRESS], {
+      await create([folder], {
         ...terminal,
         model: async (made) => {
           offered.push(made);
           assert.equal(
             terminal.done.length,
-            1 + KITS.length,
+            2 + KITS.length,
             "it offered once the pods were loaded",
           );
           return taken;
@@ -175,17 +201,14 @@ test("a terminal offers a model once the app is made, and says how to add one la
     assert.equal(terminal.text().includes("npm run model"), hint);
   }
   const terminal = recording();
-  assert.equal(
-    await create([join(parent, "no-model"), "--tarball", ADDRESS], terminal),
-    0,
-  );
+  assert.equal(await create([join(parent, "no-model")], terminal), 0);
   assert.ok(!terminal.text().includes("npm run model"), "it offered a model");
 });
 
 test("a pod that does not load leaves the app made, and says which", async () => {
   const terminal = recording("priya-natarajan");
   const folder = join(parent, "half-loaded");
-  assert.equal(await create([folder, "--tarball", ADDRESS], terminal), 0);
+  assert.equal(await create([folder], terminal), 0);
   assert.deepEqual(await readdir(join(folder, "pods")), []);
   assert.match(
     terminal.text(),
@@ -203,18 +226,13 @@ test("it refuses a folder it cannot use and writes nothing", async () => {
   await writeFile(join(taken, "notes.txt"), "mine");
   const before = await readdir(parent, { recursive: true });
   const refusals: [string, string[], RegExp][] = [
-    ["a folder holding a file", [taken, "--tarball", ADDRESS], /not empty/],
+    ["a folder holding a file", [taken], /not empty/],
     [
       "a name with a capital letter",
-      [join(parent, "My-app"), "--tarball", ADDRESS],
+      [join(parent, "My-app")],
       /no project name/,
     ],
-    [
-      "a name with a space",
-      [join(parent, "my app"), "--tarball", ADDRESS],
-      /no project name/,
-    ],
-    ["no address known", [join(parent, "app")], /no address/],
+    ["a name with a space", [join(parent, "my app")], /no project name/],
   ];
   for (const [what, args, reason] of refusals) {
     const terminal = recording();
