@@ -31,9 +31,10 @@ jayostis/cascade-runtime-js`) rewrites it and `package-lock.json`; it refuses
   job that runtime-js's required `compatibility` job needs). Until it lands, a
   runtime-js change can break the starter unseen.
 - **Coming with it: a breaking runtime change pairs by `Depends-On:`.** Its runtime-js PR body
-  carries `Depends-On: jayostis/cascade-starter-kit#N`; the check then runs
-  that PR's head instead of main. The runtime PR merges first, then the pair
-  here moves the pin onto the new build.
+  carries `Depends-On: https://github.com/jayostis/cascade-starter-kit/pull/N`
+  (the full URL; the short `owner/repo#N` form is rejected); the check then
+  runs that PR's head instead of main. The runtime PR merges first, then the
+  pair here moves the pin onto the new build.
 
 ## The freeze
 
