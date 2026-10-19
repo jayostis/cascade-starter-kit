@@ -55,9 +55,17 @@ test("no source writes a code system's IRI stem: the starter reads each from the
     ...(await readdir(join(ROOT, "try")))
       .filter((name) => name.endsWith(".js"))
       .map((name) => `try/${name}`),
+    ...(await readdir(join(ROOT, "try", "build")))
+      .filter((name) => name.endsWith(".ts"))
+      .map((name) => `try/build/${name}`),
+    ...(await readdir(join(ROOT, "create", "src")))
+      .filter((name) => name.endsWith(".ts"))
+      .map((name) => `create/src/${name}`),
   ];
   assert.ok(sources.includes("app/summary.mjs"));
   assert.ok(sources.includes("try/app.js"));
+  assert.ok(sources.includes("try/build/try.ts"));
+  assert.ok(sources.includes("create/src/create.ts"));
   const spaces = (await registered()).map((space) =>
     space.replace(/^[a-z]+:\/\//, ""),
   );

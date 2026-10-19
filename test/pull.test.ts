@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { loadHospital, serveDemo } from "@the-cascade-protocol/sandbox/node";
 import { openPod } from "cascade-runtime";
-import { pulled } from "./hospitals.js";
+import { rowOf } from "./hospitals.js";
 
 const { nodeHost, nodeHospitals } = (await import(
   new URL("../../app/node-host.mjs", import.meta.url).href
@@ -41,7 +41,7 @@ after(async () => {
 
 test("the starter's hospitals reach the listener", async () => {
   const data = await loadHospital("cascade-north");
-  const { fhirBase } = (await pulled(data, "pt-1001")).pull;
+  const { fhirBase } = rowOf(data);
   const listener = await serveDemo([{ ...data, autoApprove: "pt-1001" }]);
   try {
     const at = join(folder, "pods");

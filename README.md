@@ -21,9 +21,14 @@ numbered v1, and no claim is made that it is fit for clinical use.
 ## The runtime it runs on
 
 One pin, `app/package.json` `dependencies["cascade-runtime"]`: the tarball of a
-runtime-js `build-<sha>` pre-release. It moves by pull request. Every runtime-js
-pull request runs this repository's tests on its own build, so a runtime change
-that breaks the starter is seen before it merges.
+runtime-js `build-<sha>` pre-release. It moves by pull request. The tests and
+try/ run on it; `create` still takes a made app's runtime from `--tarball`
+until jayostis/cascade-starter-kit#2 (step 4) makes it the pin.
+
+Coming with jayostis/cascade-runtime-js#453 (step 5): every runtime-js pull
+request runs this repository's tests on its own build, so a runtime change that
+breaks the starter is seen before it merges. Until then it is seen at the next
+pin bump.
 
 ## Working on it
 

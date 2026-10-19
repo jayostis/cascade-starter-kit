@@ -1,7 +1,13 @@
 import { spawn } from "node:child_process";
 import { existsSync, statSync } from "node:fs";
 import { cp, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { basename, dirname, join, resolve as absolute } from "node:path";
+import {
+  basename,
+  dirname,
+  join,
+  relative,
+  resolve as absolute,
+} from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import type { Phase } from "cascade-runtime/fixtures";
@@ -96,7 +102,11 @@ async function copyStarter(
   name: string,
   dependency: string,
 ): Promise<void> {
-  await cp(STARTER, target, { recursive: true });
+  await cp(STARTER, target, {
+    recursive: true,
+    filter: (source) =>
+      ![".env", "node_modules", "pods"].includes(relative(STARTER, source)),
+  });
   await rename(join(target, "gitignore"), join(target, ".gitignore"));
   await rewrite(join(target, "package.json"), (text) => {
     const manifest = JSON.parse(text) as {

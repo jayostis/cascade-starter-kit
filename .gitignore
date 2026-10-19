@@ -2,3 +2,5 @@ node_modules/
 /build/
 dist/
 *.tsbuildinfo
+/app/pods/
+/app/.env
