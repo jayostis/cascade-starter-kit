@@ -1,0 +1,8 @@
+{
+  "name": "create-cascade-app",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Makes an app from the starter, its pods loaded.",
+  "license": "Apache-2.0"
+}

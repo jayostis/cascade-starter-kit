@@ -8,7 +8,7 @@ export default tseslint.config(
   tseslint.configs.recommended,
   prettier,
   {
-    files: ["packages/site/try/**/*.js"],
+    files: ["try/**/*.js"],
     languageOptions: {
       globals: {
         AbortController: "readonly",
@@ -25,36 +25,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ["packages/runtime/**", "packages/cascade-runtime/**"],
-    rules: {
-      "no-restricted-imports": [
-        "error",
-        {
-          patterns: [
-            {
-              group: [
-                "@the-cascade-protocol/sandbox",
-                "@the-cascade-protocol/sandbox/*",
-              ],
-              message: "The runtime reaches a hospital only through a fetch.",
-            },
-          ],
-        },
-      ],
-    },
-  },
-  {
-    files: [
-      "packages/cascade-runtime/test/**",
-      "packages/cascade-runtime/check/**",
-      "packages/cascade-runtime/starter/**",
-    ],
-    rules: {
-      "no-restricted-imports": "off",
-    },
-  },
-  {
-    files: ["packages/cascade-runtime/starter/summary.mjs"],
+    files: ["app/summary.mjs"],
     rules: {
       "no-restricted-syntax": [
         "error",
@@ -68,7 +39,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ["packages/cascade-runtime/starter/pod-api.mjs"],
+    files: ["app/pod-api.mjs"],
     rules: {
       "no-restricted-syntax": [
         "error",
