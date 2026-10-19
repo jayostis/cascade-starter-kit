@@ -5,15 +5,14 @@ import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs, promisify } from "node:util";
 import { publishedSamples } from "cascade-runtime/published";
+import { runtimePackageRoot } from "./package-root.js";
 import { servePages } from "./serve.js";
 import { TRY_PACKAGE } from "./try-page.js";
 import { tryFiles, tryLooks } from "./try.js";
 
 const ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 const PAGES = join(ROOT, "build", "pages");
-const PACKAGE = fileURLToPath(
-  new URL("../../", import.meta.resolve("cascade-runtime")),
-);
+const PACKAGE = runtimePackageRoot();
 const TRY = "try/";
 /** The package's starter copies of the feeds' series, which the samples' answers are computed with. */
 const STARTER_TABLES = "components/tables";

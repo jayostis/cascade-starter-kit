@@ -317,7 +317,7 @@ function redraw() {
       pods,
       current,
       href: podHref,
-      home: "../",
+      home: "./",
       menu: MENU,
       note,
       tables: {

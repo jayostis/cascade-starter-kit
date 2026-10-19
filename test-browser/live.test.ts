@@ -45,6 +45,12 @@ test("the deployed site sends a visitor at its root to try/ of the commit, which
     await page.goto(`${site}?at=${Date.now()}`);
     await page.waitForURL((url) => url.href.startsWith(`${site}try/`));
     await settled(page);
+    assert.ok(
+      ((await page.getAttribute("body", "data-version")) ?? "").startsWith(
+        commit,
+      ),
+      `${site} redirected to a try/ that was not built from ${commit}`,
+    );
     assert.equal(
       await page.textContent("main h1"),
       "Alex Rivera",

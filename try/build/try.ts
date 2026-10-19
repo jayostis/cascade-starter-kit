@@ -1,9 +1,11 @@
 import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { build } from "esbuild";
 import { brandsBundle, hospitalId } from "@the-cascade-protocol/sandbox";
 import { loadHospitals } from "@the-cascade-protocol/sandbox/node";
 import type { Pod, Tables } from "cascade-runtime/published";
+import { runtimePackageRoot } from "./package-root.js";
 import {
   BRANDS,
   BROWSER_HOST,
@@ -23,9 +25,7 @@ const APP = fileURLToPath(new URL("../../../try/app.js", import.meta.url));
 const HOST = fileURLToPath(
   new URL("../../../try/browser-host.js", import.meta.url),
 );
-const RUNTIME_PACKAGE = fileURLToPath(
-  new URL("../../package.json", import.meta.resolve("cascade-runtime")),
-);
+const RUNTIME_PACKAGE = join(runtimePackageRoot(), "package.json");
 const VIEW = fileURLToPath(
   new URL("../../../app/summary.mjs", import.meta.url),
 );
