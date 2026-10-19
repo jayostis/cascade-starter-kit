@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { stdin, stdout } from "node:process";
 import { createInterface } from "node:readline/promises";
-import { create, npmInstall, npmRunModel } from "./create.js";
+import { create, fixturesOf, npmInstall, npmRunModel } from "./create.js";
 
 async function question(text: string): Promise<string> {
   const reading = createInterface({ input: stdin, output: stdout });
@@ -29,12 +29,5 @@ process.exitCode = await create(process.argv.slice(2), {
       }
     : {}),
   install: npmInstall,
-  tables: async (pods, phase) => {
-    const { setUpTables } = await import("cascade-runtime/fixtures");
-    await setUpTables(pods, phase);
-  },
-  load: async (kit, folder) => {
-    const { replayKit } = await import("cascade-runtime/fixtures");
-    await replayKit(kit, folder);
-  },
+  fixtures: fixturesOf,
 });

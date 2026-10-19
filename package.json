@@ -14,7 +14,8 @@
   ],
   "scripts": {
     "build": "tsc -b",
-    "typecheck": "tsc -b",
+    "typecheck": "tsc -b && tsc -p tsconfig.scripts.json",
+    "build:create": "tsc -b && node create/pack.mjs",
     "lint": "eslint . && prettier --check .",
     "format": "prettier --write .",
     "test": "tsc -b && node scripts/test.mjs",

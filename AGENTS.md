@@ -11,12 +11,15 @@ through what the installed package exports.
 
 - **One pin: `app/package.json` `dependencies["cascade-runtime"]`,** the
   `cascade-runtime-*.tgz` of a runtime-js `build-<sha>` pre-release. Every test
-  and try/ run on it, installed once at the root. `create` loads kits on it but
-  still sets a made app's runtime from `--tarball`, and refuses without one;
-  jayostis/cascade-starter-kit#2 (step 4) makes the pin the made app's runtime.
-- **It moves by pull request,** never by hand on main: the PR bumps it,
-  `npm install` rewrites `package-lock.json`, and the checks run on the new
-  build.
+  and try/ run on it, installed once at the root, and a made app runs on it
+  unless `create --tarball` names another.
+- **It moves by pull request, by a local script,** never by hand on main. On a
+  branch, `node scripts/pin.mjs <runtime-js commit>` (the commit of a
+  `build-<sha>` pre-release, e.g. the newest of `gh release list -R
+jayostis/cascade-runtime-js`) rewrites it and `package-lock.json`; it refuses
+  a commit with no release and leaves both files as they were if the install
+  fails. Commit the two files and open a pull request: its checks run on the
+  new build.
 - **Nothing reaches into the package:** no `cascade-runtime/dist/…`, no
   `@cascade-runtime/*`, no runtime-js workspace path. A need the exports do not
   meet is a runtime-js change first.
@@ -55,8 +58,19 @@ through what the installed package exports.
 - **The template is plain JavaScript.** `app/` is what a person gets; it imports
   only `cascade-runtime`, its `fixtures`, `@the-cascade-protocol/sandbox` and its
   own dependencies. The sandbox is not in `app/package.json`: here it resolves
-  through the root's github devDependency, and jayostis/cascade-starter-kit#2
-  (step 4) bundles it into a made app as `file:demo-hospital`.
+  through the root's github devDependency, and `npm run build:create` bundles
+  it into the template as `file:demo-hospital`. A made app never depends on
+  git: `check/starter.mjs` checks its lock.
+
+## create-cascade-app
+
+- **Its own package and release.** `npm run build:create` packs `create/`
+  with the template into `build/`; on main, `create.yml` publishes it as the
+  pre-release `build-<sha>`, never the latest, and runs the command from it
+  exactly as a person is told (`startLine(releaseAddress(sha), …)`).
+- **No runtime dependency.** It loads a made app's tables and kits through
+  that app's own `cascade-runtime/fixtures`, resolved from the app's folder
+  once it is installed.
 
 ## Conventions
 

@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { existsSync, statSync } from "node:fs";
 import { cp, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import {
   basename,
   dirname,
@@ -8,15 +9,16 @@ import {
   relative,
   resolve as absolute,
 } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import type { Phase } from "cascade-runtime/fixtures";
 
-/** The repository's root, this file being compiled to `dist/create/src/`. */
-const REPOSITORY = fileURLToPath(new URL("../../../", import.meta.url));
-const PACKAGE = join(REPOSITORY, "create");
-const STARTER = join(REPOSITORY, "app");
+/** The repository's root, or the packed package's, this file being compiled to `dist/create/src/` in both. */
+const ROOT = fileURLToPath(new URL("../../../", import.meta.url));
+const STARTER = join(ROOT, "app");
 const COMMAND = "create-cascade-app";
+const RELEASES =
+  "https://github.com/jayostis/cascade-starter-kit/releases/download";
 const PROJECT_NAME = /^[a-z0-9][a-z0-9._-]*$/;
 const USAGE = `usage: ${COMMAND} <folder> [--tarball <address>]`;
 /** The kits whose pods a made app starts with, in the order they are loaded; the starter's `npm run reset` loads the same. */
@@ -27,6 +29,16 @@ export const KITS = [
   "tamsin-vale",
 ] as const;
 
+/** What `create` uses of a made app's `cascade-runtime/fixtures`. */
+export interface Fixtures {
+  readonly phaseOn: (out: (text: string) => void) => Phase;
+  readonly seconds: (started: number) => string;
+  /** Sets up the app's tables in the pods folder, rejecting with why it could not: the kits then try on their own. */
+  readonly setUpTables: (pods: string, phase: Phase) => Promise<unknown>;
+  /** Replays the kit's story into the folder, rejecting with why it could not. */
+  readonly replayKit: (kit: string, folder: string) => Promise<unknown>;
+}
+
 export interface Terminal {
   readonly out: (text: string) => void;
   readonly err: (text: string) => void;
@@ -34,13 +46,8 @@ export interface Terminal {
   readonly ask?: () => Promise<string>;
   /** Installs the project's dependencies in the folder, resolving whether it succeeded. */
   readonly install: (folder: string) => Promise<boolean>;
-  /**
-   * Sets up the app's tables in the pods folder as a step of its own, before any kit, reporting each phase through
-   * `phase`; absent when there is nothing to set up. Rejecting with why it could not: the kits then try on their own.
-   */
-  readonly tables?: (pods: string, phase: Phase) => Promise<void>;
-  /** Replays the kit's story into the folder, rejecting with why it could not. */
-  readonly load: (kit: string, folder: string) => Promise<void>;
+  /** The installed project's own fixtures, which set up its tables and load its kits on the runtime it installed. */
+  readonly fixtures: (folder: string) => Promise<Fixtures>;
   /** Offers to connect a model in the made app and runs the app's `npm run model` when taken up; absent when no person is at a terminal. Resolves whether a model was set up. */
   readonly model?: (folder: string) => Promise<boolean>;
 }
@@ -55,6 +62,11 @@ function shellWord(word: string): string {
 /** The one line that makes an app in the folder from the package at the address. */
 export function startLine(address: string, folder: string): string {
   return `npx --yes --package=${shellWord(address)} ${COMMAND} ${shellWord(folder)}`;
+}
+
+/** Where the pre-release of the commit's build serves this package's tarball, whether or not that release exists yet. */
+export function releaseAddress(commit: string): string {
+  return `${RELEASES}/build-${commit}/${COMMAND}-0.0.0-commit-${commit}.tgz`;
 }
 
 /** What a person gives a coding agent, started in the folder holding the made app, to build their app in it. */
@@ -72,11 +84,12 @@ function dependencyOn(address: string): string {
     : `file:${absolute(address).replaceAll("\\", "/")}`;
 }
 
-async function recordedAddress(): Promise<string | undefined> {
-  const manifest = JSON.parse(
-    await readFile(join(PACKAGE, "package.json"), "utf8"),
-  ) as { cascadeRuntime?: { tarball?: string } };
-  return manifest.cascadeRuntime?.tarball;
+/** The `cascade-runtime/fixtures` the project in the folder installed. */
+export async function fixturesOf(folder: string): Promise<Fixtures> {
+  const path = createRequire(join(folder, "package.json")).resolve(
+    "cascade-runtime/fixtures",
+  );
+  return (await import(pathToFileURL(path).href)) as Fixtures;
 }
 
 /** Why the folder cannot be made into a project, or nothing. */
@@ -100,7 +113,7 @@ async function rewrite(
 async function copyStarter(
   target: string,
   name: string,
-  dependency: string,
+  runtime: string | undefined,
 ): Promise<void> {
   await cp(STARTER, target, {
     recursive: true,
@@ -114,7 +127,8 @@ async function copyStarter(
       dependencies: Record<string, string>;
     };
     manifest.name = name;
-    manifest.dependencies["cascade-runtime"] = dependency;
+    if (runtime !== undefined)
+      manifest.dependencies["cascade-runtime"] = dependencyOn(runtime);
     return `${JSON.stringify(manifest, null, 2)}\n`;
   });
   await rewrite(join(target, "README.md"), (text) =>
@@ -154,19 +168,13 @@ export async function create(
     folder = (await terminal.ask()).trim();
     if (folder === "") return refuse("no folder given");
   }
-  const address = parsed.values.tarball ?? (await recordedAddress());
   const target = absolute(folder);
   const reason = await unusable(target);
   if (reason !== undefined) return refuse(reason);
-  if (address === undefined)
-    return refuse(
-      `no address of cascade-runtime is known: give one with --tarball <address>\n${USAGE}`,
-    );
 
-  const { phaseOn, seconds } = await import("cascade-runtime/fixtures");
   const name = basename(target);
   try {
-    await copyStarter(target, name, dependencyOn(address));
+    await copyStarter(target, name, parsed.values.tarball);
   } catch (error) {
     terminal.err(
       `the starter could not be copied into ${target}, which may be left half made: ${(error as Error).message}
@@ -180,21 +188,30 @@ export async function create(
     );
     return 1;
   }
-  if (terminal.tables !== undefined)
-    try {
-      await terminal.tables(join(target, "pods"), phaseOn(terminal.out));
-    } catch (error) {
-      terminal.err(
-        `the app's tables could not be set up: ${(error as Error).message}\nThe pods try to load them again.\n`,
-      );
-    }
+  let fixtures;
+  try {
+    fixtures = await terminal.fixtures(target);
+  } catch (error) {
+    terminal.err(
+      `the app is installed, but its cascade-runtime/fixtures could not be loaded: ${(error as Error).message}\nRun \`npm install\` in it, then \`npm run reset\` to load its pods.\n`,
+    );
+    return 1;
+  }
+  const { phaseOn, seconds } = fixtures;
+  try {
+    await fixtures.setUpTables(join(target, "pods"), phaseOn(terminal.out));
+  } catch (error) {
+    terminal.err(
+      `the app's tables could not be set up: ${(error as Error).message}\nThe pods try to load them again.\n`,
+    );
+  }
   const loaded = [];
   for (const kit of KITS) {
     terminal.out(`\nLoading the pod ${kit}, from the kit the package carries…`);
     const started = performance.now();
     const pod = join(target, "pods", kit);
     try {
-      await terminal.load(kit, pod);
+      await fixtures.replayKit(kit, pod);
       loaded.push(kit);
       terminal.out(` loaded in ${seconds(started)}\n`);
     } catch (error) {
