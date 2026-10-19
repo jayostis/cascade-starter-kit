@@ -11,7 +11,7 @@ import {
   openPod,
   pullFiles,
   Refusal,
-  sixWords,
+  sixWordsOf,
   timelineIn,
   Unopened,
 } from "cascade-runtime";
@@ -94,7 +94,7 @@ const LABS = "pod/My lab results";
 
 let folder: string;
 /** The words that open the encrypted pod. */
-const SEALED_WORDS = sixWords();
+const SEALED_WORDS = sixWordsOf();
 /** The IRIs of the LDL test and of atorvastatin, found in the statin pod by their notation. */
 const iris = { ldl: "", atorvastatin: "" };
 const named = (label: string) => ({ name: { label, altLabels: [] } });
