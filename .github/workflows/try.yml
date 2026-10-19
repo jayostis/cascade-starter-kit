@@ -1,0 +1,174 @@
+name: try
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened]
+  schedule:
+    - cron: "17 4 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: try-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  browser:
+    name: browser
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - name: Build try/ and the samples over the installed package
+        run: npm run build:try
+      # Every test launches the headless shell and nothing launches the full Chrome, so only the shell is installed and kept.
+      - id: playwright
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(node -p "require('playwright/package.json').version")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - id: browsers
+        uses: actions/cache/restore@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-shell
+      - id: install
+        run: npx playwright install --with-deps --only-shell chromium
+      # Saved here, not after the job: a job that fails at the tests saves nothing.
+      - uses: actions/cache/save@v6
+        if: ${{ steps.install.outcome == 'success' && steps.browsers.outputs.cache-hit != 'true' }}
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-shell
+      - name: try/ and the starter in Chromium, served from build/pages
+        run: npm run test:browser
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: samples
+          path: |
+            build/pages/*/pod
+            build/pages/*/*.json
+            !build/pages/try/**
+          if-no-files-found: error
+
+  build-pages:
+    name: build-pages
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npm run build:try
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: build/pages
+
+  pages:
+    name: pages
+    needs: build-pages
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    outputs:
+      deployed: ${{ steps.tip.outputs.latest }}
+    steps:
+      - id: tip
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          head=$(gh api "repos/${{ github.repository }}/commits/main" --jq .sha)
+          if [ "$head" = "${{ github.sha }}" ]; then
+            echo "latest=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::main is at $head, not ${{ github.sha }}; the run for $head deploys"
+          fi
+      - if: ${{ steps.tip.outputs.latest == 'true' }}
+        uses: actions/configure-pages@v6
+      - id: deployment
+        if: ${{ steps.tip.outputs.latest == 'true' }}
+        uses: actions/deploy-pages@v5
+
+  # The deployed site, as a person reaches it, once its deploy is served.
+  live:
+    name: live
+    needs: pages
+    if: ${{ needs.pages.outputs.deployed == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      # A push to main saves this cache where a pull request can read it.
+      - id: playwright
+        run: |
+          set -euo pipefail
+          version=$(node -p "require('playwright/package.json').version")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - id: browsers
+        uses: actions/cache/restore@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-shell
+      - run: npx playwright install --with-deps --only-shell chromium
+      - uses: actions/cache/save@v6
+        if: ${{ steps.browsers.outputs.cache-hit != 'true' }}
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-shell
+      - run: npm run test:live
+        env:
+          PAGES_URL: https://jayostis.github.io/cascade-starter-kit/
+          COMMIT: ${{ github.sha }}
+
+  # try/ in Chromium against the SMART launcher, a server this project did not write, over the network: nightly and by
+  # hand only, so a network failure gates no pull request.
+  launcher:
+    name: launcher
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npm run build:try
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:launcher

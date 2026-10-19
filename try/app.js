@@ -64,7 +64,7 @@ const MENU = {
     name: "Cascade try",
     version: document.body.dataset.version ?? "",
     runtime: document.body.dataset.runtime ?? "",
-    code: "../",
+    code: "https://github.com/jayostis/cascade-starter-kit",
   },
 };
 
@@ -317,7 +317,7 @@ function redraw() {
       pods,
       current,
       href: podHref,
-      home: "../",
+      home: "./",
       menu: MENU,
       note,
       tables: {
