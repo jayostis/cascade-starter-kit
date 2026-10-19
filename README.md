@@ -41,6 +41,11 @@ npm run lint
 npm test
 ```
 
+try/ in Chromium: `npm run build:try` writes `build/pages/` (try/, the four
+samples, a root page that sends a visitor to try/), then `npm run test:browser`;
+`npm run serve:pages` serves it as Pages does. Pages deploys it from main to
+<https://jayostis.github.io/cascade-starter-kit/try/>.
+
 [`AGENTS.md`](AGENTS.md) holds the rules a change follows.
 
 ## History

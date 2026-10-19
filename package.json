@@ -17,7 +17,12 @@
     "typecheck": "tsc -b",
     "lint": "eslint . && prettier --check .",
     "format": "prettier --write .",
-    "test": "tsc -b && node scripts/test.mjs"
+    "test": "tsc -b && node scripts/test.mjs",
+    "build:try": "tsc -b && node dist/try/build/cli.js build-pages",
+    "serve:pages": "tsc -b && node dist/try/build/cli.js serve-pages",
+    "test:browser": "tsc -b && node --test dist/test-browser/try.test.js dist/test-browser/starter.test.js",
+    "test:launcher": "tsc -b && node --test dist/test-browser/launcher.test.js",
+    "test:live": "tsc -b && node --test dist/test-browser/live.test.js"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
