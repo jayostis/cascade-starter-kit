@@ -1,0 +1,121 @@
+name: create
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+
+concurrency:
+  group: create-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  # create-cascade-app, packed once, so every system below tests the bytes `release` publishes.
+  pack:
+    name: pack
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npm run build:create
+      - uses: actions/upload-artifact@v7
+        with:
+          name: create
+          path: |
+            build/create-cascade-app-*.tgz
+            build/release-notes.md
+          if-no-files-found: error
+
+  # An app made by the command from the tarball, on the template's pinned runtime, and used as a person would.
+  create:
+    name: create (${{ matrix.os }})
+    needs: pack
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest", "windows-latest"]' || '["ubuntu-latest", "windows-latest", "macos-latest"]') }}
+    runs-on: ${{ matrix.os }}
+    env:
+      GIT_CONFIG_COUNT: 1
+      GIT_CONFIG_KEY_0: core.longpaths
+      GIT_CONFIG_VALUE_0: "true"
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - uses: actions/download-artifact@v7
+        with:
+          name: create
+          path: ${{ runner.temp }}/create
+      - name: The starter's check, against the tarball
+        working-directory: ${{ runner.temp }}
+        run: node "$GITHUB_WORKSPACE/check/starter.mjs" create/create-cascade-app-*.tgz
+
+  # The tested tarball, as the pre-release build-<commit>, never the latest.
+  release:
+    name: release
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    needs: create
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          name: create
+          path: create
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="build-$GITHUB_SHA"
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::notice::$tag is a release already"
+            exit 0
+          fi
+          gh release create "$tag" create/create-cascade-app-*.tgz \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "$tag" \
+            --notes-file create/release-notes.md \
+            --prerelease \
+            --latest=false
+
+  # The command exactly as a person is told to run it, from the release just made.
+  create-release:
+    name: create-release
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: The starter's check, against the release
+        working-directory: ${{ runner.temp }}
+        run: node "$GITHUB_WORKSPACE/check/starter.mjs" --release "$GITHUB_SHA"
