@@ -4,5 +4,16 @@
   "private": true,
   "type": "module",
   "description": "Makes an app from the starter, its pods loaded.",
-  "license": "Apache-2.0"
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jayostis/cascade-starter-kit.git"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "files": [
+    "app",
+    "dist"
+  ]
 }
