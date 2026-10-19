@@ -29,9 +29,7 @@ const RUNTIME_PACKAGE = fileURLToPath(
 const VIEW = fileURLToPath(
   new URL("../../../app/summary.mjs", import.meta.url),
 );
-const API = fileURLToPath(
-  new URL("../../../app/pod-api.mjs", import.meta.url),
-);
+const API = fileURLToPath(new URL("../../../app/pod-api.mjs", import.meta.url));
 const HERE = fileURLToPath(new URL(".", import.meta.url));
 /** The demo hospitals' service worker, and their page side: the worker's registration, the world date, and the rule that names a pull after its hospital. */
 const SANDBOX_WEB = {
