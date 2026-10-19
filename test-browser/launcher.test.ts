@@ -3,25 +3,22 @@
 // asserts which patient came back and that the record came in, never what it holds.
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { type Browser, chromium, type Page } from "playwright";
 import { TEST_DIRECTORY } from "cascade-runtime";
-import { findRoot } from "@cascade-runtime/runtime/node";
-import { type Served, servePages } from "../src/node/serve.js";
+import { type Served, servePages } from "../try/build/serve.js";
 import { settled, tiles, watched } from "./shown.js";
 
-const ROOT = findRoot(dirname(fileURLToPath(import.meta.url)));
+const ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const PAGES = join(ROOT, "build", "pages");
 const LAUNCHER = "https://launch.smarthealthit.org";
 const POD = "Launcher Patient";
 
 /** The starter's view, the module try/ renders, as far as this test reads it. */
 const view = (await import(
-  pathToFileURL(
-    join(ROOT, "packages", "cascade-runtime", "starter", "summary.mjs"),
-  ).href
+  pathToFileURL(join(ROOT, "app", "summary.mjs")).href
 )) as { hospitalName(name: string): string };
 
 let served: Served;

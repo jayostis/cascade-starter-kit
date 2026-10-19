@@ -12,7 +12,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { after, before, test } from "node:test";
-import { agentPrompt, create, KITS, type Terminal } from "../src/create.js";
+import {
+  agentPrompt,
+  create,
+  KITS,
+  type Terminal,
+} from "../create/src/create.js";
 
 const ADDRESS =
   "https://example.org/releases/download/build-0/cascade-runtime-0.0.0.tgz";
@@ -62,28 +67,19 @@ test("given a folder, it makes the project and names it, with the view's package
   const manifest = JSON.parse(
     await readFile(join(folder, "package.json"), "utf8"),
   ) as { name: string; dependencies: Record<string, string> };
+  const template = JSON.parse(
+    await readFile(new URL("../../app/package.json", import.meta.url), "utf8"),
+  ) as { dependencies: Record<string, string> };
   assert.equal(manifest.name, "my-app");
   assert.equal(manifest.dependencies["cascade-runtime"], ADDRESS);
-  for (const [tested, names] of [
-    [
-      "../../package.json",
-      [
-        "preact",
-        "htm",
-        "preact-render-to-string",
-        "@modelcontextprotocol/server",
-        "openai",
-        "@anthropic-ai/sdk",
-      ],
-    ],
-    ["../../../site/package.json", ["preact", "htm"]],
-  ] as const) {
-    const { devDependencies } = JSON.parse(
-      await readFile(new URL(tested, import.meta.url), "utf8"),
-    ) as { devDependencies: Record<string, string> };
-    for (const name of names)
-      assert.equal(manifest.dependencies[name], devDependencies[name], name);
-  }
+  const { devDependencies } = JSON.parse(
+    await readFile(new URL("../../package.json", import.meta.url), "utf8"),
+  ) as { devDependencies: Record<string, string> };
+  for (const [name, version] of Object.entries(template.dependencies))
+    if (name !== "cascade-runtime")
+      assert.equal(manifest.dependencies[name], version, name);
+  for (const name of ["preact", "htm"])
+    assert.equal(devDependencies[name], template.dependencies[name], name);
   const ignored = (await readFile(join(folder, ".gitignore"), "utf8")).split(
     /\r?\n/,
   );
@@ -230,7 +226,9 @@ test("it refuses a folder it cannot use and writes nothing", async () => {
 });
 
 test("with no folder and no terminal it asks nothing", async () => {
-  const bin = fileURLToPath(new URL("../src/create-cli.js", import.meta.url));
+  const bin = fileURLToPath(
+    new URL("../create/src/create-cli.js", import.meta.url),
+  );
   const started = Date.now();
   const { code, stderr } = await new Promise<{
     code: number | null;

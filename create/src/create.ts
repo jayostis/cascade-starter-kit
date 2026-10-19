@@ -4,11 +4,12 @@ import { cp, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, join, resolve as absolute } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
-import { type Phase, phaseOn, seconds } from "./phase.js";
+import type { Phase } from "cascade-runtime/fixtures";
 
-/** This package's root, `dist/src/` being two levels down, in the workspace and in an install alike. */
-const PACKAGE = fileURLToPath(new URL("../../", import.meta.url));
-const STARTER = join(PACKAGE, "starter");
+/** The repository's root, this file being compiled to `dist/create/src/`. */
+const REPOSITORY = fileURLToPath(new URL("../../../", import.meta.url));
+const PACKAGE = join(REPOSITORY, "create");
+const STARTER = join(REPOSITORY, "app");
 const COMMAND = "create-cascade-app";
 const PROJECT_NAME = /^[a-z0-9][a-z0-9._-]*$/;
 const USAGE = `usage: ${COMMAND} <folder> [--tarball <address>]`;
@@ -152,6 +153,7 @@ export async function create(
       `no address of cascade-runtime is known: give one with --tarball <address>\n${USAGE}`,
     );
 
+  const { phaseOn, seconds } = await import("cascade-runtime/fixtures");
   const name = basename(target);
   try {
     await copyStarter(target, name, dependencyOn(address));

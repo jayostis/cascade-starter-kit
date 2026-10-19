@@ -36,16 +36,13 @@ import {
   loadStories,
 } from "@the-cascade-protocol/sandbox/node";
 import * as oxigraph from "oxigraph";
-import type * as Fixtures from "cascade-runtime/fixtures";
-import type * as Published from "cascade-runtime/published";
-import { type Served, servePages } from "../src/node/serve.js";
-import { assertStagedCurrent } from "../src/node/staged.js";
+import { installedParts } from "cascade-runtime/fixtures";
+import { openPodWith } from "cascade-runtime/published";
+import { type Served, servePages } from "../try/build/serve.js";
 import { inPlace, newPod, settled, tiles, watched } from "./shown.js";
 
-const ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
+const ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const PAGES = join(ROOT, "build", "pages");
-/** The package as an app installs it: in this repository, the one `npm run build:package` staged. */
-const INSTALLED = join(ROOT, "build", "package");
 /** The components try/ serves, as the package carries them. */
 const SERVED = join(PAGES, "try", "cascade-runtime", "components");
 
@@ -133,9 +130,7 @@ interface View {
 }
 
 const view = (await import(
-  pathToFileURL(
-    join(ROOT, "packages", "cascade-runtime", "starter", "summary.mjs"),
-  ).href
+  pathToFileURL(join(ROOT, "app", "summary.mjs")).href
 )) as View;
 
 let served: Served;
@@ -192,13 +187,6 @@ const hasLines = (
 
 /** A Node pod in memory, opened by the installed package over the starter tables it carries, which the page ships. */
 async function pageTablesPod(): Promise<Pod> {
-  assertStagedCurrent(INSTALLED, ROOT);
-  const from = (path: string) =>
-    import(
-      pathToFileURL(join(INSTALLED, "dist", "src", ...path.split("/"))).href
-    );
-  const { installedParts } = (await from("fixtures.js")) as typeof Fixtures;
-  const { openPodWith } = (await from("node/published.js")) as typeof Published;
   return openPodWith(await installedParts());
 }
 

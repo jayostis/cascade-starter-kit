@@ -44,13 +44,13 @@ interface Terminal {
 }
 
 const { modelClient, modelFrom } = (await import(
-  new URL("../../starter/model-client.mjs", import.meta.url).href
+  new URL("../../app/model-client.mjs", import.meta.url).href
 )) as {
   modelClient(settings: Settings): Model;
   modelFrom(env: Record<string, string>): Model | undefined;
 };
 const { check, flow, save, remove, secret } = (await import(
-  new URL("../../starter/model.mjs", import.meta.url).href
+  new URL("../../app/model.mjs", import.meta.url).href
 )) as {
   save(folder: string, values: Record<string, string>): Promise<void>;
   remove(folder: string): Promise<boolean>;

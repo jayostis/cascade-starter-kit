@@ -34,7 +34,7 @@ const {
   EXPLAIN_THE_THING,
   MAX_ROUNDS,
   runChat,
-} = (await import(new URL("../../starter/chat.mjs", import.meta.url).href)) as {
+} = (await import(new URL("../../app/chat.mjs", import.meta.url).href)) as {
   chatRoute: (
     request: unknown,
     response: unknown,
@@ -58,16 +58,16 @@ type Api = {
   close(): Promise<void>;
 };
 const { maps, podApi } = (await import(
-  new URL("../../starter/pod-api.mjs", import.meta.url).href
+  new URL("../../app/pod-api.mjs", import.meta.url).href
 )) as {
   maps: (output: object) => { about: Map<string, unknown> };
   podApi: (host: object) => Api;
 };
 const { podTools } = (await import(
-  new URL("../../starter/pod-tools.mjs", import.meta.url).href
+  new URL("../../app/pod-tools.mjs", import.meta.url).href
 )) as { podTools: (...options: unknown[]) => unknown };
 const { changeSaid, entryId, HISTORY, SOURCES } = (await import(
-  new URL("../../starter/summary.mjs", import.meta.url).href
+  new URL("../../app/summary.mjs", import.meta.url).href
 )) as {
   changeSaid: (finding: unknown, about: Map<string, unknown>) => string;
   entryId: (entry: string) => string;
