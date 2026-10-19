@@ -1,5 +1,6 @@
-// The starter, made by the command from an installed tarball and used as a person would, in a new folder under the
-// current one. `node starter.mjs <tarball>` before a merge; `node starter.mjs --release <commit>` once that commit's
+// The starter, made by the command from create-cascade-app's tarball and used as a person would, in a new folder under
+// the current one. `node starter.mjs <tarball> [--runtime <cascade-runtime tarball>]` before a merge, the made app on
+// the template's pinned runtime unless another is given; `node starter.mjs --release <commit>` once that commit's
 // release exists. Run from the repository after `npm ci` and `npm run build`.
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
@@ -14,11 +15,17 @@ import { setTimeout } from "node:timers/promises";
 import { parseArgs } from "node:util";
 import * as oxigraph from "oxigraph";
 import { answerSignIn } from "@the-cascade-protocol/sandbox/testing";
-import { tarballAddress } from "../dist/pack/address.js";
-import { agentPrompt, KITS, startLine } from "../dist/create/src/create.js";
+import {
+  agentPrompt,
+  KITS,
+  releaseAddress,
+  startLine,
+} from "../dist/create/src/create.js";
 
 /** What the tables the app holds now name each code, set once the app is installed. */
+/** @type {(codes: readonly string[]) => Promise<Map<string, any>>} */
 let heldNames = async () => new Map();
+/** @type {() => Promise<any[]>} */
 let heldSeries = async () => [];
 
 /** A Turtle file's triples, each as its subject, predicate and object. */
@@ -85,16 +92,24 @@ const { fetch } = globalThis;
 
 const { values, positionals } = parseArgs({
   args: argv.slice(2),
-  options: { release: { type: "string" } },
+  options: { release: { type: "string" }, runtime: { type: "string" } },
   allowPositionals: true,
 });
 const release = values.release;
 const tarball =
   positionals[0] === undefined ? undefined : resolve(positionals[0]);
-if ((release === undefined) === (tarball === undefined))
+const runtime =
+  values.runtime === undefined ? undefined : resolve(values.runtime);
+if (
+  (release === undefined) === (tarball === undefined) ||
+  (release !== undefined && runtime !== undefined)
+)
   throw new Error(
-    "usage: node starter.mjs <tarball> | node starter.mjs --release <commit>",
+    "usage: node starter.mjs <tarball> [--runtime <tarball>] | node starter.mjs --release <commit>",
   );
+const PIN = JSON.parse(
+  await readFile(new URL("../app/package.json", import.meta.url), "utf8"),
+).dependencies["cascade-runtime"];
 
 const work = await mkdtemp(join(cwd(), "starter-"));
 const app = join(work, "my-app");
@@ -553,7 +568,6 @@ async function behaviour(name, check) {
   stdout.write(`ok - ${name}\n`);
 }
 
-const address = release === undefined ? tarball : tarballAddress(release);
 let story;
 let alex;
 let fresh;
@@ -569,12 +583,14 @@ await behaviour("the command makes the app", async () => {
             `--package=${tarball}`,
             "create-cascade-app",
             "my-app",
-            "--tarball",
-            tarball,
+            ...(runtime === undefined ? [] : ["--tarball", runtime]),
           ],
           { cwd: work },
         )
-      : await run(startLine(address, "my-app"), [], { cwd: work, shell: true });
+      : await run(startLine(releaseAddress(release), "my-app"), [], {
+          cwd: work,
+          shell: true,
+        });
   assert.equal(code, 0, "the command failed");
   assert.ok(out.includes(agentPrompt("my-app")), "no agent prompt");
   assert.deepEqual(await podsOf(), [...KITS].sort());
@@ -592,12 +608,6 @@ await behaviour("the command makes the app", async () => {
     judgments: await asked(JUDGMENTS, "alex-rivera"),
     imports: (await asked(IMPORTS, "alex-rivera")).length,
   };
-  if (release !== undefined) {
-    const manifest = JSON.parse(
-      await readFile(join(app, "package.json"), "utf8"),
-    );
-    assert.equal(manifest.dependencies["cascade-runtime"], address);
-  }
   const fixtures = await import(
     pathToFileURL(
       createRequire(join(app, "package.json")).resolve(
@@ -642,6 +652,50 @@ await behaviour("the command makes the app", async () => {
   };
 });
 
+await behaviour(
+  "the app runs on the pinned runtime, or the one given, and installs with no git: each package is the runtime or bundled in it, the demo hospital beside the app, or from npm's registry",
+  async () => {
+    const { dependencies } = JSON.parse(
+      await readFile(join(app, "package.json"), "utf8"),
+    );
+    assert.equal(
+      dependencies["cascade-runtime"],
+      runtime === undefined ? PIN : `file:${runtime.replaceAll("\\", "/")}`,
+    );
+    assert.equal(
+      dependencies["@the-cascade-protocol/sandbox"],
+      "file:demo-hospital",
+    );
+    const { packages } = JSON.parse(
+      await readFile(join(app, "package-lock.json"), "utf8"),
+    );
+    const sandbox = packages["node_modules/@the-cascade-protocol/sandbox"];
+    assert.deepEqual(
+      [sandbox?.link, sandbox?.resolved],
+      [true, "demo-hospital"],
+      "the demo hospital is not linked from beside the app",
+    );
+    assert.doesNotMatch(
+      packages["node_modules/cascade-runtime"]?.resolved ?? "",
+      /^git|^github:|^ssh:/,
+    );
+    const elsewhere = Object.entries(packages)
+      .filter(
+        ([path, entry]) =>
+          ![
+            "",
+            "demo-hospital",
+            "node_modules/cascade-runtime",
+            "node_modules/@the-cascade-protocol/sandbox",
+          ].includes(path) &&
+          entry.inBundle !== true &&
+          !entry.resolved?.startsWith("https://registry.npmjs.org/"),
+      )
+      .map(([path, entry]) => `${path} came from ${entry.resolved}`);
+    assert.deepEqual(elsewhere, []);
+  },
+);
+
 await behaviour("help lists every command", async () => {
   const { code, out } = await npm("run", "--silent", "help");
   assert.equal(code, 0, "npm run help failed");
@@ -665,6 +719,7 @@ await behaviour("help lists every command", async () => {
 });
 
 const server = await (async () => {
+  /** @type {Awaited<ReturnType<typeof started>>} */
   let server;
   await behaviour("a loaded pod is shown", async () => {
     server = await started();
