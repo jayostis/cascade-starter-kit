@@ -99,14 +99,23 @@ const pairs = (map) => (map === undefined ? undefined : [...map]);
 
 const WORTH_A_LOOK = {
   name: "worth_a_look",
+  description:
+    "What a pod's page lists under Worth a look, in its order: each line's sentence, the ID of the entry it is about and its tag. It states what is flagged (an entry that needs review, a report that differs from ClinVar today, medications that share an ingredient), never why; there are none when nothing is.",
   inputSchema: { type: "object", properties: {}, additionalProperties: false },
 };
 
-/** The names of the tools `tool` runs: the change tools, then `worth_a_look`. */
-const TOOLS = [
-  ...changeTools({ ask: async () => [] }).map(({ name }) => name),
-  WORTH_A_LOOK.name,
+/** The tools `tool` runs, as a model is told of them: the change tools, then `worth_a_look`. */
+export const POD_TOOLS = [
+  ...changeTools({ ask: async () => [] }).map(
+    ({ name, description, inputSchema }) => ({
+      name,
+      description,
+      inputSchema,
+    }),
+  ),
+  WORTH_A_LOOK,
 ];
+const TOOLS = POD_TOOLS.map(({ name }) => name);
 
 /** The test and medication codes of the trend a finding is about, the medication's name where it has no code. */
 export function trendOf({ test, medication }) {

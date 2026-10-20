@@ -7,6 +7,8 @@ export const SUMMARY = "summary.js";
 /** What the app reads its pods and tables through: the starter's PodApi, and the host it is given in a browser. */
 export const POD_API = "pod-api.js";
 export const BROWSER_HOST = "browser-host.js";
+/** The tools a model is offered, the starter's `tools.mjs`. */
+export const TOOLS = "tools.js";
 /** The packages the view and the app import, each beside the page as one `.js` module, by the name they import. */
 export const VIEW_PACKAGES = {
   preact: "preact.js",
@@ -28,6 +30,7 @@ function head(title: string): Html {
     imports: {
       "cascade-runtime": `./${TRY_PACKAGE}dist/browser/index.js`,
       "./summary.mjs": `./${SUMMARY}`,
+      "./pod-api.mjs": `./${POD_API}`,
       ...Object.fromEntries(
         Object.entries(VIEW_PACKAGES).map(([name, file]) => [
           name,

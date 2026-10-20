@@ -54,7 +54,6 @@ import {
   worldDatePage,
   worldInstant,
 } from "./summary.mjs";
-import { podTools } from "./pod-tools.mjs";
 
 const told = new Set();
 
@@ -826,7 +825,7 @@ function startingDate() {
 const startedAsOf = startingDate();
 const model = modelSet();
 /** The tools the chat reaches, over the pods this server holds open. */
-const chatting = chatTools(podTools(api, { viewOf: trendPath }), { api });
+const chatting = chatTools(api);
 const packageOf = async (path) =>
   JSON.parse(await readFile(new URL(path, import.meta.url), "utf8"));
 const [app, runtime] = await Promise.all([

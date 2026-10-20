@@ -99,6 +99,25 @@ and what its tools read from the pod. Without a model the
 strip only says to run `npm run model`. The chat can only read: it never
 changes a pod.
 
+## The tools a model reaches
+
+`tools.mjs` is the one list of tools a model reaches the app by, the chat, an
+MCP client and try/'s WebMCP alike. Each calls the app's PodApi only, and each
+has a consent tier:
+
+- **free**, reads: `list_pods`, `find_changes`, `finding_rows`, `lab_series`,
+  `timeline`, `worth_a_look` and `ask`; and moving the app: `open_pod`,
+  `open_trend` and `open_entry`.
+- **ask**, writes the person confirms first: `make_pod` (never encrypted),
+  `check_tables` and `set_world_date`.
+- **never**, what no tool calls: making an encrypted pod, its six words and
+  password (`waitingWords`, `confirmWords`, `unlock`), the sign-in at a hospital
+  (`connect`), bringing a record in (`bring`: the person does it from its box),
+  and Delete all and Reset all.
+
+The MCP server offers the free reads. The chat offers the free tools, and
+try/'s WebMCP the free tools of the pod shown. No door offers an `ask` tool yet.
+
 An empty chat offers up to four questions worked out from the pod's own records
 (not by a model), such as "Did LDL cholesterol change after atorvastatin 20 MG Oral Tablet
 started?", and each What changed card, each trend and each entry has an "Ask
@@ -240,9 +259,9 @@ script goes after `--`, or npm keeps it for itself.
   offers.
 - `model.mjs`, `model-client.mjs`: `npm run model`, and the one door to a
   model, whichever provider.
-- `pod-tools.mjs`: the tools over the pods as a tool client sees them, which
-  the MCP server and the chat share: their names, descriptions and schemas.
-  What each does is an operation of `pod-api.mjs`.
+- `tools.mjs`: the one list of tools a model reaches, with their tiers and
+  what no tool calls, which the MCP server, the chat and try/ share. Each calls
+  the operations of `pod-api.mjs`.
 - `chat.mjs`: `POST /chat`, the chat's loop: the model's tool calls run over
   the pods, with tools that open the app's own pages.
 - `AGENTS.md`: for a coding agent building on this app.
