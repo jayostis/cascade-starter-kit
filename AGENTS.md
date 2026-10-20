@@ -26,11 +26,11 @@ jayostis/cascade-runtime-js`) rewrites it and `package-lock.json`; it refuses
 
 ## The reverse check
 
-- **Coming (jayostis/cascade-runtime-js#453, step 5): every runtime-js pull
-  request runs this repository's tests on its own fresh tarball** (a `check.yml`
-  job that runtime-js's required `compatibility` job needs). Until it lands, a
-  runtime-js change can break the starter unseen.
-- **Coming with it: a breaking runtime change pairs by `Depends-On:`.** Its runtime-js PR body
+- **Every runtime-js pull request runs this repository's tests on its own fresh
+  tarball** (runtime-js's `starter-kit` job in `check.yml`, which its required
+  `compatibility` job needs), so a runtime-js change that breaks the starter is
+  seen before it merges.
+- **A breaking runtime change pairs by `Depends-On:`.** Its runtime-js PR body
   carries `Depends-On: https://github.com/jayostis/cascade-starter-kit/pull/N`
   (the full URL; the short `owner/repo#N` form is rejected); the check then
   runs that PR's head instead of main. The runtime PR merges first, then the
@@ -40,8 +40,8 @@ jayostis/cascade-runtime-js`) rewrites it and `package-lock.json`; it refuses
 
 - **This repository took its files, with their history, from runtime-js at
   `bf5c111`** (`git filter-repo`; `git log --follow` reaches back through it).
-- **Until runtime-js deletes its copies (jayostis/cascade-runtime-js#454),** a
-  runtime-js change to a moved path merges only once it is ported here.
+- **runtime-js no longer holds copies of the moved files,** so a change to one
+  is made here only.
 
 ## The rules
 

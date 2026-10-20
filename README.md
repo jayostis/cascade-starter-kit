@@ -38,10 +38,9 @@ npx --yes --package=https://github.com/jayostis/cascade-starter-kit/releases/dow
 The made app installs from npm's registry and the runtime's tarball, with no
 git.
 
-Coming with jayostis/cascade-runtime-js#453 (step 5): every runtime-js pull
-request runs this repository's tests on its own build, so a runtime change that
-breaks the starter is seen before it merges. Until then it is seen at the next
-pin bump.
+Every runtime-js pull request runs this repository's tests on its own build (its
+`starter-kit` job), so a runtime change that breaks the starter is seen before it
+merges.
 
 ## Working on it
 
