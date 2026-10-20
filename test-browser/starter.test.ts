@@ -549,6 +549,7 @@ test("an encrypted pod: six words checked, nothing plaintext on disk, no chat sa
     await page.getByLabel("Encrypt this pod with six words").check();
     await page.getByLabel("A person's name").fill("Grace Hopper");
     await page.getByRole("button", { name: "Make the pod" }).click();
+    await page.locator(".words li").nth(5).waitFor();
     const words = await page.locator(".words li").allTextContents();
     assert.equal(words.length, 6);
 
@@ -602,6 +603,9 @@ test("an encrypted pod: six words checked, nothing plaintext on disk, no chat sa
     await page.getByLabel("Word 2").fill(words[1]!);
     await page.getByLabel("Word 5").fill(words[4]!);
     await page.getByRole("button", { name: "Make the encrypted pod" }).click();
+    await page
+      .locator("main", { hasText: /must hold the six words above/ })
+      .waitFor();
     assert.match(
       (await page.locator("main").textContent()) ?? "",
       /must hold the six words above/,
@@ -620,6 +624,9 @@ test("an encrypted pod: six words checked, nothing plaintext on disk, no chat sa
     await page.getByLabel("Word 2").fill(words[1]!);
     await page.getByLabel("Word 5").fill(words[4]!);
     await page.getByRole("button", { name: "Make the encrypted pod" }).click();
+    await page
+      .locator("main", { hasText: /Pod field must keep the pod's name/ })
+      .waitFor();
     assert.match(
       (await page.locator("main").textContent()) ?? "",
       /Pod field must keep the pod's name/,
@@ -633,6 +640,9 @@ test("an encrypted pod: six words checked, nothing plaintext on disk, no chat sa
     await page.getByLabel("Word 2").fill("not-a-word");
     await page.getByLabel("Word 5").fill(words[4]!);
     await page.getByRole("button", { name: "Make the encrypted pod" }).click();
+    await page
+      .locator("main", { hasText: /Those aren't words 2 and 5/ })
+      .waitFor();
     assert.match(
       (await page.locator("main").textContent()) ?? "",
       /Those aren't words 2 and 5/,
@@ -666,6 +676,7 @@ test("an encrypted pod: six words checked, nothing plaintext on disk, no chat sa
     await racing.getByLabel("Encrypt this pod with six words").check();
     await racing.getByLabel("A person's name").fill("Alan Turing");
     await racing.getByRole("button", { name: "Make the pod" }).click();
+    await racing.locator(".words li").nth(5).waitFor();
     const racingWords = await racing.locator(".words li").allTextContents();
     const plain = await browser.newPage();
     await plain.goto(`${sealed.origin}/#new-pod`);
@@ -677,13 +688,18 @@ test("an encrypted pod: six words checked, nothing plaintext on disk, no chat sa
     await racing
       .getByRole("button", { name: "Make the encrypted pod" })
       .click();
+    await racing
+      .locator("main", { hasText: /A pod named alan-turing exists already/ })
+      .waitFor();
     assert.match(
       (await racing.locator("main").textContent()) ?? "",
       /A pod named alan-turing exists already/,
     );
-    assert.notEqual(
-      (await racing.locator("h1").first().textContent())?.trim(),
-      "Alan Turing",
+    assert.equal(
+      (await racing.locator("h1").allTextContents()).some(
+        (text) => text.trim() === "Alan Turing",
+      ),
+      false,
       "the refused encrypted pod goes to the plain one",
     );
     await racing.close();
@@ -713,13 +729,15 @@ test("an encrypted pod: six words checked, nothing plaintext on disk, no chat sa
       .getByLabel("Your six words")
       .fill("one two three four five six");
     await again.getByRole("button", { name: "Open this pod" }).click();
+    await again.locator("main", { hasText: /don't open this pod/ }).waitFor();
     assert.match(
       (await again.locator("main").textContent()) ?? "",
       /don't open this pod/,
     );
     await again.getByLabel("Your six words").fill(words.join(" "));
     await again.getByRole("button", { name: "Open this pod" }).click();
-    await again.waitForURL(`${sealed.origin}/pods/grace-hopper/`);
+    await again.getByLabel("Your six words").waitFor({ state: "detached" });
+    await again.locator("main", { hasText: /Grace Hopper/ }).waitFor();
     assert.equal(await again.getByLabel("Your six words").count(), 0);
     assert.match(
       (await again.locator("main").textContent()) ?? "",

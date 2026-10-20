@@ -372,6 +372,9 @@ async function pageShows(page, server, pod, person) {
   return { rows };
 }
 
+/** How long the crawl gives a page to draw; one that does not fails the crawl at once, not after the rest. */
+const DRAW_WITHIN = 30_000;
+
 /**
  * The page at `address` in `page`, once drawn: the status it answered, the address it ended at, each `<a href>` of it
  * as written and each `id` an element of it has (forms are not links), what it reads, and what its error says.
@@ -379,7 +382,7 @@ async function pageShows(page, server, pod, person) {
 async function rendered(page, address) {
   try {
     const answer = await page.goto(address);
-    await drawn(page);
+    await drawn(page, DRAW_WITHIN);
     const { hrefs, ids, said, found } = await page.evaluate(() => {
       const { document } = globalThis;
       return {
@@ -401,6 +404,7 @@ async function rendered(page, address) {
       said,
     };
   } catch (error) {
+    if (String(error?.message).includes("was never drawn")) throw error;
     return { status: String(error), hrefs: [], ids: new Set(), text: "" };
   }
 }
@@ -1761,8 +1765,14 @@ if (release === undefined) {
           await drawn(page);
           await page.getByLabel("Search by name or place").fill("north");
           await page.getByRole("button", { name: "Search" }).click(SUBMIT);
-          await drawn(page);
+          await page.waitForURL(
+            (url) => url.searchParams.get("q") === "north",
+            SUBMIT,
+          );
           const signIns = page.getByRole("button", { name: /^Sign in/ });
+          await signIns.first().waitFor(SUBMIT);
+          await signIns.nth(1).waitFor({ state: "detached", ...SUBMIT });
+          await drawn(page);
           assert.equal(await signIns.count(), 1, "north finds one hospital");
           await signIns.click(SUBMIT);
           await page.waitForURL(
@@ -1874,6 +1884,23 @@ if (release === undefined) {
           });
           assert.equal(set.asOf, INSTANT);
           assert.equal((await api(server, "hospitals")).asOf, INSTANT);
+          await opened(page, server, "/world-date?back=%2F%2Fevil.test%2F");
+          const appOrigin = new URL(server.address).origin;
+          assert.equal(
+            new URL(page.url()).origin,
+            appOrigin,
+            "a back address off this app was followed",
+          );
+          for (const href of await page
+            .getByRole("link", { name: "Back" })
+            .evaluateAll((links) =>
+              links.map((link) => link.getAttribute("href")),
+            ))
+            assert.equal(
+              new URL(href, page.url()).origin,
+              appOrigin,
+              "the Back link goes off this app",
+            );
           await beginsWith(AS_OF_SAID);
           assert.ok((await pickerNow()).includes(AS_OF));
 
@@ -1888,6 +1915,20 @@ if (release === undefined) {
             INSTANT,
             "the connection does not keep the date it was pulled under",
           );
+          /** The connection's box, opened on the screen, says the date it was pulled under. */
+          const boxSays = async (n) => {
+            await opened(
+              page,
+              server,
+              `/pods/${pod}/?connection=${n}#connection`,
+            );
+            await page
+              .locator("#connection", {
+                hasText: "Pulled as of 1 February 2024.",
+              })
+              .waitFor();
+          };
+          await boxSays(connection);
 
           await api(server, "setWorldDate", {
             date: "2024-02-01T09:00:00+02:00",
@@ -1917,6 +1958,7 @@ if (release === undefined) {
           assert.deepEqual(await api(server, "setWorldDate", { date: "" }), {});
           assert.ok(!(await pickerNow()).includes('class="as-of"'));
           await beginsWith(EVERYTHING);
+          await boxSays(connection);
           await page.close();
           assert.equal(
             (await settledConnection(pod, connection)).asOf,

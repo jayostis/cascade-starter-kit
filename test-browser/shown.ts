@@ -63,8 +63,9 @@ export async function newPod(page: Page, label: string): Promise<void> {
 }
 
 /**
- * Waits for a page of the app on either host to be drawn, `timeout` ms at most: its `main` is there, nothing in it is
- * pending, and the body is not busy; a body that says `error` fails with what the page says.
+ * Waits for the page showing to be drawn, `timeout` ms at most: its `main` is there, nothing in it is pending, and the
+ * body is not busy and says `ready` (`opening` and any other state wait); it cannot tell a screen from before a click
+ * from the one the click brings, so after a click that changes the screen wait for what the new one shows first.
  */
 export async function drawn(page: Page, timeout = 120_000): Promise<void> {
   try {
