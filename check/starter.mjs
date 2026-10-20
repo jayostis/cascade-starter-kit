@@ -89,6 +89,8 @@ const C_CDA = "kestrel-harbor-health-summary.xml";
 const STATUS = "https://ns.cascadeprotocol.org/clinical/v1#status";
 const ALLERGEN = "https://ns.cascadeprotocol.org/health/v1#allergen";
 const MINUTES = 60 * 1000;
+/** How long a click that submits waits for what it starts, a reset of every pod the longest. */
+const SUBMIT = { timeout: 5 * MINUTES };
 const { fetch } = globalThis;
 
 const { values, positionals } = parseArgs({
@@ -265,7 +267,9 @@ let browser;
 /** A new tab of the browser, what goes wrong in it kept for a failure's message. */
 async function tab() {
   browser ??= await chromium.launch();
-  return watched(await browser.newPage());
+  const page = watched(await browser.newPage());
+  page.setDefaultTimeout(2 * MINUTES);
+  return page;
 }
 
 /** `page` gone to `path` of the app at `server`, once it is drawn. */
@@ -1003,7 +1007,7 @@ try {
       await page
         .locator("aside")
         .getByRole("button", { name: "Check now" })
-        .click();
+        .click(SUBMIT);
       const note = page.locator('main p.note[role="status"]');
       await note.waitFor({ timeout: 2 * MINUTES });
       assert.notEqual(
@@ -1756,11 +1760,11 @@ if (release === undefined) {
           await page.locator(`a[href="/pods/${pod}/hospitals"]`).click();
           await drawn(page);
           await page.getByLabel("Search by name or place").fill("north");
-          await page.getByRole("button", { name: "Search" }).click();
+          await page.getByRole("button", { name: "Search" }).click(SUBMIT);
           await drawn(page);
           const signIns = page.getByRole("button", { name: /^Sign in/ });
           assert.equal(await signIns.count(), 1, "north finds one hospital");
-          await signIns.click();
+          await signIns.click(SUBMIT);
           await page.waitForURL(
             (url) => url.origin === new URL(server.listenerAddress).origin,
           );
@@ -1768,7 +1772,7 @@ if (release === undefined) {
           await page.check(
             `input[name="patient"][value="${expected.patient}"]`,
           );
-          await page.getByRole("button", { name: "Allow" }).click();
+          await page.getByRole("button", { name: "Allow" }).click(SUBMIT);
           const bring = page.getByRole("button", { name: /^Bring / });
           await bring.waitFor({ timeout: 2 * MINUTES });
           assert.equal(
@@ -1797,7 +1801,7 @@ if (release === undefined) {
               `no ${count} ${kind}`,
             );
           assert.ok(looked.includes("has nothing from here yet"));
-          await bring.click();
+          await bring.click(SUBMIT);
           const note = page.locator("main .note", {
             hasText: /^Brought in the record from /,
           });
@@ -2231,7 +2235,7 @@ if (release === undefined) {
             await page
               .locator(".dialog:target")
               .getByRole("button", { name: item })
-              .click();
+              .click(SUBMIT);
           };
           const podsNow = async () =>
             (await api(server, "pods")).pods.map(({ name }) => name).sort();
