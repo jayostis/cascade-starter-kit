@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
@@ -62,7 +62,17 @@ test("the app's AGENTS.md lists the starter's scripts and the variables its serv
     ),
     sorted(Object.keys(starter.scripts)),
   );
-  const server = await readFile(join(APP, "server.mjs"), "utf8");
+  const server = (
+    await Promise.all(
+      [
+        "server.mjs",
+        ...(await readdir(join(APP, "server"))).map((name) =>
+          join("server", name),
+        ),
+      ].map((path) => readFile(join(APP, path), "utf8")),
+    )
+  ).join("\n");
+  assert.match(server, /CASCADE_WORLD_DATE/);
   const stated = (sections.get("The starter") ?? []).join("\n");
   for (const [, name] of server.matchAll(/env\.(CASCADE_[A-Z_]+)/g))
     assert.ok(

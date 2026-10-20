@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "customConditions": ["browser"],
+    "jsx": "react-jsx",
+    "types": ["vite/client"],
+    "allowJs": true,
+    "checkJs": false,
+    "strict": true,
+    "erasableSyntaxOnly": true,
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitOverride": true,
+    "skipLibCheck": true,
+    "noEmit": true
+  },
+  "include": ["src", "said.ts", "addresses.ts"]
+}

@@ -104,7 +104,9 @@ for (const file of ["create.js", "create-cli.js"])
 await cp(TEMPLATE, join(STAGE, "app"), {
   recursive: true,
   filter: (source) =>
-    ![".env", "node_modules", "pods"].includes(relative(TEMPLATE, source)),
+    ![".env", "dist", "node_modules", "pods"].includes(
+      relative(TEMPLATE, source),
+    ),
 });
 await packDemoHospital(join(STAGE, "app"));
 await cp(join(ROOT, "LICENSE"), join(STAGE, "LICENSE"));

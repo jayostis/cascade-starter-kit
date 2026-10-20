@@ -49,8 +49,13 @@ async function registered(): Promise<string[]> {
 
 test("no source writes a code system's IRI stem: the starter reads each from the vocabulary", async () => {
   const sources = [
-    ...(await readdir(join(ROOT, "app")))
-      .filter((name) => name.endsWith(".mjs"))
+    ...(await readdir(join(ROOT, "app"), { recursive: true }))
+      .map((name) => name.replaceAll("\\", "/"))
+      .filter(
+        (name) =>
+          /\.(mjs|ts|tsx)$/.test(name) &&
+          !/^(node_modules|dist|pods)\//.test(name),
+      )
       .map((name) => `app/${name}`),
     ...(await readdir(join(ROOT, "try")))
       .filter((name) => name.endsWith(".js"))
@@ -63,6 +68,8 @@ test("no source writes a code system's IRI stem: the starter reads each from the
       .map((name) => `create/src/${name}`),
   ];
   assert.ok(sources.includes("app/summary.mjs"));
+  assert.ok(sources.includes("app/said.ts"));
+  assert.ok(sources.includes("app/src/pod.tsx"));
   assert.ok(sources.includes("try/app.js"));
   assert.ok(sources.includes("try/build/try.ts"));
   assert.ok(sources.includes("create/src/create.ts"));
