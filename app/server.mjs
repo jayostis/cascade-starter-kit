@@ -15,6 +15,7 @@ import {
 } from "@the-cascade-protocol/sandbox/node";
 import { Refusal, Unopened } from "cascade-runtime";
 import { render } from "preact-render-to-string";
+import { addresses } from "./addresses.ts";
 import { chatRoute, chatTools, entryPath } from "./chat.mjs";
 import { modelFrom } from "./model-client.mjs";
 import { nodeHospitals, nodeHost } from "./node-host.mjs";
@@ -92,8 +93,7 @@ async function lockedOutcome(name) {
   return (await api.pod({ pod: name })).locked;
 }
 
-const tablePath = (series) =>
-  `/tables/${encodeURIComponent(tableId(series.iri))}/`;
+const tablePath = (series) => addresses().table(tableId(series.iri));
 
 /** What the last Check now did, which the page it goes to says. */
 let lastCheck;

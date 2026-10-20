@@ -4,9 +4,10 @@ import { readdir, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { env, exit, stderr } from "node:process";
 import { performance } from "node:perf_hooks";
-import { fileURLToPath, URL, URLSearchParams } from "node:url";
+import { fileURLToPath, URL } from "node:url";
 import { parseArgs } from "node:util";
 import { openPod, Refusal, Unopened } from "cascade-runtime";
+import { addresses } from "./addresses.ts";
 import { notOpenedHere } from "./pod-api.mjs";
 import {
   phaseOn,
@@ -46,20 +47,16 @@ export async function openWithoutWords(name, folder) {
   }
 }
 
+const ADDRESS = addresses();
+
 /** The address of a pod's page. */
-export const podPath = (name) => `/pods/${encodeURIComponent(name)}/`;
+export const podPath = ADDRESS.pod;
 
 /**
  * The address of a pod's trend: `test` is a LOINC code and `medication` an RxNorm code, or a name where the drug has no
  * code, both as bare as `find_changes` gives them; with no `medication`, none is marked.
  */
-export function trendPath(name, { test, medication }) {
-  const query = new URLSearchParams({
-    test,
-    ...(medication === undefined ? {} : { medication }),
-  });
-  return `${podPath(name)}trend?${query}`;
-}
+export const trendPath = ADDRESS.trend;
 
 /** The origin `server.mjs` listens on, for a script that is not the server: `PORT`, else 3000. */
 export function appOrigin() {
