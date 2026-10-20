@@ -6,14 +6,14 @@ import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
-import { get, request } from "node:http";
+import { request } from "node:http";
 import { createRequire } from "node:module";
 import { dirname, join, relative, resolve } from "node:path";
 import { argv, cwd, env, execPath, kill, platform, stdout } from "node:process";
-import { pathToFileURL, URL, URLSearchParams } from "node:url";
-import { setTimeout } from "node:timers/promises";
+import { pathToFileURL, URL } from "node:url";
 import { parseArgs } from "node:util";
 import * as oxigraph from "oxigraph";
+import { chromium } from "playwright";
 import { answerSignIn } from "@the-cascade-protocol/sandbox/testing";
 import {
   agentPrompt,
@@ -21,6 +21,7 @@ import {
   releaseAddress,
   startLine,
 } from "../dist/create/src/create.js";
+import { drawn, readable, tiles, watched } from "../dist/test-browser/shown.js";
 
 /** What the tables the app holds now name each code, set once the app is installed. */
 /** @type {(codes: readonly string[]) => Promise<Map<string, any>>} */
@@ -178,51 +179,6 @@ function multiset(rows) {
   return rows.map((row) => JSON.stringify(Object.entries(row).sort())).sort();
 }
 
-/** HTML as the text a person reads: tags dropped, entities read, spaces trimmed. */
-function textOf(html) {
-  return html
-    .replace(/<[^>]*>/g, "")
-    .replaceAll("&lt;", "<")
-    .replaceAll("&gt;", ">")
-    .replaceAll("&quot;", '"')
-    .replaceAll("&#39;", "'")
-    .replaceAll("&amp;", "&")
-    .trim();
-}
-
-/** Each form of the page, as the fields it posts, by name. */
-function forms(html) {
-  const attribute = (tag, name) => {
-    const found = new RegExp(`\\s${name}="([^"]*)"`).exec(tag);
-    return found === null ? undefined : textOf(found[1]);
-  };
-  return [...html.matchAll(/<form\b[^>]*>([\s\S]*?)<\/form>/g)].map(
-    ([, form]) =>
-      Object.fromEntries(
-        [...form.matchAll(/<input\b[^>]*>/g)]
-          .map(([tag]) => [attribute(tag, "name"), attribute(tag, "value")])
-          .filter(([name]) => name !== undefined),
-      ),
-  );
-}
-
-function fetched(url) {
-  return new Promise((done, failed) => {
-    get(url, (response) => {
-      let body = "";
-      response.setEncoding("utf8");
-      response.on("data", (chunk) => (body += chunk));
-      response.on("end", () =>
-        done({
-          status: response.statusCode,
-          location: response.headers.location,
-          body,
-        }),
-      );
-    }).on("error", failed);
-  });
-}
-
 /** `npm start` with `settings` added to its environment, which is expected to stop; gives its exit code and all it wrote. */
 async function stoppedAtStart(settings) {
   stdout.write("\n$ npm start (expected to stop)\n");
@@ -277,21 +233,94 @@ async function started(settings = {}) {
   };
 }
 
-async function served(server, path) {
-  const answer = await fetched(new URL(path, server.address));
-  assert.equal(answer.status, 200, `GET ${path} answered ${answer.status}`);
-  return answer.body;
+/**
+ * The pod API's `operation` at `server`, called as the app's own pages call it, from `from`, its own origin unless
+ * another is given: the status it answered and the JSON it gave.
+ */
+async function called(server, operation, input = {}, from = undefined) {
+  const origin = from ?? new URL(server.address).origin;
+  const answer = await fetch(new URL(`/api/${operation}`, server.address), {
+    method: "POST",
+    headers: { origin, "content-type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  return { status: answer.status, body: await answer.json().catch(() => ({})) };
 }
 
-/** What a person reads of a page: its text, without its style and script. */
-function readable(html) {
-  return textOf(html.replace(/<(style|script)\b[^>]*>[\s\S]*?<\/\1>/g, ""));
+/** What the pod API's `operation` at `server` gives for `input`, which it must not refuse. */
+async function api(server, operation, input = {}) {
+  const { status, body } = await called(server, operation, input);
+  assert.equal(
+    status,
+    200,
+    `${operation} ${JSON.stringify(input)} answered ${status}: ${JSON.stringify(body)}`,
+  );
+  return body;
+}
+
+/** The browser the app's pages are read in, launched for the first page. */
+/** @type {import("playwright").Browser | undefined} */
+let browser;
+
+/** A new tab of the browser, what goes wrong in it kept for a failure's message. */
+async function tab() {
+  browser ??= await chromium.launch();
+  return watched(await browser.newPage());
+}
+
+/** `page` gone to `path` of the app at `server`, once it is drawn. */
+async function opened(page, server, path) {
+  await page.goto(new URL(path, server.address).href);
+  await drawn(page);
+  return page;
+}
+
+/** The page's heading, as its text. */
+async function heading(page) {
+  return ((await page.locator("h1").first().textContent()) ?? "").trim();
 }
 
 /** Each item of the page's lists, as its text. */
-function items(html) {
-  return [...html.matchAll(/<li\b[^>]*>([\s\S]*?)<\/li>/g)].map(([, item]) =>
-    textOf(item),
+function items(page) {
+  return page.$$eval("li", (found) =>
+    found.map((item) => (item.textContent ?? "").trim()),
+  );
+}
+
+/** The `href` of each link of the page that `selector` finds, as written. */
+function hrefsOf(page, selector = "a[href]") {
+  return page.$$eval(selector, (found) =>
+    found.map((link) => link.getAttribute("href")),
+  );
+}
+
+/** The text of the first row of the page's tables that links to `href`, or "" when none does. */
+async function rowLinking(page, href) {
+  const row = page
+    .locator("tr", { has: page.locator(`a[href="${href}"]`) })
+    .first();
+  return (await row.count()) === 0 ? "" : ((await row.textContent()) ?? "");
+}
+
+/** The address of an entry of the pod: its page. */
+const entryAt = (pod, id) => `/pods/${pod}/entries/${encodeURIComponent(id)}`;
+
+/** Each line `worth_a_look` gives for the pod, as the address of its entry's page, its sentence and its tag. */
+async function worthOf(server, pod) {
+  const { value } = await api(server, "tool", { pod, tool: "worth_a_look" });
+  return value.map(({ entry, sentence, tag }) => ({
+    href: entryAt(pod, entry),
+    sentence,
+    tag: tag ?? "",
+  }));
+}
+
+/** Whether the pod's page, open in `page`, shows Worth a look as `lines`: each line linking to its entry, in order. */
+async function showsWorth(page, lines) {
+  assert.deepEqual(
+    await hrefsOf(page, ".worth li a[href]"),
+    lines.map(({ href }) => href),
+    "the page's Worth a look is not worth_a_look's lines",
   );
 }
 
@@ -300,52 +329,6 @@ const undatedLast = (a, b) =>
   a.date === undefined || b.date === undefined
     ? Number(a.date === undefined) - Number(b.date === undefined)
     : a.date.localeCompare(b.date);
-
-/** Each line of the page's Worth a look, as the address it links to, its sentence and its tag. */
-function worthOf(html) {
-  const part = /<div class="card worth">([\s\S]*?)<\/ul>/.exec(html)?.[1] ?? "";
-  return [...part.matchAll(/<li\b[^>]*>([\s\S]*?)<\/li>/g)].map(([, item]) => ({
-    href: textOf(/<a href="([^"]*)"/.exec(item)?.[1] ?? ""),
-    sentence: textOf(/<a\b[^>]*>([\s\S]*?)<\/a>/.exec(item)?.[1] ?? item),
-    tag: textOf(
-      /<span class="tag[^"]*">([\s\S]*?)<\/span>/.exec(item)?.[1] ?? "",
-    ),
-  }));
-}
-
-/** The page's heading, as its text. */
-function heading(html) {
-  return textOf(/<h1\b[^>]*>([\s\S]*?)<\/h1>/.exec(html)?.[1] ?? "");
-}
-
-/** The count on each tile of the page, by the tile's title. */
-function tilesOf(html) {
-  return Object.fromEntries(
-    [
-      ...html.matchAll(
-        /<span class="kind">([^<]*)<\/span><span class="count">(\d+)<\/span>/g,
-      ),
-    ].map(([, kind, count]) => [kind, Number(count)]),
-  );
-}
-
-/** The connection's box over the pod's page, as HTML: from its start to the end of the element it starts. */
-function connectionBox(html) {
-  const start = html.indexOf('<div class="dialog" id="connection"');
-  assert.ok(start !== -1, "the pod's page holds no connection box");
-  let depth = 0;
-  for (const tag of html.slice(start).matchAll(/<(\/?)div\b[^>]*>/g)) {
-    depth += tag[1] === "" ? 1 : -1;
-    if (depth === 0)
-      return html.slice(start, start + tag.index + tag[0].length);
-  }
-  assert.fail("the connection box is never closed");
-}
-
-/** The hospital the pod's page says a record was just brought in from, as the page names it, or undefined. */
-function noteOf(html) {
-  return /Brought in the record from (.+?)\./.exec(readable(html))?.[1];
-}
 
 /** Whether `text` names the hospital: by its whole name, or by its first words, two at least. */
 function names(text, hospital) {
@@ -359,18 +342,18 @@ function names(text, hospital) {
  * The pod's page reads as a record: the person's name as a heading, a tile per kind with rows counting that question's
  * rows, each allergen, and no IRI or address in what a person reads. Resolves the page and the rows by question.
  */
-async function pageShows(server, pod, person) {
-  const html = await served(server, `/pods/${pod}/`);
-  assert.equal(heading(html), person, `the heading of ${pod}`);
-  const text = readable(html);
+async function pageShows(page, server, pod, person) {
+  await opened(page, server, `/pods/${pod}/`);
+  assert.equal(await heading(page), person, `the heading of ${pod}`);
+  const text = await readable(page);
   for (const scheme of ["urn:", "ni:", "http://", "https://"])
     assert.ok(!text.includes(scheme), `the page of ${pod} shows ${scheme}`);
-  const tiles = tilesOf(html);
+  const shown = await tiles(page);
   const rows = {};
   for (const [kind, question] of Object.entries(TILES)) {
     rows[question] = await asked(question, pod);
     assert.equal(
-      tiles[kind],
+      shown.get(kind),
       rows[question].length === 0 ? undefined : rows[question].length,
       `the ${kind} tile of ${pod}`,
     );
@@ -382,30 +365,40 @@ async function pageShows(server, pod, person) {
     const shown = named.get(code)?.name?.label ?? allergen;
     assert.ok(text.includes(shown), `no ${shown} on ${pod}`);
   }
-  return { html, rows };
+  return { rows };
 }
 
-/** The page at `path`, once it no longer refreshes itself, or the page it redirects to once it does. */
-async function settled(server, path) {
-  const until = Date.now() + 2 * MINUTES;
-  for (;;) {
-    const answer = await fetched(new URL(path, server.address));
-    if (answer.status === 303) return served(server, answer.location);
-    assert.equal(answer.status, 200, `GET ${path} answered ${answer.status}`);
-    if (!answer.body.includes('http-equiv="refresh"')) return answer.body;
-    assert.ok(Date.now() < until, `${path} still refreshes`);
-    await setTimeout(200);
+/**
+ * The page at `address` in `page`, once drawn: the status it answered, the address it ended at, each `<a href>` of it
+ * as written and each `id` an element of it has (forms are not links), what it reads, and what its error says.
+ */
+async function rendered(page, address) {
+  try {
+    const answer = await page.goto(address);
+    await drawn(page);
+    const { hrefs, ids, said, found } = await page.evaluate(() => {
+      const { document } = globalThis;
+      return {
+        hrefs: [...document.querySelectorAll("a[href]")].map((link) =>
+          link.getAttribute("href"),
+        ),
+        ids: [...document.querySelectorAll("[id]")].map(({ id }) => id),
+        said: document.querySelector("main pre")?.textContent ?? undefined,
+        found:
+          document.querySelector("h1")?.textContent?.trim() !== "Not found",
+      };
+    });
+    return {
+      status: found ? answer?.status() : "a page saying Not found",
+      final: new URL(page.url()),
+      hrefs,
+      ids: new Set(ids),
+      text: await readable(page),
+      said,
+    };
+  } catch (error) {
+    return { status: String(error), hrefs: [], ids: new Set(), text: "" };
   }
-}
-
-/** Each `<a href>` of the page as written, and each `id` an element of it has. Forms are not links. */
-function linksOf(html) {
-  return {
-    hrefs: [...html.matchAll(/<a\b[^>]*?\shref="([^"]*)"/g)].map(([, href]) =>
-      textOf(href),
-    ),
-    ids: new Set([...html.matchAll(/\sid="([^"]*)"/g)].map(([, id]) => id)),
-  };
 }
 
 /** `work` on each of `items`, at most `limit` at once, in the order of `items`. */
@@ -426,9 +419,10 @@ async function eachAtOnce(items, limit, work) {
 const MOST_PAGES = 2000;
 
 /**
- * Every same-origin link reached from the pages at `roots`, fetched once by its address without the fragment, four at
- * a time. A page under a root's path has its own links followed; any other page is fetched and not read. A link is dead
- * when it does not answer 200 after its redirects, or names a fragment no element of its page has as an id.
+ * Every same-origin link reached from the pages at `roots`, each page drawn once in the browser by its address without
+ * the fragment, four at a time. A page under a root's path has its own links followed; any other page is drawn and its
+ * links not followed. A link is dead when it does not answer 200 after its redirects, or its page says Not found, or it
+ * names a fragment no element of its page has as an id.
  */
 async function crawled(server, roots) {
   const origin = new URL(server.address).origin;
@@ -437,57 +431,55 @@ async function crawled(server, roots) {
   const links = [];
   let lastToAdd = roots[0];
   let frontier = roots.map((root) => new URL(root, origin).href);
-  while (frontier.length > 0) {
-    const fetchedNow = frontier;
-    await eachAtOnce(fetchedNow, 4, async (address) => {
-      try {
-        const answer = await fetch(address);
-        const html = await answer.text();
-        pages.set(address, {
-          status: answer.status,
-          final: new URL(answer.url),
-          html,
-          ids: linksOf(html).ids,
-        });
-      } catch (error) {
-        pages.set(address, { status: String(error), html: "", ids: new Set() });
-      }
-    });
-    frontier = [];
-    for (const address of fetchedNow) {
-      const page = pages.get(address);
-      const answered = page.final?.pathname;
-      if (
-        answered === undefined ||
-        !under.some((root) => answered.startsWith(root))
-      )
-        continue;
-      for (const href of linksOf(page.html).hrefs) {
-        if (href === "#") continue;
-        const to = new URL(href, page.final);
-        if (to.origin !== origin) continue;
-        const fragment = decodeURIComponent(to.hash.slice(1));
-        to.hash = "";
-        links.push({ on: address, href, target: to.href, fragment });
-        if (!pages.has(to.href) && !frontier.includes(to.href)) {
-          frontier.push(to.href);
-          lastToAdd = address;
+  const idle = await Promise.all(Array.from({ length: 4 }, () => tab()));
+  const all = [...idle];
+  try {
+    while (frontier.length > 0) {
+      const fetchedNow = frontier;
+      await eachAtOnce(fetchedNow, idle.length, async (address) => {
+        const page = idle.pop();
+        try {
+          pages.set(address, await rendered(page, address));
+        } finally {
+          idle.push(page);
+        }
+      });
+      frontier = [];
+      for (const address of fetchedNow) {
+        const page = pages.get(address);
+        const answered = page.final?.pathname;
+        if (
+          answered === undefined ||
+          !under.some((root) => answered.startsWith(root))
+        )
+          continue;
+        for (const href of page.hrefs) {
+          if (href === "#") continue;
+          const to = new URL(href, page.final);
+          if (to.origin !== origin) continue;
+          const fragment = decodeURIComponent(to.hash.slice(1));
+          to.hash = "";
+          links.push({ on: address, href, target: to.href, fragment });
+          if (!pages.has(to.href) && !frontier.includes(to.href)) {
+            frontier.push(to.href);
+            lastToAdd = address;
+          }
         }
       }
+      if (pages.size + frontier.length > MOST_PAGES)
+        throw new Error(
+          `The crawl passed ${MOST_PAGES} pages and is not ending; the last page to add a new address was ${lastToAdd}`,
+        );
     }
-    if (pages.size + frontier.length > MOST_PAGES)
-      throw new Error(
-        `The crawl passed ${MOST_PAGES} pages and is not ending; the last page to add a new address was ${lastToAdd}`,
-      );
+  } finally {
+    await Promise.all(all.map((page) => page.close()));
   }
   const dead = links.flatMap(({ on, href, target, fragment }) => {
     const reached = pages.get(target);
-    if (reached.status !== 200) {
-      const said = /<pre>([^<]*)<\/pre>/.exec(reached.html)?.[1];
+    if (reached.status !== 200)
       return [
-        `${on} links ${href}, which answered ${reached.status}${said === undefined ? "" : `: ${said}`}`,
+        `${on} links ${href}, which answered ${reached.status}${reached.said === undefined ? "" : `: ${reached.said}`}`,
       ];
-    }
     return fragment === "" || reached.ids.has(fragment)
       ? []
       : [`${on} links ${href}, whose page has no element #${fragment}`];
@@ -495,13 +487,16 @@ async function crawled(server, roots) {
   return { pages, dead, links: links.length };
 }
 
-/** Each box a pod's page holds for a tile, by its id, as the HTML from its start to the next box's. */
-function tileBoxes(html) {
-  const starts = [...html.matchAll(/<div class="dialog" id="(see-[^"]*)"/g)];
-  return starts.map(([, id], at) => ({
-    id,
-    html: html.slice(starts[at].index, starts[at + 1]?.index),
-  }));
+/** Each box the pod's page open in `page` holds for a tile, by its id, and whether it opens an entry. */
+function tileBoxes(page) {
+  return page.$$eval('.dialog[id^="see-"]', (boxes) =>
+    boxes.map((box) => ({
+      id: box.id,
+      opensEntry: [...box.querySelectorAll("a[href]")].some((link) =>
+        (link.getAttribute("href") ?? "").includes("/entries/"),
+      ),
+    })),
+  );
 }
 
 /** The steps `pod:load` printed, by name, in order. */
@@ -551,7 +546,12 @@ const rowan = [north, south].map((data) => ({
   patient: named(data, ${JSON.stringify(ROWAN)}),
 }));
 const ines = { fhirBase: north.hospital.fhirBase, patient: named(north, ${JSON.stringify(INES)}) };
-console.log(JSON.stringify({ row, patient, patients: Object.keys(north.patients), look, allergens, rowan, ines }));
+const familyFirst = (data, id) => {
+  const { name } = recordsAt(data.patients[id]).find(({ resourceType }) => resourceType === "Patient");
+  return [name[0].family, name[0].given.join(" ")].filter(Boolean).join(", ");
+};
+const choices = { rowan: familyFirst(north, rowan[0].patient), ines: familyFirst(north, ines.patient) };
+console.log(JSON.stringify({ row, patient, patients: Object.keys(north.patients), look, allergens, rowan, ines, choices }));
 `;
   // A file, not `--eval`: the import's Bridge runs in a worker, which inherits node's flags, and `--input-type` there
   // refuses its file.
@@ -723,17 +723,17 @@ const server = await (async () => {
   let server;
   await behaviour("a loaded pod is shown", async () => {
     server = await started();
-    const home = await fetched(new URL("/", server.address));
-    assert.equal(home.status, 302);
-    assert.equal(home.location, "/pods/alex-rivera/");
-    const shown = await pageShows(server, "alex-rivera", "Alex Rivera");
+    const page = await tab();
+    await page.goto(new URL("/", server.address).href);
+    await page.waitForURL((url) => url.pathname === "/pods/alex-rivera/");
+    const shown = await pageShows(page, server, "alex-rivera", "Alex Rivera");
     alex = shown.rows;
     assert.deepEqual(
       alex[ALLERGIES].map(({ allergen }) => allergen).sort(),
       story.activeAllergens,
     );
     const sources = await asked(SOURCES, "alex-rivera");
-    const said = items(shown.html);
+    const said = await items(page);
     for (const hospital of new Set(
       sources.flatMap((row) => row.hospital ?? []),
     ))
@@ -761,28 +761,48 @@ const server = await (async () => {
       "no entry where the hospitals disagree on Sulfamethoxazole's criticality",
     );
 
-    const entryAt = (id) =>
-      `/pods/alex-rivera/entries/${encodeURIComponent(id)}`;
-    const opens = [
-      ...shown.html.matchAll(
-        /<td data-key="[^"]*"><a href="(\/pods\/alex-rivera\/entries\/[^"]+)"/g,
-      ),
-    ].map(([, href]) => href);
+    const alexAt = (id) => entryAt("alex-rivera", id);
+    const opens = await hrefsOf(
+      page,
+      'td[data-key] > a[href^="/pods/alex-rivera/entries/"]',
+    );
     assert.deepEqual(
       [...new Set(opens)].sort(),
       [
         ...new Set(
           Object.values(TILES).flatMap((question) =>
-            alex[question].map(({ entry }) => entryAt(idOf(entry))),
+            alex[question].map(({ entry }) => alexAt(idOf(entry))),
           ),
         ),
       ].sort(),
       "a tile row does not open its entry",
     );
+    const sulfa = "Allergy entry · Sulfamethoxazole";
+    const sulfaHref = alexAt(
+      idOf(sources.find((row) => row.entryLabel === sulfa).entry),
+    );
+    const worth = await worthOf(server, "alex-rivera");
+    assert.ok(
+      worth.some(
+        ({ href, sentence, tag }) =>
+          href === sulfaHref &&
+          /^Sources disagree on how severe the .* allergy is\.$/.test(
+            sentence,
+          ) &&
+          tag === "Needs review",
+      ),
+      "Worth a look has no line for Sulfamethoxazole linking to its entry, tagged Needs review",
+    );
+    await showsWorth(page, worth);
+    assert.ok(
+      (await rowLinking(page, sulfaHref)).includes("Needs review"),
+      "Sulfamethoxazole's row does not carry Needs review",
+    );
     const entryOf = async (label) =>
-      served(
+      opened(
+        page,
         server,
-        entryAt(idOf(sources.find((row) => row.entryLabel === label).entry)),
+        alexAt(idOf(sources.find((row) => row.entryLabel === label).entry)),
       );
 
     const penicillinPage = await entryOf("Allergy entry · Penicillin");
@@ -798,18 +818,19 @@ const server = await (async () => {
           penicillinRow.code === undefined ? [] : [penicillinRow.code],
         )
       ).get(penicillinRow.code)?.name?.label ?? penicillinRow.allergen;
+    const penicillinHeading = await heading(penicillinPage);
     assert.ok(
-      heading(penicillinPage).startsWith(penicillinName),
-      `penicillin's entry is headed ${heading(penicillinPage)}`,
+      penicillinHeading.startsWith(penicillinName),
+      `penicillin's entry is headed ${penicillinHeading}`,
     );
-    const penicillinText = readable(penicillinPage);
+    const penicillinText = await readable(penicillinPage);
     for (const hospital of [...penicillin].filter(Boolean))
       assert.ok(
         penicillinText.includes(hospital),
         `penicillin's entry omits ${hospital}`,
       );
     assert.ok(
-      items(penicillinPage).some(
+      (await items(penicillinPage)).some(
         (sentence) =>
           sentence.startsWith("Cascade recorded it at") &&
           [...penicillin]
@@ -823,10 +844,9 @@ const server = await (async () => {
         !penicillinText.includes(scheme),
         `penicillin's entry shows ${scheme}`,
       );
-    const sulfa = "Allergy entry · Sulfamethoxazole";
     const sulfaPage = await entryOf(sulfa);
     assert.ok(
-      items(sulfaPage).some((sentence) =>
+      (await items(sulfaPage)).some((sentence) =>
         /^Sources disagree on how severe the .* allergy is\. Needs review$/.test(
           sentence,
         ),
@@ -834,42 +854,21 @@ const server = await (async () => {
       "Sulfamethoxazole's entry does not say the sources disagree",
     );
     assert.ok(
-      heading(sulfaPage).endsWith("Needs review"),
+      (await heading(sulfaPage)).endsWith("Needs review"),
       "Sulfamethoxazole's entry is not tagged Needs review",
     );
-    const sulfaHref = entryAt(
-      idOf(sources.find((row) => row.entryLabel === sulfa).entry),
-    );
-    assert.ok(
-      worthOf(shown.html).some(
-        ({ href, sentence, tag }) =>
-          href === sulfaHref &&
-          /^Sources disagree on how severe the .* allergy is\.$/.test(
-            sentence,
-          ) &&
-          tag === "Needs review",
-      ),
-      "Worth a look has no line for Sulfamethoxazole linking to its entry, tagged Needs review",
-    );
-    assert.ok(
-      textOf(
-        shown.html
-          .split("<tr")
-          .slice(1)
-          .find((part) => part.includes(`href="${sulfaHref}"`)) ?? "",
-      ).includes("Needs review"),
-      "Sulfamethoxazole's row does not carry Needs review",
-    );
 
-    const missing = await fetched(new URL(entryAt("0"), server.address));
-    assert.equal(missing.status, 404);
+    const missing = await opened(page, server, alexAt("0"));
     assert.ok(
-      missing.body.includes(
-        '<a href="/pods/alex-rivera/">Back to Alex Rivera</a>',
-      ),
+      (await missing
+        .locator('main a[href="/pods/alex-rivera/"]', {
+          hasText: /^Back to Alex Rivera$/,
+        })
+        .count()) > 0,
       "an entry that is not in the pod does not link back",
     );
-    assert.ok(readable(missing.body).includes("no longer in this pod"));
+    assert.ok((await readable(missing)).includes("no longer in this pod"));
+    await page.close();
   });
   return server;
 })();
@@ -885,20 +884,19 @@ try {
         `followed ${links} links over ${pages.size} pages in ${Date.now() - began} ms\n`,
       );
       assert.equal(dead.length, 0, `dead links:\n${dead.join("\n")}`);
+      const page = await tab();
       for (const root of roots) {
-        const page = pages.get(new URL(root, server.address).href);
-        const boxes = tileBoxes(page.html);
+        await opened(page, server, root);
+        const boxes = await tileBoxes(page);
         assert.equal(
           boxes.length,
-          Object.keys(tilesOf(page.html)).length,
+          (await tiles(page)).size,
           `${root} holds a box for each tile`,
         );
-        for (const { id, html } of boxes)
-          assert.ok(
-            linksOf(html).hrefs.some((href) => href.includes("/entries/")),
-            `${root} opens no entry from its ${id} box`,
-          );
+        for (const { id, opensEntry } of boxes)
+          assert.ok(opensEntry, `${root} opens no entry from its ${id} box`);
       }
+      await page.close();
       const addresses = [...pages.keys()].map((address) => new URL(address));
       const codePage = addresses.find(
         ({ pathname, searchParams }) =>
@@ -906,9 +904,9 @@ try {
       );
       assert.ok(codePage !== undefined, "the crawl reached no code's page");
       assert.ok(
-        readable(pages.get(codePage.href).html).includes(
-          codePage.searchParams.get("code"),
-        ),
+        pages
+          .get(codePage.href)
+          .text.includes(codePage.searchParams.get("code")),
         `${codePage.pathname + codePage.search} does not show its code`,
       );
       assert.ok(
@@ -923,11 +921,16 @@ try {
   await behaviour(
     "Tamsin's page says what changed after her metformin stopped, and where that comes from: the pulls in order and the medication's two versions",
     async () => {
-      const found = await fetched(
-        new URL("/pods/tamsin-vale/", server.address),
+      const { changes } = await api(server, "answers", { pod: "tamsin-vale" });
+      assert.ok(
+        changes.some(
+          ({ kind, direction }) => kind === "after stop" && direction === "up",
+        ),
+        "the pod's answers find no result higher after a medication stopped",
       );
-      assert.equal(found.status, 200);
-      const page = readable(found.body);
+      const tamsin = await opened(await tab(), server, "/pods/tamsin-vale/");
+      const page = await readable(tamsin);
+      await tamsin.close();
       assert.match(page, /was higher after .+ stopped\./);
       assert.doesNotMatch(page, /urn:/);
       const from = page.indexOf("Where this comes from");
@@ -969,55 +972,96 @@ try {
         rows.some(({ started }) => Date.parse(started) === at);
       assert.equal(startedAtE15(await asked(IMPORTS, pod)), false);
       assert.equal(startedAtE15(await asked(IMPORTS, "alex-rivera")), true);
-      const { html, rows } = await pageShows(
+      const page = await tab();
+      const { rows } = await pageShows(
+        page,
         server,
         pod,
         `Alex Rivera ${story.through}`,
       );
       assert.deepEqual(multiset(rows[ALLERGIES]), multiset(alex[ALLERGIES]));
+      const links = await hrefsOf(page);
+      await page.close();
       for (const name of ["alex-rivera", pod])
-        assert.ok(html.includes(`/pods/${name}/`), `the pods omit ${name}`);
+        assert.ok(links.includes(`/pods/${name}/`), `the pods omit ${name}`);
     });
   await behaviour(
     "the reference tables are listed under the pods, and Check now says what it did",
     async () => {
-      const html = await served(server, "/pods/alex-rivera/");
-      const aside = html.slice(
-        html.indexOf("<aside>"),
-        html.indexOf("</aside>"),
-      );
+      const { checked, held } = await api(server, "checkTables");
       assert.ok(
-        readable(aside).indexOf("Reference tables") >
-          readable(aside).indexOf("Alex Rivera"),
+        Array.isArray(checked) && checked.length > 0,
+        "Check now checked no feed",
+      );
+      assert.ok(held.length > 0, "Check now holds no table");
+      const page = await opened(await tab(), server, "/pods/alex-rivera/");
+      const aside = (await page.locator("aside").textContent()) ?? "";
+      assert.ok(
+        aside.indexOf("Reference tables") > aside.indexOf("Alex Rivera"),
         "no reference tables under the pods",
       );
-      assert.match(aside, /<form [^>]*action="\/tables\/check"/);
-      const origin = new URL(server.address).origin;
-      const checked = await fetch(new URL("/tables/check", origin), {
-        method: "POST",
-        redirect: "manual",
-        headers: { origin },
-      });
-      assert.equal(checked.status, 303);
-      const page = await served(server, checked.headers.get("location"));
-      assert.match(page, /<p class="note" role="status">[^<]+<\/p>/);
+      await page
+        .locator("aside")
+        .getByRole("button", { name: "Check now" })
+        .click();
+      const note = page.locator('main p.note[role="status"]');
+      await note.waitFor({ timeout: 2 * MINUTES });
+      assert.notEqual(
+        ((await note.textContent()) ?? "").trim(),
+        "",
+        "Check now says nothing",
+      );
+      await page.close();
     },
   );
   await behaviour(
     "Priya's potassium result is named by LOINC, and the class page puts her amlodipine in its ingredient's class and says FDA classes a different form of her lisinopril, so it has none",
     async () => {
-      const pod = readable(await served(server, "/pods/priya-natarajan/"));
+      const POTASSIUM = "Potassium [Moles/volume] in Serum or Plasma";
+      const { about } = await api(server, "said", { pod: "priya-natarajan" });
       assert.ok(
-        pod.includes("Potassium [Moles/volume] in Serum or Plasma"),
+        about.some(([, said]) => said.name?.label === POTASSIUM),
+        "the tables do not name her potassium result by LOINC",
+      );
+      const known = await api(server, "classes", { pod: "priya-natarajan" });
+      const labelOf = new Map(
+        known.classes.map(([code, said]) => [code, said.name?.label]),
+      );
+      assert.ok(
+        known.rows.some(
+          (row) =>
+            row.medication === "amlodipine 5 MG Oral Tablet" &&
+            labelOf.get(row.class) === "Calcium Channel Blocker [EPC]" &&
+            labelOf.get(row.through) === "amlodipine",
+        ),
+        "amlodipine is not in its ingredient's class",
+      );
+      const lisinopril = known.medications.find(({ medication }) =>
+        medication.startsWith("lisinopril"),
+      );
+      assert.deepEqual(
+        new Map(known.elsewhere).get(lisinopril.code),
+        ["lisinopril"],
+        "lisinopril is not said to be classed in a different form",
+      );
+      assert.ok(
+        !known.rows.some(({ entry }) => entry === lisinopril.entry),
+        "lisinopril has a class",
+      );
+      const page = await opened(await tab(), server, "/pods/priya-natarajan/");
+      const pod = await readable(page);
+      assert.ok(
+        pod.includes(POTASSIUM),
         "her potassium result is not named by LOINC",
       );
       assert.ok(
         pod.includes("By class"),
         "her Medications tile does not offer the class view",
       );
-      const classes = readable(
-        await served(server, "/pods/priya-natarajan/classes"),
+      const classes = await readable(
+        await opened(page, server, "/pods/priya-natarajan/classes"),
       );
+      await page.close();
       for (const said of [
         "Calcium Channel Blocker [EPC]",
         "amlodipine 5 MG Oral Tablet through amlodipine",
@@ -1033,21 +1077,54 @@ try {
   await behaviour(
     "from her potassium result a person opens the electrolytes panel and sees her potassium with its place and requirement, and the required tests she has no result for",
     async () => {
-      const raw = await served(server, "/pods/priya-natarajan/");
-      const entry = /href="([^"]*\/entries\/[^"]+)"[^>]*>[^<]*Potassium/.exec(
-        raw,
-      )?.[1];
+      const ELECTROLYTES = "24326-1";
+      const page = await opened(await tab(), server, "/pods/priya-natarajan/");
+      const entry = await page
+        .locator('a[href*="/entries/"]', { hasText: "Potassium" })
+        .first()
+        .getAttribute("href");
       assert.ok(entry, "her page links no potassium result");
-      const result = await served(server, entry);
+      const id = decodeURIComponent(entry.split("/").at(-1));
+      const { panels } = await api(server, "said", {
+        pod: "priya-natarajan",
+        entry: id,
+      });
+      const electrolytes = panels
+        .flatMap(({ panels: listed }) => listed)
+        .find(({ notation }) => notation === ELECTROLYTES);
       assert.ok(
-        readable(result).includes("In LOINC panels"),
+        electrolytes,
+        "her potassium result is in no electrolytes panel",
+      );
+      const { rows } = await api(server, "panel", {
+        pod: "priya-natarajan",
+        panel: electrolytes.code,
+      });
+      assert.ok(
+        rows.some(
+          (row) =>
+            row.entry !== undefined &&
+            decodeURIComponent(idOf(row.entry)) === id &&
+            row.required === "R",
+        ),
+        "the panel does not hold her potassium, required",
+      );
+      assert.ok(
+        rows.some((row) => row.entry === undefined && row.required === "R"),
+        "the panel misses no required test",
+      );
+      const result = await opened(page, server, entry);
+      assert.ok(
+        (await readable(result)).includes("In LOINC panels"),
         "her potassium result names no panel",
       );
-      const panel = /href="([^"]*\/panel\?panel=[^"]*24326-1)"/.exec(
-        result,
-      )?.[1];
+      const panel = await result
+        .locator(`a[href*="/panel?panel="][href$="${ELECTROLYTES}"]`)
+        .first()
+        .getAttribute("href");
       assert.ok(panel, "her potassium result links no electrolytes panel");
-      const said = readable(await served(server, panel));
+      const said = await readable(await opened(page, server, panel));
+      await page.close();
       for (const expected of [
         "Your results in",
         "Potassium",
@@ -1314,17 +1391,43 @@ if (release === undefined) {
       };
 
       const shown = await started();
-      let html;
       const entries = new Map();
+      const rowOfVariant = new Map();
+      let martin;
+      let worth;
       try {
-        html = await settled(shown, "/pods/martin-okafor/");
-        for (const variant of new Set(rows.map((row) => row.variant)))
-          entries.set(variant, await served(shown, entryPath(variant)));
+        const page = await opened(await tab(), shown, "/pods/martin-okafor/");
+        martin = {
+          heading: await heading(page),
+          tiles: Object.fromEntries(await tiles(page)),
+          cards: await page.locator(".variant, .card.variants").count(),
+          opens: new Set(
+            await hrefsOf(
+              page,
+              'td[data-key] > a[href^="/pods/martin-okafor/entries/"]',
+            ),
+          ),
+        };
+        worth = await worthOf(shown, "martin-okafor");
+        await showsWorth(page, worth);
+        const variants = new Set(rows.map((row) => row.variant));
+        for (const variant of variants)
+          rowOfVariant.set(variant, await rowLinking(page, entryPath(variant)));
+        for (const variant of variants) {
+          await opened(page, shown, entryPath(variant));
+          entries.set(variant, {
+            heading: await heading(page),
+            text: await readable(page),
+            lines: await items(page),
+            links: await hrefsOf(page),
+          });
+        }
+        await page.close();
       } finally {
         await shown.stop();
       }
-      assert.equal(heading(html), "Martin Okafor");
-      const tiles = tilesOf(html);
+      assert.equal(martin.heading, "Martin Okafor");
+      const counted = martin.tiles;
       let kitTiles = 0;
       for (const [kind, question] of Object.entries(TILES)) {
         const view = `${MARTIN}/expected/${kind.toLowerCase().replaceAll(" ", "-")}.ttl`;
@@ -1333,34 +1436,28 @@ if (release === undefined) {
         if (kitRows === 0) continue;
         kitTiles++;
         assert.notEqual(
-          tiles[kind],
+          counted[kind],
           undefined,
           `Martin's page has no ${kind} tile, though his kit's ${view} holds ${kitRows} rows`,
         );
         assert.equal(
-          tiles[kind],
+          counted[kind],
           (await asked(question, "martin-okafor")).length,
           `the ${kind} tile of Martin's page`,
         );
       }
       assert.ok(kitTiles > 0, "Martin's kit holds rows for no kind of tile");
       assert.equal(
-        tiles["Genetic variants"],
+        counted["Genetic variants"],
         kitVariants.length,
         "the Genetic variants tile of Martin's page",
       );
-      assert.ok(
-        !html.includes('class="variant"') &&
-          !html.includes('class="card variants"'),
+      assert.equal(
+        martin.cards,
+        0,
         "Martin's page still has a card of variants",
       );
-      const opens = new Set(
-        [
-          ...html.matchAll(
-            /<td data-key="[^"]*"><a href="(\/pods\/martin-okafor\/entries\/[^"]+)"/g,
-          ),
-        ].map(([, href]) => href),
-      );
+      const opens = martin.opens;
       for (const variant of entries.keys())
         assert.ok(
           opens.has(entryPath(variant)),
@@ -1387,10 +1484,9 @@ if (release === undefined) {
         const [id] = kitVariant.variations;
         const [gene] = kitVariant.genes;
         const page = entries.get(variant);
-        const text = readable(page);
+        const { text, lines } = page;
         for (const scheme of ["urn:", "ni:", "http://", "https://"])
           assert.ok(!text.includes(scheme), `${title}'s entry shows ${scheme}`);
-        const lines = items(page);
         const reports = lines.filter((line) =>
           /^(Your .+|An undated) report\b/.test(line),
         );
@@ -1412,17 +1508,14 @@ if (release === undefined) {
             `${title}: ${reports[at]}`,
           );
         });
-        const row = html
-          .split("<tr")
-          .slice(1)
-          .find((part) => part.includes(`href="${entryPath(variant)}"`));
+        const row = rowOfVariant.get(variant);
         assert.equal(
-          textOf(row).includes(DIFFERS),
+          row.includes(DIFFERS),
           sentences.some(({ differs }) => differs),
           `${title}: the tile's row`,
         );
         assert.deepEqual(
-          worthOf(html)
+          worth
             .filter(
               ({ href, tag }) => href === entryPath(variant) && tag === DIFFERS,
             )
@@ -1442,19 +1535,19 @@ if (release === undefined) {
           `${title}: Worth a look on Martin's page`,
         );
         assert.equal(
-          heading(page).includes(DIFFERS),
+          page.heading.includes(DIFFERS),
           sentences.some(({ differs }) => differs),
           `${title}: the entry's heading`,
         );
         if (gene === "MLH1" && id !== undefined) {
           const named = "NM_000249.4(MLH1):c.2042C>T (p.Ala681Val)";
           assert.ok(
-            textOf(row).includes(named),
-            `the MLH1 row is not named by ClinVar: ${textOf(row)}`,
+            row.includes(named),
+            `the MLH1 row is not named by ClinVar: ${row}`,
           );
           assert.ok(
-            heading(page).includes(named),
-            `the MLH1 entry is not named by ClinVar: ${heading(page)}`,
+            page.heading.includes(named),
+            `the MLH1 entry is not named by ClinVar: ${page.heading}`,
           );
           const origin = (
             await heldNames([`http://www.ncbi.nlm.nih.gov/clinvar/${id}`])
@@ -1475,11 +1568,11 @@ if (release === undefined) {
             `the entry does not credit the names series and version: ${credit}`,
           );
           assert.ok(
-            heading(page).includes(DIFFERS),
+            page.heading.includes(DIFFERS),
             "the MLH1 variant does not differ",
           );
           assert.ok(
-            worthOf(html).some(
+            worth.some(
               ({ href, tag }) => href === entryPath(variant) && tag === DIFFERS,
             ),
             "Worth a look has no line that the MLH1 variant's report differs",
@@ -1489,7 +1582,10 @@ if (release === undefined) {
         assert.ok(clinvar, `${title}: no sentence of what ClinVar says`);
         if (id !== undefined) {
           assert.ok(clinvar.startsWith(saidOf(id)), `${title}: ${clinvar}`);
-          assert.ok(page.includes(`code=${id}`), `${title}: the ID is no link`);
+          assert.ok(
+            page.links.some((href) => href.includes(`code=${id}`)),
+            `${title}: the ID is no link`,
+          );
         } else if (covered.includes(gene))
           assert.ok(
             clinvar.startsWith(
@@ -1528,25 +1624,18 @@ if (release === undefined) {
     const server = await started();
     const origin = new URL(server.address).origin;
     const at = (path) => new URL(path, origin).href;
-    const send = (path, form, from = origin) =>
-      fetch(at(path), {
-        method: "POST",
-        redirect: "manual",
-        headers: {
-          origin: from,
-          "content-type": "application/x-www-form-urlencoded",
-        },
-        body: new URLSearchParams(form),
-      });
 
     /**
-     * Sign the pod's person in at `fhirBase`, answering its page with `decision` as `patient`; gives the pod's page with
-     * the connection's box open.
+     * Signs the pod's person in at `fhirBase` through the pod API, answering the hospital's own page with `decision` as
+     * `patient`, and hands its answer to the app's `/callback`; gives the connection's number.
      */
     const signIn = async (pod, fhirBase, patient, decision, simulate) => {
-      const begun = await send(`/pods/${pod}/hospitals`, { fhirBase });
-      assert.equal(begun.status, 303);
-      const authorize = new URL(begun.headers.get("location"));
+      const { connection, authorize: to } = await api(server, "connect", {
+        pod,
+        fhirBase,
+      });
+      assert.ok(to, "the sign-in goes to no hospital's page");
+      const authorize = new URL(to);
       assert.equal(authorize.origin, new URL(server.listenerAddress).origin);
       assert.notEqual(authorize.origin, origin);
       assert.equal(authorize.hostname, "127.0.0.1");
@@ -1565,55 +1654,41 @@ if (release === undefined) {
       const back = await answerSignIn(fetch, authorize, patient, decision);
       assert.equal(`${back.origin}${back.pathname}`, at("/callback"));
       const callback = await fetch(back, { redirect: "manual" });
-      assert.equal(callback.status, 303);
-      const shown = callback.headers.get("location");
-      assert.match(
-        shown,
-        new RegExp(`^/pods/${pod}/\\?connection=\\d+#connection$`),
-      );
-      return shown;
+      await callback.body?.cancel();
+      assert.ok(callback.status < 400, `/callback answered ${callback.status}`);
+      return connection;
+    };
+
+    /** The pod's connection `n` once it no longer moves by itself: signed in and pulled, brought in, or failed. */
+    const settledConnection = async (pod, n) => {
+      const until = Date.now() + 2 * MINUTES;
+      for (;;) {
+        const now = await api(server, "connection", {
+          pod,
+          connection: n,
+          wait: true,
+        });
+        if (now.settled) return now;
+        assert.ok(Date.now() < until, `connection ${n} is still ${now.step}`);
+      }
     };
 
     /**
-     * The connection's box once it no longer refreshes, as HTML, with the pod's page behind it; `person` is the
-     * heading that page should have.
+     * Brings the record of the pod's connection `n` in through the pod API, asked twice as a second click asks, which
+     * brings nothing in twice; gives the connection once the record is in.
      */
-    const boxed = async (connection, person) => {
-      const html = await settled(server, connection);
-      assert.equal(
-        heading(html),
-        person,
-        "the pod's page is not behind the box",
+    const bringIn = async (pod, n) => {
+      const first = await api(server, "bring", { pod, connection: n });
+      assert.equal(first.step, "bringing in", "the record is not brought in");
+      const again = await api(server, "bring", { pod, connection: n });
+      assert.ok(
+        ["bringing in", "pulled"].includes(again.step),
+        `bringing it in again answered ${again.step}`,
       );
-      return connectionBox(html);
-    };
-
-    /**
-     * Brings the record in with the button of the connection's box, `box`, which goes at once to the box saying it
-     * brings the record in, unless the record is in already, where the button posted again goes too; gives the pod's
-     * page the box goes to once the record is in.
-     */
-    const bringIn = async (box) => {
-      const action = /<form\b[^>]*action="([^"]*\/connections\/\d+)"/.exec(
-        box,
-      )?.[1];
-      assert.ok(action, "the connection's box has no button to bring it in");
-      const imported = await send(action, {});
-      assert.equal(imported.status, 303, "the import did not go to the box");
-      const boxed = imported.headers.get("location");
-      assert.match(boxed, /\?connection=\d+#connection$/);
-      const bringing = await fetched(at(boxed));
-      if (bringing.status === 200)
-        assert.ok(
-          readable(connectionBox(bringing.body)).includes("Bringing it in") &&
-            bringing.body.includes('http-equiv="refresh"'),
-          "the box does not say it brings the record in",
-        );
-      else assert.equal(bringing.status, 303, `GET ${boxed}`);
-      const again = await send(action, {});
-      assert.equal(again.status, 303);
-      assert.equal(again.headers.get("location"), boxed);
-      return settled(server, boxed);
+      const done = await settledConnection(pod, n);
+      assert.equal(done.failed, undefined, `not brought in: ${done.failed}`);
+      assert.equal(done.broughtIn, true, "the record is not in");
+      return done;
     };
 
     try {
@@ -1622,74 +1697,92 @@ if (release === undefined) {
         async () => {
           const pod = "hospital";
           const north = expected.row.fhirBase;
-          const podPage = await served(server, `/pods/${pod}/`);
-          assert.ok(
-            podPage.includes(`/pods/${pod}/hospitals`),
-            "no hospitals link",
-          );
-          const found = await served(server, `/pods/${pod}/hospitals?q=north`);
+          const { rows } = await api(server, "hospitals", { q: "north" });
           assert.deepEqual(
-            forms(found).flatMap(({ fhirBase }) => fhirBase ?? []),
+            rows.map(({ fhirBase }) => fhirBase),
             [north],
           );
 
-          const failed = await signIn(pod, north, expected.patient, "cancel");
-          const cancelled = readable(await boxed(failed, "Hospital"));
-          assert.ok(cancelled.includes("cancelled"), "Cancel is not cancelled");
+          const failed = await settledConnection(
+            pod,
+            await signIn(pod, north, expected.patient, "cancel"),
+          );
+          assert.ok(
+            failed.failed?.includes("cancelled"),
+            "Cancel is not cancelled",
+          );
           assert.deepEqual(await asked(ALLERGIES, pod), []);
-          const expired = readable(
-            await boxed(
-              await signIn(
-                pod,
-                north,
-                expected.patient,
-                "allow",
-                "request_expired_token",
-              ),
-              "Hospital",
+          const expired = await settledConnection(
+            pod,
+            await signIn(
+              pod,
+              north,
+              expected.patient,
+              "allow",
+              "request_expired_token",
             ),
           );
           assert.ok(
-            expired.includes("the access token expired"),
+            expired.failed?.includes("the access token expired"),
             "an expired token does not say so",
           );
           assert.deepEqual(await asked(ALLERGIES, pod), []);
-          assert.equal(
-            noteOf(
-              await served(
-                server,
-                `/pods/${pod}/?from=${new URL(failed, origin).searchParams.get("connection")}`,
-              ),
-            ),
-            undefined,
-            "a note that a cancelled sign-in brought a record in",
+          assert.notEqual(
+            failed.broughtIn,
+            true,
+            "a cancelled sign-in brought a record in",
           );
 
-          const elsewhere = await send(
-            `/pods/${pod}/hospitals`,
-            { fhirBase: north },
+          const elsewhere = await called(
+            server,
+            "connect",
+            { pod, fhirBase: north },
             "http://elsewhere.invalid",
           );
           assert.equal(elsewhere.status, 403);
-          const localhost = await send(
-            `/pods/${pod}/hospitals`,
-            { fhirBase: north },
+          const localhost = await called(
+            server,
+            "connect",
+            { pod, fhirBase: north },
             origin.replace("127.0.0.1", "localhost"),
           );
           assert.equal(
             localhost.status,
-            303,
-            "a form from localhost is refused",
+            200,
+            "a sign-in from localhost is refused",
           );
 
-          const connection = await signIn(
-            pod,
-            north,
-            expected.patient,
-            "allow",
+          const page = await opened(await tab(), server, `/pods/${pod}/`);
+          await page.locator(`a[href="/pods/${pod}/hospitals"]`).click();
+          await drawn(page);
+          await page.getByLabel("Search by name or place").fill("north");
+          await page.getByRole("button", { name: "Search" }).click();
+          await drawn(page);
+          const signIns = page.getByRole("button", { name: /^Sign in/ });
+          assert.equal(await signIns.count(), 1, "north finds one hospital");
+          await signIns.click();
+          await page.waitForURL(
+            (url) => url.origin === new URL(server.listenerAddress).origin,
           );
-          const box = await boxed(connection, "Hospital");
-          const looked = readable(box);
+          assert.equal(new URL(page.url()).hostname, "127.0.0.1");
+          await page.check(
+            `input[name="patient"][value="${expected.patient}"]`,
+          );
+          await page.getByRole("button", { name: "Allow" }).click();
+          const bring = page.getByRole("button", { name: /^Bring / });
+          await bring.waitFor({ timeout: 2 * MINUTES });
+          assert.equal(
+            new URL(page.url()).origin,
+            origin,
+            "the sign-in does not come back to the app in the same tab",
+          );
+          assert.equal(
+            await heading(page),
+            "Hospital",
+            "the pod's page is not behind the box",
+          );
+          const looked =
+            (await page.locator("#connection").textContent()) ?? "";
           const [source] = expected.look;
           const what = /What (.+?) has:/.exec(looked)?.[1];
           assert.ok(
@@ -1704,11 +1797,16 @@ if (release === undefined) {
               `no ${count} ${kind}`,
             );
           assert.ok(looked.includes("has nothing from here yet"));
-          const back = await bringIn(box);
+          await bring.click();
+          const note = page.locator("main .note", {
+            hasText: /^Brought in the record from /,
+          });
+          await note.waitFor({ timeout: 2 * MINUTES });
           assert.ok(
-            names(noteOf(back) ?? "", expected.row.name),
+            names((await note.textContent()) ?? "", expected.row.name),
             "no note after the import",
           );
+          await page.close();
           assert.ok(expected.allergens.length > 0, "A has no active allergy");
           assert.deepEqual(
             (await asked(ALLERGIES, pod))
@@ -1724,16 +1822,16 @@ if (release === undefined) {
         async () => {
           const pod = "hospital";
           const north = expected.row.fhirBase;
-          const AS_OF = '<time datetime="2024-02-01T23:59:59Z"';
-          const FROM = encodeURIComponent("/pods/hospital/");
+          const INSTANT = "2024-02-01T23:59:59Z";
+          const AS_OF = `<time datetime="${INSTANT}"`;
           const EVERYTHING = "Hospitals answer with everything they hold.";
           const AS_OF_SAID = "Hospitals answer as of 1 February 2024.";
           /** The hospital's sign-in page for a new sign-in, which is then cancelled. */
           const pickerNow = async () => {
-            const begun = await send(`/pods/${pod}/hospitals`, {
+            const { authorize } = await api(server, "connect", {
+              pod,
               fhirBase: north,
             });
-            const authorize = new URL(begun.headers.get("location"));
             const picker = await (await fetch(authorize)).text();
             await fetch(
               await answerSignIn(fetch, authorize, expected.patient, "cancel"),
@@ -1741,47 +1839,37 @@ if (release === undefined) {
             );
             return picker;
           };
-          /** What the pod's page and the page that finds a hospital say, where a sign-in begins. */
+          /** What the pod's page and the page that finds a hospital say, where a sign-in begins, and that they offer to change it. */
+          const page = await tab();
           const beginsWith = async (said) => {
             for (const path of [
               "/pods/hospital/",
               "/pods/hospital/hospitals",
             ]) {
-              const html = await served(server, path);
+              await opened(page, server, path);
               assert.ok(
-                readable(html).includes(said),
+                (await readable(page)).includes(said),
                 `${path} says not ${said}`,
               );
               assert.ok(
-                html.includes(
-                  `href="/world-date?back=${encodeURIComponent(path)}"`,
-                ),
-                `${path} has no link to change the date`,
+                (await page
+                  .locator(".world-date", {
+                    hasText: "Change the world's date",
+                  })
+                  .count()) > 0,
+                `${path} offers no way to change the date`,
               );
             }
           };
-          assert.ok(
-            readable(await served(server, "/world-date")).includes(EVERYTHING),
-          );
+          assert.equal((await api(server, "hospitals")).asOf, undefined);
           await beginsWith(EVERYTHING);
           assert.ok(!(await pickerNow()).includes('class="as-of"'));
 
-          const set = await send(`/world-date?back=${FROM}`, {
+          const set = await api(server, "setWorldDate", {
             date: "2024-02-01",
           });
-          assert.equal(set.status, 303);
-          assert.equal(set.headers.get("location"), "/pods/hospital/");
-          assert.ok(
-            readable(
-              await served(server, set.headers.get("location")),
-            ).includes(AS_OF_SAID),
-          );
-          assert.ok(
-            (
-              await served(server, "/world-date?back=%2F%2Fevil.test%2F")
-            ).includes('<a href="/">Back</a>'),
-            "a back address off this app was followed",
-          );
+          assert.equal(set.asOf, INSTANT);
+          assert.equal((await api(server, "hospitals")).asOf, INSTANT);
           await beginsWith(AS_OF_SAID);
           assert.ok((await pickerNow()).includes(AS_OF));
 
@@ -1791,51 +1879,52 @@ if (release === undefined) {
             expected.patient,
             "allow",
           );
-          const pulledUnder = "Pulled as of 1 February 2024.";
-          assert.ok(
-            readable(await boxed(connection, "Hospital")).includes(pulledUnder),
+          assert.equal(
+            (await settledConnection(pod, connection)).asOf,
+            INSTANT,
+            "the connection does not keep the date it was pulled under",
           );
 
-          const offset = await send("/world-date", {
+          await api(server, "setWorldDate", {
             date: "2024-02-01T09:00:00+02:00",
           });
-          assert.equal(offset.status, 303);
-          const offsetBox = readable(
-            await bringIn(
-              await boxed(
+          await bringIn(
+            pod,
+            (
+              await settledConnection(
+                pod,
                 await signIn(pod, north, expected.patient, "allow"),
-                "Hospital",
-              ),
-            ),
+              )
+            ).n,
           );
-          assert.ok(
-            !offsetBox.includes("Refused"),
-            `a world date with an offset was refused: ${offsetBox}`,
-          );
-          await send("/world-date", { date: "2024-02-01" });
+          await api(server, "setWorldDate", { date: "2024-02-01" });
 
-          const bad = await send("/world-date", { date: "soon" });
+          const bad = await called(server, "setWorldDate", { date: "soon" });
           assert.equal(bad.status, 400);
-          const refused = readable(await bad.text());
-          assert.ok(refused.includes('"soon" is not a date'), refused);
+          assert.ok(
+            bad.body.refused?.includes('"soon" is not a date'),
+            bad.body.refused,
+          );
           assert.ok(
             (await pickerNow()).includes(AS_OF),
             "a refused date moved the world's date",
           );
 
-          const today = await send("/world-date", { date: "" });
-          assert.equal(today.status, 303);
+          assert.deepEqual(await api(server, "setWorldDate", { date: "" }), {});
           assert.ok(!(await pickerNow()).includes('class="as-of"'));
           await beginsWith(EVERYTHING);
-          assert.ok(
-            readable(await boxed(connection, "Hospital")).includes(pulledUnder),
+          await page.close();
+          assert.equal(
+            (await settledConnection(pod, connection)).asOf,
+            INSTANT,
             "the connection no longer says the date it was pulled under",
           );
 
           const dated = await started({ CASCADE_WORLD_DATE: "2024-02-01" });
           try {
-            assert.ok(
-              readable(await served(dated, "/world-date")).includes(AS_OF_SAID),
+            assert.equal(
+              (await api(dated, "hospitals")).asOf,
+              INSTANT,
               "the variable set at start is not the world's date",
             );
           } finally {
@@ -1894,94 +1983,111 @@ if (release === undefined) {
       );
 
       await behaviour("a new pod is made from a person's name", async () => {
-        for (let time = 0; time < 2; time += 1) {
-          const made = await send("/pods", { person: "Ada  Lovelace" });
-          assert.equal(made.status, 303);
-          assert.equal(made.headers.get("location"), "/pods/ada-lovelace/");
-        }
-        const page = await served(server, "/pods/ada-lovelace/");
-        assert.equal(heading(page), "Ada Lovelace");
-        assert.ok(page.includes("Nothing here yet"), "Ada's pod is not empty");
+        for (const made of [true, false])
+          assert.deepEqual(
+            await api(server, "makePod", { person: "Ada  Lovelace" }),
+            { pod: "ada-lovelace", made },
+          );
+        const page = await opened(await tab(), server, "/pods/ada-lovelace/");
+        assert.equal(await heading(page), "Ada Lovelace");
+        assert.ok(
+          (await readable(page)).includes("Nothing here yet"),
+          "Ada's pod is not empty",
+        );
+        await page.close();
         for (const [typed, folder] of [
           ["Tamsin at North", "tamsin-at-north"],
           ["O'Brien McDonald", "o-brien-mcdonald"],
         ]) {
-          await send("/pods", { person: typed });
           assert.equal(
-            heading(await served(server, `/pods/${folder}/`)),
+            (await api(server, "makePod", { person: typed })).pod,
+            folder,
+          );
+          assert.equal(
+            (await api(server, "pod", { pod: folder })).title,
             typed,
           );
         }
       });
 
+      /** Whether the new-pod box over the pod's page, open in `page`, offers the demo person listed as `choice`. */
+      const offers = async (page, choice) =>
+        (await page.locator("#new-pod button", { hasText: choice }).count()) >
+        0;
+
       await behaviour(
         "a demo person's pod brings in their records from both hospitals",
         async () => {
-          const offered = forms(await served(server, "/pods/hospital/"));
+          const page = await opened(await tab(), server, "/pods/hospital/");
           assert.ok(
-            offered.some(({ person }) => person === ROWAN),
+            await offers(page, expected.choices.rowan),
             `the new-pod box does not offer ${ROWAN}`,
           );
-          const made = await send("/pods", { person: ROWAN });
-          const page = made.headers.get("location");
-          const pod = page.split("/")[2];
-          assert.deepEqual(
-            forms(await served(server, page))
-              .flatMap(({ fhirBase }) => fhirBase ?? [])
-              .sort(),
-            expected.rowan.map(({ fhirBase }) => fhirBase).sort(),
-          );
-          let shown;
-          for (const { hospital, fhirBase, patient } of expected.rowan) {
-            const connection = await signIn(pod, fhirBase, patient, "allow");
-            const box = await boxed(connection, ROWAN);
-            const said = readable(box);
+          const { pod } = await api(server, "makePod", { person: ROWAN });
+          await opened(page, server, `/pods/${pod}/`);
+          const signIns = (
+            await page
+              .getByRole("button", { name: /^Sign in at / })
+              .allTextContents()
+          ).map((said) => said.trim());
+          assert.equal(signIns.length, expected.rowan.length);
+          for (const { hospital } of expected.rowan)
             assert.ok(
-              said.includes("Record fetched") &&
-                /What (.+?) has:/.test(said) &&
-                names(said, hospital),
-              `the box over ${ROWAN}'s pod does not say what ${hospital} has`,
+              signIns.some((said) => names(said, hospital)),
+              `${ROWAN}'s pod offers no sign-in at ${hospital}: ${signIns}`,
             );
-            shown = await bringIn(box);
+          for (const { hospital, fhirBase, patient } of expected.rowan) {
+            const box = await settledConnection(
+              pod,
+              await signIn(pod, fhirBase, patient, "allow"),
+            );
             assert.ok(
-              names(noteOf(shown) ?? "", hospital),
-              `no note naming ${hospital}`,
+              box.step === "pulled" &&
+                box.sources.length > 0 &&
+                names(box.row.name, hospital),
+              `the connection of ${ROWAN}'s pod does not say what ${hospital} has`,
+            );
+            const done = await bringIn(pod, box.n);
+            assert.ok(
+              names(done.row.name, hospital),
+              `not brought in from ${hospital}`,
             );
           }
+          await opened(page, server, `/pods/${pod}/`);
           assert.ok(
-            !items(shown).some((sentence) =>
+            !(await items(page)).some((sentence) =>
               /hypertension was recorded at/i.test(sentence),
             ),
             "the pod's page still says where hypertension was recorded",
           );
-          const hypertension = shown
-            .split("<tr")
-            .slice(1)
-            .filter((row) => /hypertension/i.test(textOf(row)))
-            .flatMap((row) =>
-              textOf(
-                /<a href="(\/pods\/[^"]*\/entries\/[^"]+)"/.exec(row)?.[1] ??
-                  "",
+          const hypertension = await page
+            .locator("tr", { hasText: /hypertension/i })
+            .evaluateAll((rows) =>
+              rows.flatMap(
+                (row) =>
+                  row
+                    .querySelector('a[href*="/entries/"]')
+                    ?.getAttribute("href") ?? [],
               ),
-            )
-            .filter(Boolean);
+            );
           assert.ok(hypertension.length > 0, "no row for hypertension");
+          assert.ok(
+            !(await offers(page, expected.choices.rowan)),
+            `the new-pod box still offers ${ROWAN}`,
+          );
           let recorded = false;
           for (const href of hypertension)
-            recorded ||= items(await served(server, href)).some(
+            recorded ||= (await items(await opened(page, server, href))).some(
               (sentence) =>
                 sentence.startsWith("Cascade recorded it at") &&
                 expected.rowan.every(({ hospital }) =>
                   names(sentence, hospital),
                 ),
             );
+          await page.close();
           assert.ok(
             recorded,
             "no entry of hypertension says it was recorded at both hospitals",
-          );
-          assert.ok(
-            !forms(shown).some(({ person }) => person === ROWAN),
-            `the new-pod box still offers ${ROWAN}`,
           );
         },
       );
@@ -1989,25 +2095,37 @@ if (release === undefined) {
       await behaviour(
         "a story patient's pod says what changed after a medication started, opens its trend, and every link under the pod opens",
         async () => {
+          const shown = await opened(await tab(), server, "/pods/hospital/");
           assert.ok(
-            forms(await served(server, "/pods/hospital/")).some(
-              ({ person }) => person === INES,
-            ),
+            await offers(shown, expected.choices.ines),
             `the new-pod box does not offer ${INES}`,
           );
-          const made = await send("/pods", { person: INES });
-          const page = made.headers.get("location");
-          const pod = page.split("/")[2];
-          const connection = await signIn(
+          const { pod } = await api(server, "makePod", { person: INES });
+          const page = `/pods/${pod}/`;
+          const connection = await settledConnection(
             pod,
-            expected.ines.fhirBase,
-            expected.ines.patient,
-            "allow",
+            await signIn(
+              pod,
+              expected.ines.fhirBase,
+              expected.ines.patient,
+              "allow",
+            ),
           );
-          const shown = await bringIn(await boxed(connection, INES));
-          assert.equal(heading(shown), INES);
+          await bringIn(pod, connection.n);
+          const { series } = await api(server, "trend", {
+            pod,
+            test: "18262-6",
+            medication: "617310",
+          });
+          assert.equal(
+            series.results.length,
+            6,
+            "the trend's series is not the six results",
+          );
+          await opened(shown, server, page);
+          assert.equal(await heading(shown), INES);
 
-          const card = readable(shown);
+          const card = await readable(shown);
           assert.match(
             card,
             /\bwas lower after [^.]+ started\./,
@@ -2019,22 +2137,28 @@ if (release === undefined) {
             ),
             "the card does not give both means and their counts",
           );
-          const results = shown.slice(
-            shown.indexOf('id="change-start-617310-18262-6"'),
-          );
           assert.equal(
-            linksOf(results.split('class="dialog"')[0]).hrefs.filter((href) =>
-              href.includes("/entries/"),
+            (
+              await hrefsOf(
+                shown,
+                '#change-start-617310-18262-6 a[href*="/entries/"]',
+              )
             ).length,
             6,
             "the box behind the card does not link its six results' entries",
           );
 
-          const opens = /<a href="([^"]*)">Open the trend<\/a>/.exec(
-            shown,
-          )?.[1];
-          assert.ok(opens, "the card does not open the trend");
-          const trend = new URL(textOf(opens), server.address);
+          const opens = shown
+            .locator("a", { hasText: /^Open the trend$/ })
+            .first();
+          assert.ok(
+            (await opens.count()) > 0,
+            "the card does not open the trend",
+          );
+          const trend = new URL(
+            (await opens.getAttribute("href")) ?? "",
+            server.address,
+          );
           assert.deepEqual(
             [
               trend.searchParams.get("test"),
@@ -2042,13 +2166,16 @@ if (release === undefined) {
             ],
             ["18262-6", "617310"],
           );
-          const chart = await served(server, trend.pathname + trend.search);
+          await opened(shown, server, trend.pathname + trend.search);
           assert.equal(
-            chart.split('class="marker"').length - 1,
+            await shown.locator(".marker").count(),
             6,
             "the trend does not mark each of the six results",
           );
-          assert.ok(chart.includes('class="mark start"'), "no start marked");
+          assert.ok(
+            (await shown.locator(".mark.start").count()) > 0,
+            "no start marked",
+          );
 
           const { dead, links, pages } = await crawled(server, [page]);
           stdout.write(`followed ${links} links over ${pages.size} pages\n`);
@@ -2060,14 +2187,19 @@ if (release === undefined) {
             "the crawl reached no trend",
           );
 
-          const priya = await served(server, "/pods/priya-natarajan/");
+          const priya = await opened(shown, server, "/pods/priya-natarajan/");
           assert.ok(
-            readable(priya).includes(
+            (await readable(priya)).includes(
               "1 pair of a medication and a test had too few results to say anything.",
             ),
             "Priya's page does not count her pair with too few results",
           );
-          assert.ok(!priya.includes('class="change"'), "Priya has a card");
+          assert.equal(
+            await priya.locator(".change").count(),
+            0,
+            "Priya has a card",
+          );
+          await shown.close();
         },
       );
 
@@ -2075,15 +2207,13 @@ if (release === undefined) {
         "the File menu deletes every pod and says how many, and resets to the kits' pods",
         async () => {
           const before = await podsOf();
-          const page = await served(server, `/pods/${before[0]}/`);
+          const page = await opened(await tab(), server, `/pods/${before[0]}/`);
           const tables = join(app, "pods", ".tables");
           const held = await readdir(tables);
           const tablesKept = async (after) => {
             assert.ok(
-              linksOf(await served(server, "/tables/")).hrefs.some((href) =>
-                /^\/tables\/[^/?]+\/$/.test(href),
-              ),
-              `/tables/ lists no source after ${after}`,
+              (await hrefsOf(page, "aside .tables a[href]")).length > 0,
+              `the page lists no reference table after ${after}`,
             );
             const now = new Set(await readdir(tables).catch(() => []));
             assert.deepEqual(
@@ -2092,32 +2222,57 @@ if (release === undefined) {
               `${after} removed reference tables`,
             );
           };
-          for (const action of ["/delete-all", "/reset-all"])
-            assert.ok(page.includes(`action="${action}"`), `no ${action}`);
-          const deleted = await send("/delete-all", {});
-          assert.equal(deleted.status, 303);
+          /** Picks `item` from the File menu, and its box's button. */
+          const fromFile = async (item) => {
+            await page
+              .locator("details.menu summary", { hasText: "File" })
+              .click();
+            await page.getByRole("link", { name: item }).click();
+            await page
+              .locator(".dialog:target")
+              .getByRole("button", { name: item })
+              .click();
+          };
+          const podsNow = async () =>
+            (await api(server, "pods")).pods.map(({ name }) => name).sort();
+
+          await fromFile("Delete all data");
+          await page.locator("h1", { hasText: /^No pods yet$/ }).waitFor();
+          await drawn(page);
           assert.deepEqual(await podsOf().catch(() => []), []);
-          const home = await served(server, deleted.headers.get("location"));
-          assert.equal(heading(home), "No pods yet");
+          assert.deepEqual(await podsNow(), []);
           assert.ok(
-            readable(home).includes(`Deleted ${before.length} pods.`),
+            (await readable(page)).includes(`Deleted ${before.length} pods.`),
             "the page does not say how many pods went",
           );
-          await tablesKept("/delete-all");
-          const reset = await send("/reset-all", {});
-          assert.equal(reset.status, 303);
+          await tablesKept("Delete all data");
+          assert.deepEqual(
+            (await api(server, "resetAll")).pods.sort(),
+            [...KITS].sort(),
+          );
+          assert.deepEqual(await podsNow(), [...KITS].sort());
+          assert.deepEqual(
+            (await api(server, "deleteAll")).deleted.sort(),
+            [...KITS].sort(),
+          );
+          await opened(page, server, "/");
+          await fromFile("Reset all data");
+          await page.locator("h1", { hasText: /^Alex Rivera$/ }).waitFor({
+            timeout: 5 * MINUTES,
+          });
+          await drawn(page);
           assert.deepEqual(await podsOf(), [...KITS].sort());
-          const back = await served(server, reset.headers.get("location"));
-          assert.equal(heading(back), "Alex Rivera");
           assert.ok(
-            readable(back).includes(
+            (await readable(page)).includes(
               "Reset: Alex Rivera, Priya Natarajan, Martin Okafor and Tamsin Vale are back.",
             ),
             "the page does not say which pods are back",
           );
-          await tablesKept("/reset-all");
+          await tablesKept("Reset all data");
+          await page.close();
           assert.equal(
-            (await send("/delete-all", {}, "http://elsewhere.example")).status,
+            (await called(server, "deleteAll", {}, "http://elsewhere.example"))
+              .status,
             403,
           );
         },
@@ -2201,11 +2356,10 @@ if (release === undefined) {
 
       const server = await started();
       try {
-        const origin = new URL(server.address).origin;
-        const found = async (text) =>
-          forms(
-            await served(server, `/pods/own-hospital/hospitals?q=${text}`),
-          ).flatMap((each) => each.fhirBase ?? []);
+        const found = async (q) =>
+          (await api(server, "hospitals", { q })).rows.map(
+            (row) => row.fhirBase,
+          );
         assert.deepEqual(await found("mercy"), [fhirBase]);
         assert.equal((await found("north")).length, 1, "North is not listed");
         assert.equal(
@@ -2213,22 +2367,12 @@ if (release === undefined) {
           1,
           "the SMART sandbox is not listed",
         );
-        const begun = await fetch(
-          new URL("/pods/own-hospital/hospitals", origin),
-          {
-            method: "POST",
-            redirect: "manual",
-            headers: {
-              origin,
-              "content-type": "application/x-www-form-urlencoded",
-            },
-            body: new URLSearchParams({ fhirBase }),
-          },
-        );
-        assert.equal(begun.status, 303);
-        const picker = await (
-          await fetch(new URL(begun.headers.get("location"), origin))
-        ).text();
+        const { authorize } = await api(server, "connect", {
+          pod: "own-hospital",
+          fhirBase,
+        });
+        assert.ok(authorize, "the sign-in goes to no hospital's page");
+        const picker = await (await fetch(authorize)).text();
         assert.ok(picker.includes('value="hedda-quill"'), "no Hedda to pick");
       } finally {
         await server.stop();
@@ -2296,4 +2440,5 @@ if (refused !== undefined) throw new Error(refused);
   });
 }
 
+await browser?.close();
 stdout.write(`\nthe starter's check passed, in ${work}\n`);

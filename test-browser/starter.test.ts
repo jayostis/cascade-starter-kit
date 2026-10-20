@@ -169,16 +169,8 @@ before(async () => {
   });
   bare = await startStarter({});
   for (const person of ["Ada Lovelace", "Ines Calloway"]) {
-    const made = await fetch(modelled.origin + "/pods", {
-      method: "POST",
-      redirect: "manual",
-      headers: {
-        origin: modelled.origin,
-        "content-type": "application/x-www-form-urlencoded",
-      },
-      body: new URLSearchParams({ person }),
-    });
-    assert.equal(made.status, 303, person);
+    const made = await post(modelled.origin, "/api/makePod", { person });
+    assert.equal(made.status, 200, person);
   }
   browser = await chromium.launch();
 });
@@ -246,16 +238,10 @@ test("with no model set the strip says to run npm run model and has no form; wit
 });
 
 test("after Allow at a demo hospital the connection's box moves on by itself, to Bring it in, and from bringing it in to the pod's page", async () => {
-  const made = await fetch(bare.origin + "/pods", {
-    method: "POST",
-    redirect: "manual",
-    headers: {
-      origin: bare.origin,
-      "content-type": "application/x-www-form-urlencoded",
-    },
-    body: new URLSearchParams({ person: "Ines Calloway" }),
+  const made = await post(bare.origin, "/api/makePod", {
+    person: "Ines Calloway",
   });
-  assert.equal(made.status, 303);
+  assert.equal(made.status, 200);
   const page = await browser.newPage();
   await page.goto(`${bare.origin}/pods/ines-calloway/`);
   await page
@@ -263,22 +249,24 @@ test("after Allow at a demo hospital the connection's box moves on by itself, to
     .first()
     .click();
   await page.getByRole("button", { name: "Allow" }).click();
-  await page.waitForURL(/\?connection=\d+#connection$/);
   const bring = page.getByRole("button", { name: /^Bring it into / });
   await bring.waitFor({ timeout: 30_000 });
+  assert.equal(new URL(page.url()).origin, bare.origin);
   await bring.click();
   await page
     .locator("main .note", { hasText: /^Brought in the record from / })
     .waitFor({ timeout: 60_000 });
+
+  await page.goto(`${bare.origin}/pods/ines-calloway/connections/999`);
+  await page.locator("h1", { hasText: /^Ines Calloway$/ }).waitFor();
+  assert.equal(
+    await page.locator("#connection").count(),
+    0,
+    "a connection the pod has not opens a box",
+  );
+  await page.goto(`${bare.origin}/pods/nobody-here/connections/1`);
+  await page.locator("h1", { hasText: /^Not found$/ }).waitFor();
   await page.close();
-  for (const [path, status, to] of [
-    ["/pods/ines-calloway/connections/999", 303, "/pods/ines-calloway/"],
-    ["/pods/nobody-here/connections/1", 404, null],
-  ]) {
-    const gone = await fetch(bare.origin + path, { redirect: "manual" });
-    assert.equal(gone.status, status);
-    assert.equal(gone.headers.get("location"), to);
-  }
 });
 
 test("a finding the model's tool found is drawn as a card with the app's sentence, its numbers and row links, and Open the trend goes to the trend", async () => {
@@ -693,7 +681,11 @@ test("an encrypted pod: six words checked, nothing plaintext on disk, no chat sa
       (await racing.locator("main").textContent()) ?? "",
       /A pod named alan-turing exists already/,
     );
-    assert.equal(await racing.url(), `${sealed.origin}/encrypted-pods`);
+    assert.notEqual(
+      (await racing.locator("h1").first().textContent())?.trim(),
+      "Alan Turing",
+      "the refused encrypted pod goes to the plain one",
+    );
     await racing.close();
     await plain.close();
 
