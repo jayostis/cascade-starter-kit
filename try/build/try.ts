@@ -14,6 +14,7 @@ import {
   SIGNED_IN,
   signedInPage,
   SUMMARY,
+  TOOLS,
   tryPage,
   VIEW_PACKAGES,
   WORKER,
@@ -30,6 +31,9 @@ const VIEW = fileURLToPath(
   new URL("../../../app/summary.mjs", import.meta.url),
 );
 const API = fileURLToPath(new URL("../../../app/pod-api.mjs", import.meta.url));
+const TOOL_LIST = fileURLToPath(
+  new URL("../../../app/tools.mjs", import.meta.url),
+);
 const HERE = fileURLToPath(new URL(".", import.meta.url));
 /** The demo hospitals' service worker, and their page side: the worker's registration, the world date, and the rule that names a pull after its hospital. */
 const SANDBOX_WEB = {
@@ -120,6 +124,7 @@ export async function tryFiles(
     host,
     view,
     api,
+    tools,
     worker,
     workerPage,
     { demoPeople },
@@ -131,6 +136,7 @@ export async function tryFiles(
     readFile(HOST),
     readFile(VIEW),
     readFile(API),
+    readFile(TOOL_LIST),
     bundled(SANDBOX_WEB.worker, "iife"),
     bundled(SANDBOX_WEB.page, "esm"),
     import(pathToFileURL(VIEW).href) as Promise<{
@@ -150,6 +156,7 @@ export async function tryFiles(
     ["app.js", app],
     [SUMMARY, view],
     [POD_API, api],
+    [TOOLS, tools],
     [BROWSER_HOST, host],
     [PEOPLE, encoder.encode(JSON.stringify(demoPeople(hospitals)))],
     [

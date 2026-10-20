@@ -1296,7 +1296,7 @@ export const CHANGED = {
 
 /** The view a model can open: the trend of one test, a medication marked. A host registers it with what runs it. */
 export const TREND_VIEW = {
-  name: "show_trend",
+  name: "open_trend",
   description:
     "Opens the trend of one lab test over time, the days a medication started and stopped marked on it. It shows what changed after what, never why.",
   inputSchema: {

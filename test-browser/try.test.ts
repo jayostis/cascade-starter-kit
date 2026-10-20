@@ -15,7 +15,6 @@ import {
   type Worker as PageWorker,
 } from "playwright";
 import {
-  changeTools,
   connect,
   DEMO_PLAN,
   type Imported,
@@ -132,6 +131,14 @@ interface View {
 const view = (await import(
   pathToFileURL(join(ROOT, "app", "summary.mjs")).href
 )) as View;
+/** The names of the free tools of the one list, which try/ offers for the pod shown. */
+const FREE_TOOLS = (
+  (await import(pathToFileURL(join(ROOT, "app", "tools.mjs")).href)) as {
+    TOOLS: { name: string; tier: string }[];
+  }
+).TOOLS.filter(({ tier }) => tier === "free")
+  .map(({ name }) => name)
+  .sort();
 
 let served: Served;
 let browser: Browser;
@@ -2024,7 +2031,7 @@ test("in try/, Priya's pod, copied on a first visit, names her potassium result 
   }
 });
 
-test("in try/, Ines Calloway's new pod signed in at North says what changed after atorvastatin started and registers the trend and the pod's change tools with the model context, opens the trend at its address, and going to another pod takes every tool away", async () => {
+test("in try/, Ines Calloway's new pod signed in at North says what changed after atorvastatin started and registers the free tools of the one list for the pod with the model context, opens the trend at its address, and going to another pod takes every tool away", async () => {
   const demo = await loadHospitals();
   const ines = view
     .demoPeople(demo)
@@ -2081,13 +2088,12 @@ test("in try/, Ines Calloway's new pod signed in at North says what changed afte
       said,
     );
 
-    const tools = changeTools({ ask: async () => [] }).map(({ name }) => name);
     await page.waitForFunction(() =>
       (globalThis as unknown as Registered).registered.some(
-        ({ name, signal }) => name === "show_trend" && !signal.aborted,
+        ({ name, signal }) => name === "open_trend" && !signal.aborted,
       ),
     );
-    assert.deepEqual(await live(), ["show_trend", ...tools].sort());
+    assert.deepEqual(await live(), FREE_TOOLS);
 
     await inPlace(page, () =>
       page.click('.change a:has-text("Open the trend")'),
@@ -2108,7 +2114,7 @@ test("in try/, Ines Calloway's new pod signed in at North says what changed afte
       await chart.locator("title").first().textContent(),
       await page.textContent("main h1"),
     );
-    assert.deepEqual(await live(), ["show_trend", ...tools].sort());
+    assert.deepEqual(await live(), FREE_TOOLS);
 
     const recorded = await page.evaluate(
       () => (globalThis as unknown as Registered).registered.length,
@@ -2128,7 +2134,7 @@ test("in try/, Ines Calloway's new pod signed in at North says what changed afte
       ),
       "a tool of the pod left is still registered",
     );
-    assert.deepEqual(await live(), [...tools].sort());
+    assert.deepEqual(await live(), FREE_TOOLS);
 
     await page.goto(`${served.url}try/index.html?pod=ines-calloway&classes`);
     await settled(page);

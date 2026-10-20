@@ -1,5 +1,5 @@
 // The app's chat: a person's question goes to the model the app was set up with (`model-client.mjs`), which may call the
-// tools over the pods (`pod-tools.mjs`) and the tools that open the app's own pages, for up to `MAX_ROUNDS` rounds.
+// free tools of `tools.mjs`, the reads and those that open the app's own pages, for up to `MAX_ROUNDS` rounds.
 // `chatRoute` is `POST /chat`; `runChat` the loop, which tells what happens as events.
 import { Buffer } from "node:buffer";
 import console from "node:console";
@@ -7,14 +7,8 @@ import { checkInput, Refusal } from "cascade-runtime";
 import { callsMessage } from "./model-client.mjs";
 import { maps } from "./pod-api.mjs";
 import { podPath, trendPath } from "./pods.mjs";
-import { withPod } from "./pod-tools.mjs";
-import {
-  CHANGED,
-  changeSaid,
-  entryId,
-  SOURCES,
-  TREND_VIEW,
-} from "./summary.mjs";
+import { CHANGED, changeSaid, entryId } from "./summary.mjs";
+import { TOOLS, withPod } from "./tools.mjs";
 
 /** How many rounds of tool calls a chat runs before it ends with an error. */
 export const MAX_ROUNDS = 6;
@@ -143,110 +137,36 @@ function rowsOf({ rows }) {
   );
 }
 
-/** The tools that move the app, over the pods `api` reaches. A chat reaches them; an MCP client cannot move the app. */
-const openTools = (api) => [
-  {
-    name: "open_pod",
-    description: "Opens a pod's page in the app.",
-    inputSchema: {
-      type: "object",
-      properties: {},
-      additionalProperties: false,
-    },
-    async run({ pod }) {
-      await api.pod({ pod });
-      return { opened: podPath(pod) };
-    },
-  },
-  {
-    name: "open_trend",
-    description: TREND_VIEW.description,
-    inputSchema: TREND_VIEW.inputSchema,
-    async run({ pod, test, medication }) {
-      const drug = medication === "" ? undefined : medication;
-      const { series, timeline } = await api.trend({
-        pod,
-        test,
-        medication: drug,
-        named: false,
-      });
-      const wanted = drug?.toLowerCase();
-      const found =
-        drug === undefined
-          ? undefined
-          : timeline.find(
-              (each) =>
-                each.notation === drug ||
-                each.code === drug ||
-                each.name.toLowerCase() === wanted,
-            );
-      return {
-        opened: trendPath(pod, {
-          test: series.test.notation ?? series.test.code,
-          ...(found === undefined
-            ? {}
-            : { medication: found.notation ?? found.name }),
-        }),
-      };
-    },
-  },
-  {
-    name: "open_entry",
-    description:
-      "Opens the page of one entry of a pod: what it is and where it came from.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        entry: {
-          type: "string",
-          description:
-            "The entry's IRI or ID, as the entry column of the rows of ask gives it.",
-        },
-      },
-      required: ["entry"],
-      additionalProperties: false,
-    },
-    async run({ pod, entry }) {
-      const { rows } = await api.ask({ pod, question: SOURCES });
-      if (!rows.some((row) => entryId(row.entry) === entryId(entry)))
-        throw new Refusal(
-          `the pod ${pod} holds no entry ${entry}; ask's rows give each entry's ID in their entry column`,
-        );
-      return { opened: entryPath(pod, entry) };
-    },
-  },
-];
+/** The addresses of the app's own pages, which the chat's tools give and open. */
+const ADDRESS = { pod: podPath, trend: trendPath, entry: entryPath };
+
+/** The tools a chat offers: the free ones. Writes wait until the chat can ask the person first. */
+const OFFERED = TOOLS.filter(({ tier }) => tier === "free");
 
 const toolError = (reason) => ({ text: reason, isError: true });
 
 /**
- * The tools a chat reaches: `shared` is `podTools(api, …)`, over the pods `api` reaches. `specs` is what the model is
- * told of them; `run(name, rawArguments)` runs one call of the model and gives `{ text, isError, value, findings?,
- * open? }`. Input the rules refuse is `isError`, for the model to read; nothing here throws for it. A finding says
- * itself as the page does, named by what `api.said` says of the pod's codes.
+ * The tools a chat reaches over the pods `api` (`podApi`'s) reaches. `specs` is what the model is told of them;
+ * `run(name, rawArguments)` runs one call of the model and gives `{ text, isError, value, findings?, open? }`, `open`
+ * the address a tool moved the app to. Input the rules refuse is `isError`, for the model to read; nothing here throws
+ * for it. A finding says itself as the page does, named by what `api.said` says of the pod's codes.
  */
-export function chatTools(shared, { api }) {
-  const tools = [...shared.tools, ...openTools(api)].map((tool) => ({
+export function chatTools(api) {
+  const tools = OFFERED.map((tool) => ({
     ...tool,
-    inputSchema: withPod(tool),
+    inputSchema: tool.ofPod ? withPod(tool.inputSchema) : tool.inputSchema,
   }));
-  const specs = [
-    {
-      name: shared.list.name,
-      description: shared.list.description,
-      inputSchema: shared.list.inputSchema,
-    },
-    ...tools.map(({ name, description, inputSchema }) => ({
-      name,
-      description,
-      inputSchema,
-    })),
-  ];
+  const specs = tools.map(({ name, description, inputSchema }) => ({
+    name,
+    description,
+    inputSchema,
+  }));
+  const listing = tools.find(({ name }) => name === "list_pods");
 
   async function runTool(tool, input) {
     if (tool.name === "find_changes") {
       const [{ value, found }, said] = await Promise.all([
-        tool.findings(input),
+        tool.findings(api, input, { address: ADDRESS }),
         api.said({ pod: input.pod }),
       ]);
       const { about } = maps(said);
@@ -262,11 +182,14 @@ export function chatTools(shared, { api }) {
         }),
       };
     }
-    const value = await tool.run(input);
-    return {
-      value,
-      ...(tool.name.startsWith("open_") ? { open: value.opened } : {}),
-    };
+    let open;
+    const value = await tool.run(api, input, {
+      address: ADDRESS,
+      open: (address) => {
+        open = address;
+      },
+    });
+    return { value, ...(open === undefined ? {} : { open }) };
   }
 
   async function run(name, rawArguments) {
@@ -276,19 +199,14 @@ export function chatTools(shared, { api }) {
     } catch (error) {
       return toolError(`the arguments are not JSON: ${error.message}`);
     }
-    const listing = name === shared.list.name;
-    const tool = listing
-      ? shared.list
-      : tools.find((each) => each.name === name);
+    const tool = tools.find((each) => each.name === name);
     if (tool === undefined)
       return toolError(
         `there is no tool ${name}; the tools are ${specs.map((each) => each.name).join(", ")}`,
       );
     try {
       checkInput(tool.inputSchema, input);
-      const done = listing
-        ? { value: await shared.list.run() }
-        : await runTool(tool, input);
+      const done = await runTool(tool, input);
       return { text: JSON.stringify(done.value), ...done };
     } catch (error) {
       if (error instanceof Refusal) return toolError(error.message);
@@ -297,7 +215,7 @@ export function chatTools(shared, { api }) {
     }
   }
 
-  return { specs, names: () => shared.names(), run };
+  return { specs, names: () => listing.run(api), run };
 }
 
 /**
