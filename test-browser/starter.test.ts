@@ -169,16 +169,8 @@ before(async () => {
   });
   bare = await startStarter({});
   for (const person of ["Ada Lovelace", "Ines Calloway"]) {
-    const made = await fetch(modelled.origin + "/pods", {
-      method: "POST",
-      redirect: "manual",
-      headers: {
-        origin: modelled.origin,
-        "content-type": "application/x-www-form-urlencoded",
-      },
-      body: new URLSearchParams({ person }),
-    });
-    assert.equal(made.status, 303, person);
+    const made = await post(modelled.origin, "/api/makePod", { person });
+    assert.equal(made.status, 200, person);
   }
   browser = await chromium.launch();
 });
@@ -246,16 +238,10 @@ test("with no model set the strip says to run npm run model and has no form; wit
 });
 
 test("after Allow at a demo hospital the connection's box moves on by itself, to Bring it in, and from bringing it in to the pod's page", async () => {
-  const made = await fetch(bare.origin + "/pods", {
-    method: "POST",
-    redirect: "manual",
-    headers: {
-      origin: bare.origin,
-      "content-type": "application/x-www-form-urlencoded",
-    },
-    body: new URLSearchParams({ person: "Ines Calloway" }),
+  const made = await post(bare.origin, "/api/makePod", {
+    person: "Ines Calloway",
   });
-  assert.equal(made.status, 303);
+  assert.equal(made.status, 200);
   const page = await browser.newPage();
   await page.goto(`${bare.origin}/pods/ines-calloway/`);
   await page
@@ -263,22 +249,24 @@ test("after Allow at a demo hospital the connection's box moves on by itself, to
     .first()
     .click();
   await page.getByRole("button", { name: "Allow" }).click();
-  await page.waitForURL(/\?connection=\d+#connection$/);
   const bring = page.getByRole("button", { name: /^Bring it into / });
   await bring.waitFor({ timeout: 30_000 });
+  assert.equal(new URL(page.url()).origin, bare.origin);
   await bring.click();
   await page
     .locator("main .note", { hasText: /^Brought in the record from / })
     .waitFor({ timeout: 60_000 });
+
+  await page.goto(`${bare.origin}/pods/ines-calloway/connections/999`);
+  await page.locator("h1", { hasText: /^Ines Calloway$/ }).waitFor();
+  assert.equal(
+    await page.locator("#connection").count(),
+    0,
+    "a connection the pod has not opens a box",
+  );
+  await page.goto(`${bare.origin}/pods/nobody-here/connections/1`);
+  await page.locator("h1", { hasText: /^Not found$/ }).waitFor();
   await page.close();
-  for (const [path, status, to] of [
-    ["/pods/ines-calloway/connections/999", 303, "/pods/ines-calloway/"],
-    ["/pods/nobody-here/connections/1", 404, null],
-  ]) {
-    const gone = await fetch(bare.origin + path, { redirect: "manual" });
-    assert.equal(gone.status, status);
-    assert.equal(gone.headers.get("location"), to);
-  }
 });
 
 test("a finding the model's tool found is drawn as a card with the app's sentence, its numbers and row links, and Open the trend goes to the trend", async () => {
@@ -561,6 +549,7 @@ test("an encrypted pod: six words checked, nothing plaintext on disk, no chat sa
     await page.getByLabel("Encrypt this pod with six words").check();
     await page.getByLabel("A person's name").fill("Grace Hopper");
     await page.getByRole("button", { name: "Make the pod" }).click();
+    await page.locator(".words li").nth(5).waitFor();
     const words = await page.locator(".words li").allTextContents();
     assert.equal(words.length, 6);
 
@@ -614,6 +603,9 @@ test("an encrypted pod: six words checked, nothing plaintext on disk, no chat sa
     await page.getByLabel("Word 2").fill(words[1]!);
     await page.getByLabel("Word 5").fill(words[4]!);
     await page.getByRole("button", { name: "Make the encrypted pod" }).click();
+    await page
+      .locator("main", { hasText: /must hold the six words above/ })
+      .waitFor();
     assert.match(
       (await page.locator("main").textContent()) ?? "",
       /must hold the six words above/,
@@ -632,6 +624,9 @@ test("an encrypted pod: six words checked, nothing plaintext on disk, no chat sa
     await page.getByLabel("Word 2").fill(words[1]!);
     await page.getByLabel("Word 5").fill(words[4]!);
     await page.getByRole("button", { name: "Make the encrypted pod" }).click();
+    await page
+      .locator("main", { hasText: /Pod field must keep the pod's name/ })
+      .waitFor();
     assert.match(
       (await page.locator("main").textContent()) ?? "",
       /Pod field must keep the pod's name/,
@@ -645,6 +640,9 @@ test("an encrypted pod: six words checked, nothing plaintext on disk, no chat sa
     await page.getByLabel("Word 2").fill("not-a-word");
     await page.getByLabel("Word 5").fill(words[4]!);
     await page.getByRole("button", { name: "Make the encrypted pod" }).click();
+    await page
+      .locator("main", { hasText: /Those aren't words 2 and 5/ })
+      .waitFor();
     assert.match(
       (await page.locator("main").textContent()) ?? "",
       /Those aren't words 2 and 5/,
@@ -678,6 +676,7 @@ test("an encrypted pod: six words checked, nothing plaintext on disk, no chat sa
     await racing.getByLabel("Encrypt this pod with six words").check();
     await racing.getByLabel("A person's name").fill("Alan Turing");
     await racing.getByRole("button", { name: "Make the pod" }).click();
+    await racing.locator(".words li").nth(5).waitFor();
     const racingWords = await racing.locator(".words li").allTextContents();
     const plain = await browser.newPage();
     await plain.goto(`${sealed.origin}/#new-pod`);
@@ -689,11 +688,20 @@ test("an encrypted pod: six words checked, nothing plaintext on disk, no chat sa
     await racing
       .getByRole("button", { name: "Make the encrypted pod" })
       .click();
+    await racing
+      .locator("main", { hasText: /A pod named alan-turing exists already/ })
+      .waitFor();
     assert.match(
       (await racing.locator("main").textContent()) ?? "",
       /A pod named alan-turing exists already/,
     );
-    assert.equal(await racing.url(), `${sealed.origin}/encrypted-pods`);
+    assert.equal(
+      (await racing.locator("h1").allTextContents()).some(
+        (text) => text.trim() === "Alan Turing",
+      ),
+      false,
+      "the refused encrypted pod goes to the plain one",
+    );
     await racing.close();
     await plain.close();
 
@@ -721,13 +729,15 @@ test("an encrypted pod: six words checked, nothing plaintext on disk, no chat sa
       .getByLabel("Your six words")
       .fill("one two three four five six");
     await again.getByRole("button", { name: "Open this pod" }).click();
+    await again.locator("main", { hasText: /don't open this pod/ }).waitFor();
     assert.match(
       (await again.locator("main").textContent()) ?? "",
       /don't open this pod/,
     );
     await again.getByLabel("Your six words").fill(words.join(" "));
     await again.getByRole("button", { name: "Open this pod" }).click();
-    await again.waitForURL(`${sealed.origin}/pods/grace-hopper/`);
+    await again.getByLabel("Your six words").waitFor({ state: "detached" });
+    await again.locator("main", { hasText: /Grace Hopper/ }).waitFor();
     assert.equal(await again.getByLabel("Your six words").count(), 0);
     assert.match(
       (await again.locator("main").textContent()) ?? "",

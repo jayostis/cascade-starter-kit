@@ -63,6 +63,31 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+      # The check reads the app's screens in Chromium's headless shell, cached as try.yml caches it, where each system keeps it.
+      - id: playwright
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(node -p "require('playwright/package.json').version")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          case "$RUNNER_OS" in
+            Linux) echo "path=~/.cache/ms-playwright" >> "$GITHUB_OUTPUT" ;;
+            Windows) echo "path=~/AppData/Local/ms-playwright" >> "$GITHUB_OUTPUT" ;;
+            macOS) echo "path=~/Library/Caches/ms-playwright" >> "$GITHUB_OUTPUT" ;;
+          esac
+      - id: browsers
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ steps.playwright.outputs.path }}
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-shell
+      - id: install
+        # Linux needs the shell's system libraries; on Windows --with-deps adds Media Foundation, which the shell never uses, for three minutes.
+        run: npx playwright install ${{ runner.os == 'Linux' && '--with-deps' || '' }} --only-shell chromium
+      - uses: actions/cache/save@v6
+        if: ${{ steps.install.outcome == 'success' && steps.browsers.outputs.cache-hit != 'true' }}
+        with:
+          path: ${{ steps.playwright.outputs.path }}
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-shell
       - uses: actions/download-artifact@v7
         with:
           name: create
@@ -90,6 +115,31 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+      # The check reads the app's screens in Chromium's headless shell, cached as try.yml caches it, where each system keeps it.
+      - id: playwright
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(node -p "require('playwright/package.json').version")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          case "$RUNNER_OS" in
+            Linux) echo "path=~/.cache/ms-playwright" >> "$GITHUB_OUTPUT" ;;
+            Windows) echo "path=~/AppData/Local/ms-playwright" >> "$GITHUB_OUTPUT" ;;
+            macOS) echo "path=~/Library/Caches/ms-playwright" >> "$GITHUB_OUTPUT" ;;
+          esac
+      - id: browsers
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ steps.playwright.outputs.path }}
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-shell
+      - id: install
+        # Linux needs the shell's system libraries; on Windows --with-deps adds Media Foundation, which the shell never uses, for three minutes.
+        run: npx playwright install ${{ runner.os == 'Linux' && '--with-deps' || '' }} --only-shell chromium
+      - uses: actions/cache/save@v6
+        if: ${{ steps.install.outcome == 'success' && steps.browsers.outputs.cache-hit != 'true' }}
+        with:
+          path: ${{ steps.playwright.outputs.path }}
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-shell
       - uses: actions/download-artifact@v7
         with:
           name: create
@@ -143,6 +193,31 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+      # The check reads the app's screens in Chromium's headless shell, cached as try.yml caches it, where each system keeps it.
+      - id: playwright
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(node -p "require('playwright/package.json').version")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          case "$RUNNER_OS" in
+            Linux) echo "path=~/.cache/ms-playwright" >> "$GITHUB_OUTPUT" ;;
+            Windows) echo "path=~/AppData/Local/ms-playwright" >> "$GITHUB_OUTPUT" ;;
+            macOS) echo "path=~/Library/Caches/ms-playwright" >> "$GITHUB_OUTPUT" ;;
+          esac
+      - id: browsers
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ steps.playwright.outputs.path }}
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-shell
+      - id: install
+        # Linux needs the shell's system libraries; on Windows --with-deps adds Media Foundation, which the shell never uses, for three minutes.
+        run: npx playwright install ${{ runner.os == 'Linux' && '--with-deps' || '' }} --only-shell chromium
+      - uses: actions/cache/save@v6
+        if: ${{ steps.install.outcome == 'success' && steps.browsers.outputs.cache-hit != 'true' }}
+        with:
+          path: ${{ steps.playwright.outputs.path }}
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-shell
       - name: The starter's check, against the release
         working-directory: ${{ runner.temp }}
         run: node "$GITHUB_WORKSPACE/check/starter.mjs" --release "$GITHUB_SHA"

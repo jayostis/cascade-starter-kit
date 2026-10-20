@@ -62,6 +62,47 @@ export async function newPod(page: Page, label: string): Promise<void> {
   );
 }
 
+/**
+ * Waits for the page showing to be drawn, `timeout` ms at most: its `main` is there, nothing in it is pending, and the
+ * body is not busy and says `ready` (`opening` and any other state wait); it cannot tell a screen from before a click
+ * from the one the click brings, so after a click that changes the screen wait for what the new one shows first.
+ */
+export async function drawn(page: Page, timeout = 120_000): Promise<void> {
+  try {
+    await page.waitForFunction(
+      () => {
+        const state = document.body?.dataset.state;
+        return (
+          state === "error" ||
+          (document.querySelector("main") !== null &&
+            document.querySelector('[aria-busy="true"]') === null &&
+            (state === undefined || state === "ready"))
+        );
+      },
+      undefined,
+      { timeout },
+    );
+  } catch (error) {
+    throw new Error(
+      `${page.url()} was never drawn: ${(pageErrors.get(page) ?? []).join("; ") || String(error)}`,
+      { cause: error },
+    );
+  }
+  if ((await page.getAttribute("body", "data-state")) === "error")
+    throw new Error(
+      `${page.url()} says: ${(await page.textContent("main")) ?? ""}`,
+    );
+}
+
+/** What a person reads of the page: the text of its body, its scripts and styles left out, its closed boxes kept. */
+export function readable(page: Page): Promise<string> {
+  return page.evaluate(() => {
+    const body = document.body.cloneNode(true) as HTMLElement;
+    for (const left of body.querySelectorAll("script, style")) left.remove();
+    return (body.textContent ?? "").trim();
+  });
+}
+
 /** Each tile the pod's page shows, by its kind, with the count it shows. */
 export async function tiles(page: Page): Promise<Map<string, number>> {
   return new Map(

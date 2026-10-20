@@ -57,7 +57,8 @@ npm run build:create
 Then, from a folder outside the repository,
 `node <repository>/check/starter.mjs <repository>/build/create-cascade-app-*.tgz`
 makes an app from the packed command in a new folder under it and uses it as a
-person would; it takes minutes.
+person would: its data through `/api`, its screens in Chromium (run
+`npx playwright install --only-shell chromium` once); it takes minutes.
 
 try/ in Chromium: `npm run build:try` writes `build/pages/` (try/, the four
 samples, a root page that sends a visitor to try/), then `npm run test:browser`;
