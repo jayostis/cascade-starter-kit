@@ -111,20 +111,20 @@ after(async () => {
 
 test("every tool is free or ask, and its run calls only the PodApi operations it is about, never one the never list holds", async () => {
   const pod = "p";
-  const runs: Record<string, [Input, string[]]> = {
-    list_pods: [{}, ["pods"]],
-    find_changes: [{ pod }, ["tool"]],
-    finding_rows: [{ pod, key: "k" }, ["tool"]],
-    lab_series: [{ pod, test: "t" }, ["tool"]],
-    timeline: [{ pod }, ["tool"]],
-    worth_a_look: [{ pod }, ["tool"]],
-    ask: [{ pod, question: QUESTIONS[0] }, ["ask"]],
-    open_pod: [{ pod }, ["pod"]],
-    open_trend: [{ pod, test: "t", medication: "m" }, ["trend"]],
-    open_entry: [{ pod, entry: "e" }, ["ask"]],
-    make_pod: [{ person: "Ann" }, ["makePod"]],
-    check_tables: [{}, ["checkTables"]],
-    set_world_date: [{ date: "2026-01-01" }, ["setWorldDate"]],
+  const runs: Record<string, [Input, string[], string]> = {
+    list_pods: [{}, ["pods"], "free"],
+    find_changes: [{ pod }, ["tool"], "free"],
+    finding_rows: [{ pod, key: "k" }, ["tool"], "free"],
+    lab_series: [{ pod, test: "t" }, ["tool"], "free"],
+    timeline: [{ pod }, ["tool"], "free"],
+    worth_a_look: [{ pod }, ["tool"], "free"],
+    ask: [{ pod, question: QUESTIONS[0] }, ["ask"], "free"],
+    open_pod: [{ pod }, ["pod"], "free"],
+    open_trend: [{ pod, test: "t", medication: "m" }, ["trend"], "free"],
+    open_entry: [{ pod, entry: "e" }, ["ask"], "free"],
+    make_pod: [{ person: "Ann", encrypt: true }, ["makePod"], "ask"],
+    check_tables: [{}, ["checkTables"], "ask"],
+    set_world_date: [{ date: "2026-01-01" }, ["setWorldDate"], "ask"],
   };
   const answers: Record<string, unknown> = {
     pods: { pods: [{ name: pod }] },
@@ -153,7 +153,8 @@ test("every tool is free or ask, and its run calls only the PodApi operations it
     Object.keys(runs).sort(),
   );
   for (const tool of TOOLS) {
-    assert.ok(["free", "ask"].includes(tool.tier), tool.name);
+    const [input, ops, tier] = runs[tool.name]!;
+    assert.equal(tool.tier, tier, tool.name);
     const called: [string, Input][] = [];
     const recording = new Proxy(
       {},
@@ -166,7 +167,6 @@ test("every tool is free or ask, and its run calls only the PodApi operations it
           },
       },
     );
-    const [input, ops] = runs[tool.name]!;
     await tool.run(recording, input, {
       open: async () => {},
       address: { pod: () => "/", trend: () => "/", entry: () => "/" },
