@@ -11,6 +11,20 @@ const SAID = {
     "serve the app, then open the address it prints; stop it with Ctrl+C",
   ],
   dev: ["npm run dev", "serve the app, restarting it whenever a file is saved"],
+  build: ["npm run build", "build the React app the port is making, for Node"],
+  "build:browser": [
+    "npm run build:browser",
+    "build that app for a browser, PodApi in the page",
+  ],
+  next: [
+    "npm run next",
+    "build that app and serve it at the address it prints (port 3001)",
+  ],
+  "dev:next": [
+    "npm run dev:next",
+    "serve that app's sources, rebuilt whenever a file is saved",
+  ],
+  typecheck: ["npm run typecheck", "check the app's TypeScript"],
   reset: [
     "npm run reset",
     "remove every pod and load Alex's, Priya's, Martin's and Tamsin's again, as when the app was made",
