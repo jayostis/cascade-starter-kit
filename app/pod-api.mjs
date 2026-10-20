@@ -132,7 +132,7 @@ const CHECKS = {
 const { string, boolean, positiveInteger, object, waitFor } = CHECKS;
 
 /** The check each input a client may send must pass when it is given, by operation. */
-const INPUTS = {
+export const INPUTS = {
   pods: {},
   held: {},
   pod: { pod: string },
@@ -167,14 +167,20 @@ const INPUTS = {
 /** The operations a client may call, which is every member of `podApi(host)` but `close`. */
 export const OPERATIONS = Object.keys(INPUTS);
 
+/** Why the operation `name` refuses `input`, an input that is no object or holds a field of the wrong type; else nothing. */
+export function inputRefusal(name, input) {
+  if (!object[1](input)) return "the input must be an object";
+  for (const [field, [what, is]] of Object.entries(INPUTS[name]))
+    if (input[field] !== undefined && !is(input[field]))
+      return `${field} must be ${what}`;
+  return undefined;
+}
+
 /** `operation`, refusing an input that is no object or holds a field of the wrong type. */
 function typed(name, operation) {
   return async (input = {}) => {
-    if (!object[1](input)) throw new Refusal("the input must be an object");
-    for (const [field, [what, is]] of Object.entries(INPUTS[name])) {
-      if (input[field] !== undefined && !is(input[field]))
-        throw new Refusal(`${field} must be ${what}`);
-    }
+    const refused = inputRefusal(name, input);
+    if (refused !== undefined) throw new Refusal(refused);
     return operation(input);
   };
 }
