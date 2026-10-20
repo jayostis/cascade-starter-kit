@@ -33,6 +33,23 @@ const { nodeHost } = (await import(
 const { trendUrl } = (await import(
   new URL("../../app/pods.mjs", import.meta.url).href
 )) as { trendUrl: (pod: string, trend: object) => string };
+type Input = Record<string, unknown>;
+interface Tool {
+  name: string;
+  tier: string;
+  opens?: true;
+  run(
+    api: object,
+    input: Input,
+    door: {
+      open(address: string): Promise<void>;
+      address: Record<string, () => string>;
+    },
+  ): Promise<unknown>;
+}
+const { NEVER, TOOLS } = (await import(
+  new URL("../../app/tools.mjs", import.meta.url).href
+)) as { NEVER: { op: string; with?: string }[]; TOOLS: Tool[] };
 
 const STATIN = "story-statin";
 const pods = new Map<string, Pod>();
@@ -92,17 +109,94 @@ after(async () => {
   await api.close();
 });
 
-test("a client lists the pods and the tools, each but the list taking the pod's name, and is warned that a hosted client sends the answers to its provider", async () => {
+test("every tool is free or ask, and its run calls only the PodApi operations it is about, never one the never list holds", async () => {
+  const pod = "p";
+  const runs: Record<string, [Input, string[]]> = {
+    list_pods: [{}, ["pods"]],
+    find_changes: [{ pod }, ["tool"]],
+    finding_rows: [{ pod, key: "k" }, ["tool"]],
+    lab_series: [{ pod, test: "t" }, ["tool"]],
+    timeline: [{ pod }, ["tool"]],
+    worth_a_look: [{ pod }, ["tool"]],
+    ask: [{ pod, question: QUESTIONS[0] }, ["ask"]],
+    open_pod: [{ pod }, ["pod"]],
+    open_trend: [{ pod, test: "t", medication: "m" }, ["trend"]],
+    open_entry: [{ pod, entry: "e" }, ["ask"]],
+    make_pod: [{ person: "Ann" }, ["makePod"]],
+    check_tables: [{}, ["checkTables"]],
+    set_world_date: [{ date: "2026-01-01" }, ["setWorldDate"]],
+  };
+  const answers: Record<string, unknown> = {
+    pods: { pods: [{ name: pod }] },
+    tool: { value: [], found: [] },
+    ask: { rows: [{ entry: "e" }] },
+    trend: {
+      series: { test: { notation: "t" } },
+      timeline: [{ notation: "m", name: "M" }],
+    },
+  };
+  assert.deepEqual(
+    NEVER.map(({ op, with: given }) => [op, given]),
+    [
+      ["makePod", "encrypt"],
+      ["waitingWords", undefined],
+      ["confirmWords", undefined],
+      ["unlock", undefined],
+      ["connect", undefined],
+      ["bring", undefined],
+      ["deleteAll", undefined],
+      ["resetAll", undefined],
+    ],
+  );
+  assert.deepEqual(
+    TOOLS.map(({ name }) => name).sort(),
+    Object.keys(runs).sort(),
+  );
+  for (const tool of TOOLS) {
+    assert.ok(["free", "ask"].includes(tool.tier), tool.name);
+    const called: [string, Input][] = [];
+    const recording = new Proxy(
+      {},
+      {
+        get:
+          (_, op: string) =>
+          async (input: Input = {}) => {
+            called.push([op, input]);
+            return answers[op] ?? {};
+          },
+      },
+    );
+    const [input, ops] = runs[tool.name]!;
+    await tool.run(recording, input, {
+      open: async () => {},
+      address: { pod: () => "/", trend: () => "/", entry: () => "/" },
+    });
+    assert.deepEqual(
+      called.map(([op]) => op),
+      ops,
+      tool.name,
+    );
+    for (const [op, given] of called)
+      assert.ok(
+        !NEVER.some(
+          (never) =>
+            never.op === op &&
+            (never.with === undefined || given[never.with] !== undefined),
+        ),
+        `${tool.name} calls ${op} ${JSON.stringify(given)}`,
+      );
+  }
+});
+
+test("a client lists the pods and the free reads of the one tool list, each but the list taking the pod's name, and is warned that a hosted client sends the answers to its provider", async () => {
   const { tools } = await client.listTools();
-  assert.deepEqual(tools.map(({ name }) => name).sort(), [
-    "ask",
-    "find_changes",
-    "finding_rows",
-    "lab_series",
-    "list_pods",
-    "timeline",
-    "worth_a_look",
-  ]);
+  assert.deepEqual(
+    tools.map(({ name }) => name).sort(),
+    TOOLS.filter(({ tier, opens }) => tier === "free" && opens === undefined)
+      .map(({ name }) => name)
+      .sort(),
+  );
+  assert.equal(tools.length, 7);
   for (const { name, inputSchema } of tools)
     assert.equal(
       (inputSchema.required as string[] | undefined)?.includes("pod") ?? false,
