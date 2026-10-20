@@ -79,7 +79,7 @@ const { nodeHost } = (await import(
   };
 };
 const { entryId, testsIn } = (await import(
-  new URL("../../app/summary.mjs", import.meta.url).href
+  new URL("../../app/said.ts", import.meta.url).href
 )) as {
   entryId: (entry: string) => string;
   testsIn: (labs: unknown[]) => { code: string; notation?: string }[];

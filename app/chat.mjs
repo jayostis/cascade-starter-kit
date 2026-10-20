@@ -7,7 +7,7 @@ import { checkInput, Refusal } from "cascade-runtime";
 import { callsMessage } from "./model-client.mjs";
 import { maps } from "./pod-api.mjs";
 import { podPath, trendPath } from "./pods.mjs";
-import { CHANGED, changeSaid, entryId } from "./summary.mjs";
+import { CHANGED, changeSaid, entryId } from "./said.ts";
 import { TOOLS, withPod } from "./tools.mjs";
 
 /** How many rounds of tool calls a chat runs before it ends with an error. */

@@ -31,9 +31,23 @@ export default tseslint.config(
         "error",
         {
           selector:
-            "ImportDeclaration[source.value!=/^(preact|preact\\/hooks|htm|preact-render-to-string)$/], ImportExpression",
+            "ImportDeclaration[source.value!=/^(preact|preact\\/hooks|htm|preact-render-to-string|\\.\\/said\\.ts)$/], ImportExpression",
           message:
-            "The view runs in a browser too: it imports only preact, preact/hooks, htm and preact-render-to-string.",
+            "The view runs in a browser too: it imports only preact, preact/hooks, htm, preact-render-to-string and ./said.ts.",
+        },
+      ],
+    },
+  },
+  {
+    files: ["app/said.ts"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector:
+            "ImportDeclaration, ImportExpression, ExportNamedDeclaration[source], ExportAllDeclaration",
+          message:
+            "What the pages say runs everywhere, as plain functions: said.ts imports nothing.",
         },
       ],
     },
@@ -45,9 +59,9 @@ export default tseslint.config(
         "error",
         {
           selector:
-            "ImportDeclaration[source.value!=/^(cascade-runtime|\\.\\/summary\\.mjs)$/], ImportExpression, ExportNamedDeclaration[source], ExportAllDeclaration",
+            "ImportDeclaration[source.value!=/^(cascade-runtime|\\.\\/said\\.ts)$/], ImportExpression, ExportNamedDeclaration[source], ExportAllDeclaration",
           message:
-            "PodApi runs in a browser too: it imports only cascade-runtime and ./summary.mjs, and re-exports nothing.",
+            "PodApi runs in a browser too: it imports only cascade-runtime and ./said.ts, and re-exports nothing.",
         },
         {
           selector:
