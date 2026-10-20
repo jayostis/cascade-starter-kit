@@ -40,7 +40,7 @@ const {
     response: unknown,
     options: { model: Model | undefined; tools: Tools },
   ) => Promise<void>;
-  chatTools: (shared: unknown, options?: unknown) => Tools;
+  chatTools: (api: unknown) => Tools;
   checkBody: (body: unknown) => unknown;
   EXPLAIN_THE_THING: string;
   MAX_ROUNDS: number;
@@ -63,9 +63,9 @@ const { maps, podApi } = (await import(
   maps: (output: object) => { about: Map<string, unknown> };
   podApi: (host: object) => Api;
 };
-const { podTools } = (await import(
-  new URL("../../app/pod-tools.mjs", import.meta.url).href
-)) as { podTools: (...options: unknown[]) => unknown };
+const { TOOLS } = (await import(
+  new URL("../../app/tools.mjs", import.meta.url).href
+)) as { TOOLS: { name: string; tier: string; opens?: true }[] };
 const { changeSaid, entryId, HISTORY, SOURCES } = (await import(
   new URL("../../app/summary.mjs", import.meta.url).href
 )) as {
@@ -118,13 +118,7 @@ before(async () => {
     opensEncrypted: true,
     unsaid() {},
   });
-  tools = chatTools(
-    podTools(api, {
-      viewOf: (pod: string, { test, medication }: Record<string, string>) =>
-        `/pods/${pod}/trend?test=${test}&medication=${medication}`,
-    }),
-    { api },
-  );
+  tools = chatTools(api);
 });
 
 after(async () => {
@@ -261,7 +255,12 @@ test("a finding says itself as the page does: named by what the tables say of it
   assert.equal(finding!.said, changeSaid(whole, names));
 });
 
-test("open_pod, open_trend and open_entry give the address of a page that is there, and open_entry for an entry the pod lacks a tool error that says where IDs are", async () => {
+test("the chat offers the free tools of the one list; its open_pod, open_trend and open_entry give the address of a page that is there, and open_entry for an entry the pod lacks a tool error that says where IDs are", async () => {
+  const free = TOOLS.filter(({ tier }) => tier === "free");
+  assert.deepEqual(
+    (tools as { specs: { name: string }[] }).specs.map(({ name }) => name),
+    free.map(({ name }) => name),
+  );
   const [source] = await pods.get(STATIN)!.ask(SOURCES);
   const entry = source!.entry!;
   const table: [string, Record<string, unknown>, string | RegExp][] = [
@@ -292,6 +291,10 @@ test("open_pod, open_trend and open_entry give the address of a page that is the
       /holds no entry nothing; ask's rows give each entry's ID/,
     ],
   ];
+  assert.deepEqual(
+    [...new Set(table.map(([name]) => name))],
+    free.filter(({ opens }) => opens).map(({ name }) => name),
+  );
   const { model } = fakeModel([
     calling(...table.map(([name, input], at) => call(`c${at}`, name, input))),
     reply("Opened."),

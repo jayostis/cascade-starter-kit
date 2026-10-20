@@ -28,11 +28,15 @@ and `console.mjs` opens a raw `Pod` through `openWithoutWords`;
 an encrypted pod is opened only by the app, with its six words (`server.mjs`: `/encrypted-pods`,
 `/pods/<name>/open`), and `mcp.mjs` and `npm run ask` refuse it, as their host is
 `nodeHost({ opensEncrypted: false })` (`node-host.mjs`), and `console.mjs` refuses it too;
-`pod-tools.mjs` holds the tools as a client sees them, which are `changeTools` of `cascade-runtime`
-beside `list_pods`, `ask` and `worth_a_look` (`worthALook` on the same
-inputs the page reads), each taking the pod's name and each run by `podApi`'s `tool` or `ask`; `chat.mjs`, the
-app's `POST /chat`, runs the same tools for a model and adds three that open the
-app's own pages. A hosted client sends what the tools return to its provider:
+`tools.mjs` holds the one list of tools a model reaches the app by (`TOOLS`), each
+calling `podApi`'s operations only, with its consent `tier`: `free` reads
+(`list_pods`, `changeTools` of `cascade-runtime` run by `podApi`'s `tool`, `worth_a_look`, `ask`) and moves the app
+(`open_pod`, `open_trend`, `open_entry`, through the door's `open` and its own addresses), and `ask` writes,
+which the person confirms first (`make_pod`, never encrypted; `check_tables`; `set_world_date`). `NEVER` is what
+no tool calls: `makePod` with `encrypt`, `waitingWords`, `confirmWords`, `unlock`, `connect`, `bring`,
+`deleteAll` and `resetAll`. The MCP server offers the free reads; `chat.mjs`, the
+app's `POST /chat`, the free tools, so the chat only reads and moves the app; try/'s WebMCP the free tools for the
+pod shown. No door offers an `ask` tool yet. A hosted client sends what the tools return to its provider:
 never point one at a person's own pod without their say. The starter holds only
 made-up records (the kits, the demo hospitals); before connecting real records,
 decide whether a hosted model may see them.
@@ -78,8 +82,7 @@ makes the address, a view never builds one). A pod that has been imported twice 
 in, and the medication's versions with what differs between them. Alex's, Priya's and Martin's pods
 hold too little for a card; Tamsin's holds one, and so does a story patient's:
 Ines Calloway, at Cascade North, by "+ New pod" and "Sign in at Cascade North". `TREND_VIEW` is the trend as a tool
-a model can call, which a browser host registers with `useView`; this server's
-pages register nothing, and a model reaches the trend through each
+a model can call, `open_trend` of `tools.mjs`; a model reaches the trend by it, or through each
 `find_changes` finding's `view` address.
 Every page has the chat strip (`Chat` renders it, from the `chat` that `frame`
 is given: the model's `{ provider, name, local }`, never its address or key, the

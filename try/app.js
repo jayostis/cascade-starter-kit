@@ -10,7 +10,6 @@
 // names; a `#…` link is the browser's, which opens and closes the boxes. Each pod opened stays open.
 import { render as renderInto } from "preact";
 import {
-  changeTools,
   checkInput,
   Refusal,
   toolRegistry,
@@ -53,6 +52,7 @@ import {
   trendTitle,
 } from "./summary.js";
 import { maps, podApi } from "./pod-api.js";
+import { TOOLS } from "./tools.js";
 import { browserHost, warmEngine } from "./browser-host.js";
 
 const BOX = "connection";
@@ -178,44 +178,41 @@ const classesHref = (pod, picked) =>
 const panelHref = (pod, panel) =>
   `${podHref(pod)}&${new URLSearchParams({ panel })}`;
 
-/** The pages the model context offers as tools: the views of the page shown, and the changes of the pod shown. */
+/** What the model context is offered of the pod shown: the free tools of the one list. */
 const registry = toolRegistry(document.modelContext);
 /** The tools of the pod shown, and the controller whose signal ends them. */
 let podTools;
+/** This page's own addresses, and how a tool moves the page to one. */
+const door = {
+  address: { pod: podHref, trend: trendHref, entry: entryHref },
+  open: (href) => busy(() => go(href), opening(href)),
+};
 
-/** Registers the change tools of `shown` while it is the pod shown; none when `shown` is undefined. */
+/**
+ * Registers the free tools for `shown` while it is the pod shown, each with the pod filled in; none when `shown` is
+ * undefined. Each tool's input is checked by its own schema.
+ */
 function offerTools(shown) {
   if (podTools?.pod === shown) return;
   podTools?.controller.abort();
   podTools = undefined;
   if (shown === undefined) return;
   const controller = new AbortController();
-  const ask = (question) =>
-    api.ask({ pod: shown, question }).then(({ rows }) => rows);
-  for (const tool of changeTools({ ask }))
-    registry.register(tool, { signal: controller.signal });
+  for (const { name, description, inputSchema, tier, ofPod, run } of TOOLS)
+    if (tier === "free")
+      registry.register(
+        {
+          name,
+          description,
+          inputSchema,
+          async execute(input) {
+            checkInput(inputSchema, input);
+            return run(api, ofPod ? { ...input, pod: shown } : input, door);
+          },
+        },
+        { signal: controller.signal },
+      );
   podTools = { pod: shown, controller };
-}
-
-/**
- * Registers `view`, a view of the page shown, as a tool that goes to its address; gives back what takes it away. The
- * tool's input is checked by the view's own schema.
- */
-function register(view) {
-  const controller = new AbortController();
-  registry.register(
-    {
-      ...view,
-      async execute(input) {
-        checkInput(view.inputSchema, input);
-        const href = trendHref(state.current, input);
-        await busy(() => go(href), opening(href));
-        return href;
-      },
-    },
-    { signal: controller.signal },
-  );
-  return () => controller.abort();
 }
 
 /** The entry `state.page` names, as the pod's answers and what the tables say of its codes give it. */
@@ -298,7 +295,6 @@ function pageShown() {
       changes: state.page.changes,
       trendHref: (trend) => trendHref(current, trend),
       classesHref: classesHref(current),
-      register,
     }),
   };
 }
@@ -541,7 +537,6 @@ async function showTrend(query) {
       medication,
       trendHref: (trend) => trendHref(current, trend),
       about,
-      register,
     }),
   );
 }
