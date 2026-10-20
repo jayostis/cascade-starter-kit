@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { cp, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { after, before, test } from "node:test";
+import { env } from "node:process";
+import { after, before, test as nodeTest } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   type Browser,
@@ -42,8 +43,59 @@ import { inPlace, newPod, settled, tiles, watched } from "./shown.js";
 
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const PAGES = join(ROOT, "build", "pages");
-/** The components try/ serves, as the package carries them. */
-const SERVED = join(PAGES, "try", "cascade-runtime", "components");
+/**
+ * The page the suite runs on: try/, or with `TRY=next` next/, the app's browser build, which runs the tests it has
+ * claimed and draws the screens it has ported (`next.json`).
+ */
+const TARGET = env.TRY === "next" ? "next" : "try";
+const NEXT = JSON.parse(
+  readFileSync(join(ROOT, "test-browser", "next.json"), "utf8"),
+) as { screens: string[]; claimed: string[] };
+/** The tests registered, so that a claim naming none fails the run. */
+const registered = new Set<string>();
+function test(name: string, run: () => Promise<void>): void {
+  registered.add(name);
+  nodeTest(
+    name,
+    {
+      skip:
+        TARGET === "next" && !NEXT.claimed.includes(name)
+          ? "next/ has not claimed it yet"
+          : false,
+    },
+    run,
+  );
+}
+/** Whether the page draws every one of `screens`: try/ draws them all. */
+const ported = (...screens: string[]): boolean =>
+  TARGET === "try" || screens.every((each) => NEXT.screens.includes(each));
+/** The components the page serves, as the package carries them. */
+const SERVED = join(PAGES, TARGET, "cascade-runtime", "components");
+/** The page's addresses: try/'s are its page's query, next/'s paths under its base. */
+const AT =
+  TARGET === "try"
+    ? {
+        home: "try/index.html",
+        pod: (pod: string) => `try/index.html?pod=${pod}`,
+        entryLink: (pod: string, id: string) =>
+          `?pod=${pod}&entry=${encodeURIComponent(id)}`,
+        code: (code: string) => `?table=&code=${code}`,
+        podOf: (url: string) => new URL(url).searchParams.get("pod"),
+        entryOf: (url: string) => new URL(url).searchParams.get("entry"),
+      }
+    : {
+        home: "next/",
+        pod: (pod: string) => `next/pods/${pod}/`,
+        entryLink: (pod: string, id: string) =>
+          `/next/pods/${pod}/entries/${encodeURIComponent(id)}`,
+        code: (code: string) => `/next/tables/?code=${code}`,
+        podOf: (url: string) =>
+          /\/pods\/([^/]+)\//.exec(new URL(url).pathname)?.[1] ?? null,
+        entryOf: (url: string) => {
+          const id = /\/entries\/([^/]+)$/.exec(new URL(url).pathname)?.[1];
+          return id === undefined ? null : decodeURIComponent(id);
+        },
+      };
 
 interface Followed {
   readonly repository: string;
@@ -105,7 +157,7 @@ interface Section {
   readonly title: string;
   readonly question?: string;
 }
-/** What the test reads of the starter's view, the module try/ renders. */
+/** What the test reads of what the pages say, `said.ts`, which both pages draw with. */
 interface View {
   readonly QUESTIONS: readonly string[];
   readonly SECTIONS: readonly Section[];
@@ -129,7 +181,7 @@ interface View {
 }
 
 const view = (await import(
-  pathToFileURL(join(ROOT, "app", "summary.mjs")).href
+  pathToFileURL(join(ROOT, "app", "said.ts")).href
 )) as View;
 /** The names of the free tools of the one list, which try/ offers for the pod shown. */
 const FREE_TOOLS = (
@@ -144,6 +196,8 @@ let served: Served;
 let browser: Browser;
 /** One browser profile for the tests that share its pods. */
 let profile: BrowserContext;
+/** The people whose pods the tests made in that profile, beside the samples a first visit copies. */
+const made: string[] = [];
 let alex: Answers;
 /** A demo person, what Node's look says of each hospital's pull, and what the pulls bring in. */
 interface Joined {
@@ -285,8 +339,10 @@ async function nodeJoin(family: string): Promise<Joined> {
 }
 
 before(async () => {
-  if (!existsSync(join(PAGES, "try", "index.html")))
-    throw new Error(`${PAGES} holds no try/; run npm run build:try first`);
+  if (!existsSync(join(PAGES, TARGET, "index.html")))
+    throw new Error(
+      `${PAGES} holds no ${TARGET}/; run npm run build:try first`,
+    );
   const copy = await mkdtemp(join(tmpdir(), "try-"));
   try {
     await cp(join(PAGES, ALEX, "pod"), copy, { recursive: true });
@@ -310,6 +366,11 @@ before(async () => {
 after(async () => {
   await browser?.close();
   await served?.close();
+  assert.deepEqual(
+    NEXT.claimed.filter((name) => !registered.has(name)),
+    [],
+    "next.json claims a test there is none of",
+  );
 });
 
 const texts = (page: Page, selector: string): Promise<string[]> =>
@@ -492,7 +553,7 @@ test("a first visit copies Alex's, Martin's, Priya's and Tamsin's pods and opens
   });
   const wrong: string[] = [];
   page.on("pageerror", (error) => wrong.push(error.message));
-  await page.goto(`${served.url}try/index.html`);
+  await page.goto(`${served.url}${AT.home}`);
   await settled(page);
 
   assert.equal(await page.textContent("main h1"), "Alex Rivera");
@@ -525,10 +586,7 @@ test("a first visit copies Alex's, Martin's, Priya's and Tamsin's pods and opens
     await page.$$eval(".worth li a", (found) =>
       found.map((each) => each.getAttribute("href")),
     ),
-    lines.map(
-      ({ entry }) =>
-        `?pod=${ALEX}&entry=${encodeURIComponent(view.entryId(entry))}`,
-    ),
+    lines.map(({ entry }) => AT.entryLink(ALEX, view.entryId(entry))),
   );
   assert.deepEqual(
     await tiles(page),
@@ -557,33 +615,39 @@ test("a first visit copies Alex's, Martin's, Priya's and Tamsin's pods and opens
       () => document.querySelector("main h1")?.textContent === "Alex Rivera",
     );
   });
-  assert.equal(new URL(page.url()).searchParams.get("pod"), ALEX);
-  await inPlace(page, () => page.click(".worth li a"));
-  assert.match(new URL(page.url()).search, /entry=/);
-  const entryName = await page.textContent("main h1");
-  await page.evaluate(() => {
-    history.pushState(null, "", "?table=&code=141");
-    dispatchEvent(new PopStateEvent("popstate"));
-  });
+  assert.equal(AT.podOf(page.url()), ALEX);
+  const toCode = ported("entry", "table");
+  let entryName: string | null = null;
+  if (toCode) {
+    await inPlace(page, () => page.click(".worth li a"));
+    assert.ok(AT.entryOf(page.url()), page.url());
+    entryName = await page.textContent("main h1");
+    await page.evaluate((code) => {
+      history.pushState(null, "", code);
+      dispatchEvent(new PopStateEvent("popstate"));
+    }, AT.code("141"));
+  }
   await page.unroute(ENGINE);
   for (const route of held) await route.continue().catch(() => undefined);
   await page.waitForSelector('body[data-engine="ready"]', { timeout: 60_000 });
   await page.unroute(TABLE_ROWS);
   for (const route of rows) await route.continue().catch(() => undefined);
-  await page.waitForFunction(
-    (name) => document.querySelector("main h1")?.textContent !== name,
-    entryName,
-    { timeout: 120_000 },
-  );
-  await settled(page);
-  assert.equal(
-    await page.textContent("main h1"),
-    "141 Influenza, split virus, trivalent, preservative",
-    (await page.textContent("main")) ?? "",
-  );
-  assert.match((await page.textContent("main")) ?? "", /141 Influenza/);
+  if (toCode) {
+    await page.waitForFunction(
+      (name) => document.querySelector("main h1")?.textContent !== name,
+      entryName,
+      { timeout: 120_000 },
+    );
+    await settled(page);
+    assert.equal(
+      await page.textContent("main h1"),
+      "141 Influenza, split virus, trivalent, preservative",
+      (await page.textContent("main")) ?? "",
+    );
+    assert.match((await page.textContent("main")) ?? "", /141 Influenza/);
+  }
   assert.deepEqual(wrong, []);
-  await page.goto(`${served.url}try/index.html`);
+  await page.goto(`${served.url}${AT.home}`);
   await page.waitForSelector('body[data-engine="ready"]', { timeout: 60_000 });
   await page.close();
 
@@ -593,7 +657,7 @@ test("a first visit copies Alex's, Martin's, Priya's and Tamsin's pods and opens
     try {
       await first.addInitScript(recordDraws);
       const fresh = watched(await first.newPage());
-      await fresh.goto(`${served.url}try/index.html`);
+      await fresh.goto(`${served.url}${AT.home}`);
       names.push(await drawnAt(fresh, "names"));
     } finally {
       await first.close();
@@ -652,6 +716,7 @@ test("a demo person's new pod signs in at both hospitals in a popup through try/
   await page.goto(`${served.url}try/index.html`);
   await settled(page);
   await newPod(page, view.familyFirst(person));
+  made.push(person.name);
   assert.equal(await page.textContent("main h1"), person.name);
   await page.waitForFunction(() => navigator.serviceWorker.controller !== null);
   assert.match(
@@ -1010,7 +1075,7 @@ test("in the lab results' box of the joined pod, a heading sorts by its column o
 
 test("after a reload, the pods made in this browser are still on the left", async () => {
   const page = watched(await profile.newPage());
-  await page.goto(`${served.url}try/index.html`);
+  await page.goto(`${served.url}${AT.home}`);
   await settled(page);
   assert.deepEqual(
     (await texts(page, "nav a")).sort(),
@@ -1019,7 +1084,7 @@ test("after a reload, the pods made in this browser are still on the left", asyn
       "Martin Okafor",
       "Priya Natarajan",
       "Tamsin Vale",
-      joined.person.name,
+      ...made,
     ].sort(),
   );
 });
@@ -2418,9 +2483,9 @@ test("in try/, the sample pod tamsin-vale draws What changed and, in its card, w
   const context = await browser.newContext();
   try {
     const page = watched(await context.newPage());
-    await page.goto(`${served.url}try/index.html`);
+    await page.goto(`${served.url}${AT.home}`);
     await settled(page);
-    await page.goto(`${served.url}try/index.html?pod=tamsin-vale`);
+    await page.goto(`${served.url}${AT.pod("tamsin-vale")}`);
     await page.locator(".changes .how").waitFor({ timeout: 60_000 });
 
     const card = page.locator(".change");
@@ -2461,7 +2526,7 @@ test("in try/, the sample pod tamsin-vale draws What changed and, in its card, w
   }
 });
 
-test("try/ ships the starter tables its published answers were computed with: after a check that finds nothing new, a visit draws a copied pod from its kept answers, the engine held back", async () => {
+test("try/ ships the starter tables its published answers were computed with: after a check that finds nothing new, a visit draws a copied pod from its kept answers, the engine held back, and the browser keeps one set of tables for every address", async () => {
   const [feedUrl] = (await servedConfig()).tables.feeds;
   assert.ok(feedUrl);
   const REC = "https://ns.cascadeprotocol.org/records/v1-draft#";
@@ -2489,7 +2554,7 @@ test("try/ ships the starter tables its published answers were computed with: af
       route.fulfill({ status: 404 }),
     );
     const page = watched(await context.newPage());
-    await page.goto(`${served.url}try/index.html`);
+    await page.goto(`${served.url}${AT.home}`);
     await settled(page);
     await page.waitForSelector('body[data-tables="ready"]', {
       timeout: 60_000,
@@ -2508,7 +2573,7 @@ test("try/ ships the starter tables its published answers were computed with: af
     );
 
     await page.route(ENGINE, (route) => route.abort());
-    await page.goto(`${served.url}try/index.html?pod=${ALEX}`);
+    await page.goto(`${served.url}${AT.pod(ALEX)}`);
     await settled(page, 30_000);
     assert.equal(await page.textContent("main h1"), "Alex Rivera");
     assert.ok((await tiles(page)).size > 0);
@@ -2523,6 +2588,12 @@ test("try/ ships the starter tables its published answers were computed with: af
     );
     const nav = (await page.textContent("aside section.tables")) ?? "";
     assert.ok(!nav.includes("Loading") && !nav.includes("None yet"), nav);
+    const tablesKept = await page.evaluate(async () =>
+      (await indexedDB.databases())
+        .map(({ name }) => name ?? "")
+        .filter((name) => name.endsWith(":cascade-tables")),
+    );
+    assert.equal(tablesKept.length, 1, tablesKept.join(", "));
 
     const sources = alex["entry/Where it came from"] ?? [];
     const penicillin = sources.filter(
@@ -2534,27 +2605,24 @@ test("try/ ships the starter tables its published answers were computed with: af
     );
     assert.ok(row);
     await page.click('a.tile[href="#see-allergies"]');
-    await inPlace(page, async () => {
-      await page
-        .locator("#see-allergies tbody tr")
-        .filter({ hasText: String(row.allergen) })
-        .locator("td:first-child a")
-        .first()
-        .click();
-      await page.waitForFunction(() =>
-        new URLSearchParams(location.search).has("entry"),
-      );
-    });
-    assert.equal(
-      new URL(page.url()).searchParams.get("entry"),
-      view.entryId(String(row.entry)),
-    );
-    assert.equal(await page.textContent("main h1"), row.allergen);
-    const came = await page
-      .locator("main .card", { hasText: "Where it came from" })
-      .innerText();
-    for (const place of new Set(penicillin.map(view.placeOf)))
-      assert.ok(came.includes(place), `${place} is not in ${came}`);
+    if (ported("entry")) {
+      await inPlace(page, async () => {
+        await page
+          .locator("#see-allergies tbody tr")
+          .filter({ hasText: String(row.allergen) })
+          .locator("td:first-child a")
+          .first()
+          .click();
+        await page.waitForURL((url) => AT.entryOf(url.href) !== null);
+      });
+      assert.equal(AT.entryOf(page.url()), view.entryId(String(row.entry)));
+      assert.equal(await page.textContent("main h1"), row.allergen);
+      const came = await page
+        .locator("main .card", { hasText: "Where it came from" })
+        .innerText();
+      for (const place of new Set(penicillin.map(view.placeOf)))
+        assert.ok(came.includes(place), `${place} is not in ${came}`);
+    }
     assert.equal(await page.getAttribute("body", "data-engine"), null);
     await page.close();
   } finally {

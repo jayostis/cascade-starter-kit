@@ -19,7 +19,10 @@ export interface Served {
   close(): Promise<void>;
 }
 
-/** Serves the folder on 127.0.0.1, as Pages serves it: no header beyond each file's type, a folder by its index.html. */
+/**
+ * Serves the folder on 127.0.0.1, as Pages serves it: no header beyond each file's type, a folder by its index.html,
+ * and an address with no file by the folder's `404.html`, with status 404, when it has one.
+ */
 export async function servePages(folder: string, port = 0): Promise<Served> {
   const root = absolute(folder);
   const server = createServer((request, response) => {
@@ -45,7 +48,14 @@ export async function servePages(folder: string, port = 0): Promise<Served> {
         });
         response.end(bytes);
       } catch {
-        response.writeHead(404).end();
+        const missing = await readFile(join(root, "404.html")).catch(
+          () => undefined,
+        );
+        if (missing === undefined) response.writeHead(404).end();
+        else
+          response
+            .writeHead(404, { "Content-Type": TYPES[".html"] })
+            .end(missing);
       }
     })();
   });
