@@ -155,9 +155,17 @@ function PodScreen({
     };
   }, [api, engine, page]);
   useEffect(() => {
-    if (shown?.at === at && !(typeof page === "object" && "wrong" in page))
-      ready();
-  }, [shown, at, page]);
+    if (shown?.at !== at || (typeof page === "object" && "wrong" in page))
+      return;
+    const title =
+      typeof page === "object"
+        ? personName(page.pod, titles)
+        : page === "locked"
+          ? "Open this pod"
+          : "Not found";
+    document.title = `${title} · Cascade`;
+    ready();
+  }, [shown, at, page, titles]);
   if (page === undefined) return null;
   if (typeof page === "object" && "wrong" in page)
     return <Wrong said={page.wrong} />;
