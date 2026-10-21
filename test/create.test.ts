@@ -23,6 +23,64 @@ import {
 
 const ADDRESS =
   "https://example.org/releases/download/build-0/cascade-runtime-0.0.0.tgz";
+/** The chat's and the MCP server's files, as a made app holds them with both added. */
+const CHAT_AND_MCP = [
+  "server/chat.ts",
+  "models.ts",
+  "model.ts",
+  "src/chat",
+  "mcp.ts",
+  "mcp-server.ts",
+];
+const OF_CHAT_AND_MCP =
+  /^(ai|@ai-sdk\/.+|@assistant-ui\/.+|@openrouter\/.+|@modelcontextprotocol\/.+)$/;
+
+type Made = {
+  dependencies: Record<string, string>;
+  devDependencies: Record<string, string>;
+  scripts: Record<string, string>;
+};
+type Manifest = {
+  name: string;
+  dependencies?: string[];
+  devDependencies?: string[];
+  files: { path: string; target: string }[];
+  meta?: { scripts?: Record<string, string> };
+};
+
+const madeOf = async (folder: string) =>
+  JSON.parse(await readFile(join(folder, "package.json"), "utf8")) as Made;
+
+/** Every file under `folder`, by its path from it with `/`, leaving out what create leaves out of the template. */
+async function filesOf(folder: string): Promise<string[]> {
+  return (await readdir(folder, { recursive: true, withFileTypes: true }))
+    .filter((entry) => entry.isFile())
+    .map((entry) =>
+      join(entry.parentPath, entry.name)
+        .slice(folder.length + 1)
+        .replaceAll("\\", "/"),
+    )
+    .filter(
+      (path) =>
+        !/^(node_modules|dist|dist-browser|pods|test-results)\//.test(path) &&
+        path !== ".env",
+    )
+    .sort();
+}
+
+/** `name@version`'s two parts, a scope's `@` kept with the name. */
+function pinOf(spec: string): [string, string] {
+  const at = spec.lastIndexOf("@");
+  return [spec.slice(0, at), spec.slice(at + 1)];
+}
+
+const manifestOf = async (name: string) =>
+  JSON.parse(
+    await readFile(
+      new URL(`../../add-ons/${name}/registry-item.json`, import.meta.url),
+      "utf8",
+    ),
+  ) as Manifest;
 
 let parent: string;
 
@@ -92,6 +150,15 @@ test("given a folder, it makes the project and names it, with the template's pac
     devDependencies: Record<string, string>;
   };
   assert.equal(manifest.name, "my-app");
+  for (const file of CHAT_AND_MCP)
+    assert.ok(!existsSync(join(folder, file)), `the base holds ${file}`);
+  assert.deepEqual(
+    Object.keys({ ...manifest.dependencies, ...template.devDependencies })
+      .filter((name) => OF_CHAT_AND_MCP.test(name))
+      .sort(),
+    [],
+    "the base depends on the AI SDK or MCP",
+  );
   const { devDependencies } = JSON.parse(
     await readFile(new URL("../../package.json", import.meta.url), "utf8"),
   ) as { devDependencies: Record<string, string> };
@@ -146,6 +213,88 @@ test("--tarball names the made app's runtime instead of the pin: an address as i
   }
 });
 
+test("--with adds exactly each named add-on's files, pinned dependencies and commands, at the versions the repository tests, and the end names its commands", async () => {
+  const template = join(parent, "with-none");
+  assert.equal(await create([template], recording()), 0);
+  const base = await madeOf(template);
+  const { devDependencies: tested } = JSON.parse(
+    await readFile(new URL("../../package.json", import.meta.url), "utf8"),
+  ) as { devDependencies: Record<string, string> };
+  for (const names of [["chat"], ["mcp"], ["chat", "mcp"]]) {
+    const folder = join(parent, `with-${names.join("-")}`);
+    const terminal = recording();
+    assert.equal(
+      await create([folder, "--with", names.join(",")], terminal),
+      0,
+      names.join(","),
+    );
+    const manifests = await Promise.all(names.map(manifestOf));
+    const made = await madeOf(folder);
+    const before = new Set(await filesOf(template));
+    assert.deepEqual(
+      (await filesOf(folder)).filter((path) => !before.has(path)),
+      manifests.flatMap(({ files }) => files.map(({ target }) => target)).sort(),
+      `${names.join(",")}: the files added`,
+    );
+    for (const [kind, listed] of [
+      ["dependencies", "dependencies"],
+      ["devDependencies", "devDependencies"],
+    ] as const) {
+      const added = Object.entries(made[kind]).filter(
+        ([name, version]) => base[kind][name] !== version,
+      );
+      const pins = manifests.flatMap((each) => (each[listed] ?? []).map(pinOf));
+      assert.deepEqual(added.sort(), pins.sort(), `${names.join(",")}: ${kind}`);
+      for (const [name, version] of pins)
+        assert.equal(tested[name], version, `the repository tests ${name}`);
+    }
+    const scripts = manifests.flatMap(({ meta }) =>
+      Object.keys(meta?.scripts ?? {}),
+    );
+    assert.deepEqual(Object.keys(made.scripts), [
+      ...Object.keys(base.scripts),
+      ...scripts,
+    ]);
+    for (const script of scripts)
+      assert.ok(
+        terminal.text().includes(`npm run ${script}`),
+        `the end does not name npm run ${script}`,
+      );
+  }
+  const chat = await madeOf(join(parent, "with-chat"));
+  assert.ok(existsSync(join(parent, "with-chat", "server", "chat.ts")));
+  assert.ok(existsSync(join(parent, "with-chat", "src", "chat", "window.tsx")));
+  assert.equal(typeof chat.dependencies.ai, "string");
+  assert.equal(chat.scripts.model, "node model.ts");
+  assert.ok(!existsSync(join(parent, "with-chat", "mcp.ts")));
+  const mcp = await madeOf(join(parent, "with-mcp"));
+  assert.ok(existsSync(join(parent, "with-mcp", "mcp-server.ts")));
+  assert.equal(mcp.scripts.mcp, "node mcp.ts");
+  assert.equal(mcp.dependencies.ai, undefined);
+});
+
+test("every file of an add-on's folder is one its manifest adds or merges", async () => {
+  for (const name of ["chat", "mcp"]) {
+    const manifest = await manifestOf(name) as Manifest & {
+      meta?: { merge?: Record<string, string> };
+    };
+    const folder = fileURLToPath(
+      new URL(`../../add-ons/${name}`, import.meta.url),
+    );
+    assert.deepEqual(
+      await filesOf(folder),
+      [
+        "registry-item.json",
+        ...manifest.files.map(({ path }) => path.slice(name.length + 1)),
+        ...Object.values(manifest.meta?.merge ?? {}).map((path) =>
+          path.slice(name.length + 1),
+        ),
+      ].sort(),
+      name,
+    );
+  }
+});
+
 test("the tables are set up first, each phase reported with its seconds before the first kit's line, and a failure leaves the kits to try", async () => {
   for (const fails of [false, true]) {
     let pods = "";
@@ -180,7 +329,52 @@ test("the tables are set up first, each phase reported with its seconds before t
   }
 });
 
-test("a terminal offers a model once the app is made, and says how to add one later when it is not taken up", async () => {
+test("with no --with a terminal asks which add-ons to add, none by default, and names a chosen one it does not know", async () => {
+  for (const [answer, chat] of [
+    [[], false],
+    [["chat"], true],
+  ] as const) {
+    const asked: string[][] = [];
+    const folder = join(parent, `chosen-${answer.join("-") || "none"}`);
+    assert.equal(
+      await create([folder], {
+        ...recording(),
+        choose: async (addOns) => {
+          asked.push(addOns.map(({ name }) => name));
+          return answer;
+        },
+      }),
+      0,
+    );
+    assert.deepEqual(asked, [["chat", "mcp"]]);
+    assert.equal(existsSync(join(folder, "server", "chat.ts")), chat);
+  }
+  const terminal = recording();
+  let asked = 0;
+  assert.equal(
+    await create([join(parent, "chosen-flag"), "--with", "mcp"], {
+      ...terminal,
+      choose: async () => {
+        asked += 1;
+        return [];
+      },
+    }),
+    0,
+  );
+  assert.equal(asked, 0, "it asked with --with given");
+  const unknown = recording();
+  assert.equal(
+    await create([join(parent, "chosen-unknown")], {
+      ...unknown,
+      choose: async () => ["chat", "nope"],
+    }),
+    2,
+  );
+  assert.match(unknown.text(), /no add-on named nope: the add-ons are chat and mcp/);
+  assert.ok(!existsSync(join(parent, "chosen-unknown")));
+});
+
+test("a terminal offers a model once the app is made with the chat, and says how to add one later when it is not taken up", async () => {
   for (const [taken, hint] of [
     [true, false],
     [false, true],
@@ -189,7 +383,7 @@ test("a terminal offers a model once the app is made, and says how to add one la
     const offered: string[] = [];
     const folder = join(parent, `model-${taken}`);
     assert.equal(
-      await create([folder], {
+      await create([folder, "--with", "chat"], {
         ...terminal,
         model: async (made) => {
           offered.push(made);
@@ -204,11 +398,27 @@ test("a terminal offers a model once the app is made, and says how to add one la
       0,
     );
     assert.deepEqual(offered, [folder]);
-    assert.equal(terminal.text().includes("npm run model"), hint);
+    assert.equal(
+      terminal.text().includes("connects a model to the app's chat later"),
+      hint,
+    );
   }
-  const terminal = recording();
-  assert.equal(await create([join(parent, "no-model")], terminal), 0);
-  assert.ok(!terminal.text().includes("npm run model"), "it offered a model");
+  for (const args of [[], ["--with", "mcp"]]) {
+    const terminal = recording();
+    let offered = 0;
+    assert.equal(
+      await create([join(parent, `no-model-${args.length}`), ...args], {
+        ...terminal,
+        model: async () => {
+          offered += 1;
+          return false;
+        },
+      }),
+      0,
+    );
+    assert.equal(offered, 0, "it offered a model with no chat");
+    assert.ok(!terminal.text().includes("npm run model"), "it named the model");
+  }
 });
 
 test("a pod that does not load leaves the app made, and says which", async () => {
@@ -252,6 +462,11 @@ test("it refuses a folder it cannot use and writes nothing", async () => {
       /no project name/,
     ],
     ["a name with a space", [join(parent, "my app")], /no project name/],
+    [
+      "an add-on it does not know",
+      [join(parent, "unknown"), "--with", "chat,nope"],
+      /no add-on named nope: the add-ons are chat and mcp/,
+    ],
   ];
   for (const [what, args, reason] of refusals) {
     const terminal = recording();
