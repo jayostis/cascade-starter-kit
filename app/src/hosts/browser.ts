@@ -210,7 +210,7 @@ export const host: Host = {
     name: dataset.name ?? "",
     version: dataset.version ?? "",
     runtime: dataset.runtime ?? "",
-    code: "https://github.com/jayostis/cascade-starter-kit",
+    ...(dataset.code && { code: dataset.code }),
   },
   people: () => beside<Person[]>("demo-people.json", []),
   firstVisit,

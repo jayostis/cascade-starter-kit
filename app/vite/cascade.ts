@@ -121,8 +121,9 @@ const signedIn = (runtime: string) => `<!doctype html>
 `;
 
 /**
- * The plugin, for the browser target when `browser`. `CASCADE_NAME` and `CASCADE_VERSION` name the app and what it
- * was built from in its About box (the app's package by default), and `CASCADE_SAMPLES` the samples a first visit
+ * The plugin, for the browser target when `browser`. `CASCADE_NAME`, `CASCADE_VERSION` and `CASCADE_CODE` name the
+ * app, what it was built from and where its code is, in its About box (the app's package by default; no link when it
+ * names none), and `CASCADE_SAMPLES` the samples a first visit
  * copies, by folder, beside the base.
  */
 export function cascade({ browser }: { browser: boolean }): Plugin {
@@ -141,13 +142,25 @@ export function cascade({ browser }: { browser: boolean }): Plugin {
     },
     async transformIndexHtml(html) {
       const [app, runtime] = await Promise.all([
-        json<{ name: string; version: string }>(join(APP, "package.json")),
+        json<{
+          name: string;
+          version: string;
+          repository?: string | { url?: string };
+          homepage?: string;
+        }>(join(APP, "package.json")),
         json<{ version: string }>(join(folder, "package.json")),
       ]);
       const body: Record<string, string> = {
         "data-name": env.CASCADE_NAME ?? app.name,
         "data-version": env.CASCADE_VERSION ?? app.version,
         "data-runtime": runtime.version,
+        "data-code":
+          env.CASCADE_CODE ??
+          (typeof app.repository === "string"
+            ? app.repository
+            : app.repository?.url) ??
+          app.homepage ??
+          "",
         ...(browser && { "data-samples": env.CASCADE_SAMPLES ?? "" }),
       };
       const attributes = Object.entries(body)

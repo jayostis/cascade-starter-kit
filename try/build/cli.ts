@@ -122,6 +122,7 @@ async function buildNext(samples: readonly string[], version: string) {
   Object.assign(env, {
     CASCADE_NAME: "Cascade try",
     CASCADE_VERSION: version,
+    CASCADE_CODE: "https://github.com/jayostis/cascade-starter-kit",
     CASCADE_SAMPLES: samples.join(" "),
   });
   await build({
