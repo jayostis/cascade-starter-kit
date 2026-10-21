@@ -48,6 +48,10 @@ const { modelOf } = (await import(
     key: string;
   }) => Model;
 };
+type Sent = { id: string; role: string; parts: Chunk[] };
+const { sent } = (await import(
+  new URL("../../app/src/chat/chats.ts", import.meta.url).href
+)) as { sent: (messages: Sent[], budget: number) => Sent[] };
 type Api = {
   said(input: object): Promise<Record<string, unknown>>;
   tool(input: object): Promise<{ found: { key: string }[] }>;
@@ -889,4 +893,59 @@ test("a chat that began with Ask about this tells the model the thing it asked a
   assert.ok(asked!.includes(EXPLAIN_THE_THING));
   assert.ok(!plain!.includes(EXPLAIN_THE_THING));
   assert.doesNotMatch(plain!, /asked about this/);
+});
+
+test("the window sends a question after the newest earlier messages within 24,000 characters, the first the person's, the model's turns without its refusals or calls left unanswered; a turn the page answered a tool of goes with its question", () => {
+  const text = (id: string, role: string, said: string): Sent => ({
+    id,
+    role,
+    parts: [{ type: "text", text: said }],
+  });
+  const answered = {
+    type: "tool-open_pod",
+    toolCallId: "c",
+    state: "output-available",
+    input: { pod: "p" },
+    output: { opened: "/pods/p/" },
+  };
+  const messages: Sent[] = [
+    text("long ago", "user", "x".repeat(24_000)),
+    text("asked", "user", "q"),
+    {
+      id: "refused",
+      role: "assistant",
+      parts: [
+        { type: "step-start" },
+        { type: "tool-ask", toolCallId: "d", state: "input-available" },
+        { type: "text", text: "a" },
+        { type: "data-refused", data: { text: "no" } },
+      ],
+    },
+    {
+      id: "only refused",
+      role: "assistant",
+      parts: [{ type: "data-refused" }],
+    },
+    text("again", "user", "q"),
+    {
+      id: "went",
+      role: "assistant",
+      parts: [{ type: "step-start" }, answered],
+    },
+    text("now", "user", "q"),
+  ];
+  const shown = sent(messages, 24_000);
+  assert.deepEqual(
+    shown.map(({ id }) => id),
+    ["asked", "refused", "again", "went", "now"],
+  );
+  assert.deepEqual(
+    shown[1]!.parts.map(({ type }) => type),
+    ["step-start", "text"],
+  );
+  const going = { ...messages[5]!, id: "going" };
+  assert.deepEqual(
+    sent([messages[0]!, messages[1]!, going], 24_000).map(({ id }) => id),
+    ["asked", "going"],
+  );
 });
