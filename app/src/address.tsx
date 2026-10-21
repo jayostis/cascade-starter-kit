@@ -32,13 +32,17 @@ export const byStep = (state: unknown): boolean =>
   (state as { page?: number } | null)?.page === performance.timeOrigin;
 
 /**
- * How many times a step has moved the app: it changes with the location a step moves to, never with a `#…` link, so a
- * screen that reads its data again when it does is read again for a step that leaves the address as it was.
+ * Which step's move last drew the app, as the page's load and its count of moves there: it changes with the location a
+ * step moves to, never with a `#…` link, so a screen that reads its data again when it does is read again for a step
+ * that leaves the address as it was.
  */
-export function useGeneration(): number {
-  const made = (useLocation().state as { go?: number } | null)?.go;
-  const kept = useRef(0);
-  if (made !== undefined) kept.current = made;
+export function useGeneration(): string {
+  const { go, page } = (useLocation().state ?? {}) as {
+    go?: number;
+    page?: number;
+  };
+  const kept = useRef("");
+  if (go !== undefined) kept.current = `${page} ${go}`;
   return kept.current;
 }
 
