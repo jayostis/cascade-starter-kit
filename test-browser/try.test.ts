@@ -1160,6 +1160,13 @@ test("File, Delete all data empties the pods column, leaves no pod nor answers i
       await page.textContent("main .note"),
       "Reset: Alex Rivera, Martin Okafor, Priya Natarajan and Tamsin Vale are back.",
     );
+    await page.goto(`${served.url}${AT.pod(ALEX)}#about`);
+    await settled(page);
+    assert.equal(
+      await page.isVisible("#about"),
+      true,
+      "a page loaded at a box's address shows the box",
+    );
   } finally {
     await context.close();
   }
