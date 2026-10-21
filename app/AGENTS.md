@@ -74,16 +74,21 @@ is returned as data, `{ refused }`, which the screen draws as "Not done" with
 its sentence, never as something gone wrong. A model's tools move and write
 through the router too (`useToolSteps`).
 
-**What the body says.** `body[data-state]` is written by one component,
-`PageState` of `doing.ts`, from the router alone: `opening` until the first
-screen is drawn, `busy` (every button off, the doing line saying what) from
-the moment the router starts to read or run anything, and while a read says
-it is still under way (a connection followed), `ready` in the commit that
-draws what the router read, and `error`, with why in `data-error`, when a read
-or a step went wrong. After a step, `ready` waits as well for the screen's
-`aria-busy` parts, so that nothing a step brought is drawn after it; after a
-plain move they fill in after it. `data-trace` keeps the last eight changes of
-state, each with where and who asked: a test that fails prints it.
+**What the body says.** `body[data-state]` is written by `doing.ts` from the
+router: `watch(router)` and the component `PageState`. It is `opening` until
+the first screen is drawn, `busy` (every button off, the doing line saying
+what) from the moment the router starts to read or run anything, and while a
+read says it is still under way (a connection followed), `ready` in the commit
+that draws what the router read, and `error`, with why in `data-error`, when a
+read or a step went wrong, a part that fills late among them. After a step,
+`ready` waits as well for the screen's `aria-busy` parts, so that nothing a
+step brought is drawn after it; after a plain move they fill in after it.
+Three other places write it, each for a moment the router does not see:
+`main.tsx` (an address outside the base, an app that could not start), the
+browser host's `busy("Waiting for the pods to close…")` during a deletion,
+and `Screen`'s `ready()` just before it leaves for a hospital's sign-in page.
+`data-trace` keeps the last eight changes of state, each with where and who
+asked: a test that fails prints it.
 
 To add a screen:
 

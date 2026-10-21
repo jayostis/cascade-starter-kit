@@ -24,6 +24,7 @@ import {
 import { useAddress } from "./address.tsx";
 import type { PodApi } from "./api.tsx";
 import { AskButton } from "./ask.tsx";
+import { failed } from "./doing.ts";
 import { warming, whenNamed } from "./engine.ts";
 import {
   bullet,
@@ -267,7 +268,10 @@ async function namedEntry(
   return entryOf(answers, id, { about, said, held }) ?? own;
 }
 
-/** The entry with all the tables say of it, its panels among it; the `named` entry alone where they say no more. */
+/**
+ * The entry with all the tables say of it, its panels among it; the `named` entry alone where the rules refuse more,
+ * and where the read fails for another reason, with the page gone wrong.
+ */
 async function fullEntry(
   api: PodApi,
   pod: string,
@@ -280,7 +284,11 @@ async function fullEntry(
       panels?: Panels;
     };
     return { entry: full.entry ?? named, panels: full.panels ?? [] };
-  } catch {
+  } catch (error) {
+    if (!(error instanceof Error && error.name === "Refusal"))
+      failed(
+        `the entry's tables could not be read: ${error instanceof Error ? error.message : String(error)}`,
+      );
     return { entry: named, panels: [] };
   }
 }
@@ -309,6 +317,7 @@ export const entryLoader = (api: PodApi) =>
     const named = whenNamed(
       () => namedEntry(api, pod, id, answers, own),
       undefined,
+      "the entry's names",
     );
     const full = async (entry: Entry | undefined): Promise<EntryRead> =>
       entry === undefined ? unnamed : fullEntry(api, pod, id, entry);

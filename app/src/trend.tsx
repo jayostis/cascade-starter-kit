@@ -283,7 +283,9 @@ export const trendLoader = (api: PodApi) =>
       value: {
         pod,
         read,
-        ...(later && { named: whenNamed(() => trend(true), read) }),
+        ...(later && {
+          named: whenNamed(() => trend(true), read, "the trend's names"),
+        }),
       } satisfies TrendAsked,
       title: trendTitle(read.series, read.about),
     };

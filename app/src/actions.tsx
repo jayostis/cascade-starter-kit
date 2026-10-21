@@ -185,6 +185,8 @@ export function steps(host: Host) {
         );
       } catch (error) {
         call?.reject(error);
+        if (!isNamed(error, "Refusal") && !isNamed(error, "Unopened"))
+          throw error;
       }
       return to === undefined ? null : redirect(to);
     },

@@ -156,7 +156,11 @@ export function routes(host: Host): RouteObject[] {
       async loader(): Promise<AppRead> {
         const people = await opening();
         const { pods } = await api.pods();
-        const tables = whenNamed(held, { held: [], read: "failed" });
+        const tables = whenNamed(
+          held,
+          { held: [], read: "failed" },
+          "the reference tables",
+        );
         return { pods, people, held: warming() ? tables : await tables };
       },
       shouldRevalidate: reread,

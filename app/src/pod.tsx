@@ -744,7 +744,11 @@ export const podLoader = (api: PodApi) =>
         new URL(request.url).searchParams.get("connection"),
       ),
     ]);
-    const named = whenNamed(() => namedOf(api, pod), { about: new Map() });
+    const named = whenNamed(
+      () => namedOf(api, pod),
+      { about: new Map() },
+      "the pod's names",
+    );
     const titles = new Map(pods.map(({ name, title }) => [name, title]));
     return {
       value: {

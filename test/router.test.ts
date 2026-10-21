@@ -29,7 +29,8 @@ interface Routed {
   ready(): void;
   isBusy(): boolean;
   sayingNow(): string | undefined;
-  warm(host: object): void;
+  /** Warms the engine of the host `host` gives, as `main.tsx` does once the first screen is drawn. */
+  warm(host: HostOf): void;
 }
 
 const routed = await screens<Routed>(`
@@ -39,7 +40,7 @@ import { routes } from "./App.tsx";
 import { HostProvider } from "./api.tsx";
 import { watch } from "./doing.ts";
 export { isBusy, ready, sayingNow } from "./doing.ts";
-export { warm } from "./engine.ts";
+import { warm as warmEngine } from "./engine.ts";
 
 export const idle = (router) =>
   new Promise((resolve) => {
@@ -63,6 +64,8 @@ const hostOf = ({ api, engine = new Promise(() => undefined) }) => ({
   tables: async () => undefined,
   reads: { list: async () => [], run: async () => ({}) },
 });
+
+export const warm = (given) => warmEngine(hostOf(given));
 
 const drawn = (host, router) =>
   renderToStaticMarkup(
@@ -129,7 +132,10 @@ test("a screen is drawn from its route's loader, and a step its action refuses i
   assert.match(pod, /^Alex Rivera Nothing here yet\./);
   const set = { intent: "world-date", date: "soon" };
   const NOT_DONE = /^Not done "soon" is not a date\.$/;
-  assert.match(main(await routed.draw(api, "/pods/alex-rivera/", set)), NOT_DONE);
+  assert.match(
+    main(await routed.draw(api, "/pods/alex-rivera/", set)),
+    NOT_DONE,
+  );
   assert.match(
     main(
       await routed.draw(

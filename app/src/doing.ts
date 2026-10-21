@@ -173,13 +173,20 @@ const stillFilling = () =>
 let router: Router | undefined;
 let filling: MutationObserver | undefined;
 
-/** Says the page is busy the moment `watched` starts to read or run anything, and lets `PageState` read it. */
+/**
+ * Says the page is busy the moment `watched` starts to read or run anything, and went wrong the moment a read or a
+ * step of it has, even one the shell itself needed, which leaves no `PageState` drawn; and lets `PageState` read it.
+ */
 export function watch(watched: Router) {
   router = watched;
   watched.subscribe((state) => {
     if (!state.initialized) return;
     const doing = doingOf(state);
-    if (doing === undefined) return;
+    if (doing === undefined) {
+      const [error] = Object.values(state.errors ?? {});
+      if (error !== undefined) failed(failureOf(state) ?? sentenceOf(error));
+      return;
+    }
     if (stepIn(state)) stepping = true;
     filling?.disconnect();
     busy(doing);
@@ -218,10 +225,11 @@ export function PageState(): null {
     if (failure !== undefined) return failed(failure);
     const main = document.querySelector("main");
     if (!stepping || main === null || !stillFilling()) return ready();
+    switchButtons(true);
     filling = new MutationObserver(() => {
       if (router?.state !== now || stillFilling()) return;
       filling?.disconnect();
-      ready();
+      if (document.body.dataset.state !== "error") ready();
     });
     filling.observe(main, {
       subtree: true,

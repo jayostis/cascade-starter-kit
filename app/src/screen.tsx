@@ -11,7 +11,7 @@ import {
 import { personName, type Person, type Series, type Source } from "../said.ts";
 import { BASE, useAddress } from "./address.tsx";
 import type { PodListed } from "./api.tsx";
-import { ready } from "./doing.ts";
+import { failed, ready } from "./doing.ts";
 import { note as noteLook } from "./look.ts";
 import { Unlock } from "./newpod.tsx";
 import { closeBox } from "./parts.tsx";
@@ -122,8 +122,13 @@ export function useLate<T>(value: T | Promise<T>): T | undefined {
   useEffect(() => {
     if (!(value instanceof Promise)) return;
     let live = true;
-    void value.then(
+    value.then(
       (settled) => live && setCame({ from: value, value: settled }),
+      (error: unknown) =>
+        live &&
+        failed(
+          `a part of the screen could not be read: ${error instanceof Error ? error.message : String(error)}`,
+        ),
     );
     return () => {
       live = false;
@@ -134,6 +139,12 @@ export function useLate<T>(value: T | Promise<T>): T | undefined {
 }
 
 /**
+ * The last step refused on the screen its loader read, kept by that read: the router forgets a step's answer at the
+ * next move, a box opened by its hash among them, while the screen read is the same until it is read again.
+ */
+const refusals = new WeakMap<object, string>();
+
+/**
  * The screen a route draws: `children`, from what its loader read, under the note a step left; or what the rules
  * refused, the screen's own "Not found" or a step's "Not done"; or a locked pod's unlock screen. A step that leaves
  * for a hospital's own page goes there once the page is ready.
@@ -142,7 +153,8 @@ export function Screen({ children }: { children: ReactNode }) {
   const read = useLoaderData() as Read<unknown>;
   const did = useActionData() as Did | undefined;
   const { titles } = useApp();
-  const refused = did?.refused;
+  if (did?.refused !== undefined) refusals.set(read, did.refused);
+  const refused = refusals.get(read);
   const title =
     refused !== undefined
       ? "Not done"
@@ -155,8 +167,8 @@ export function Screen({ children }: { children: ReactNode }) {
     document.title = `${title} · Cascade`;
   }, [title]);
   useEffect(() => {
-    if (refused !== undefined) closeBox();
-  }, [did, refused]);
+    if (did?.refused !== undefined) closeBox();
+  }, [did]);
   useEffect(() => {
     if (did?.leave === undefined) return;
     ready();
