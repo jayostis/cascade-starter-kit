@@ -2362,7 +2362,9 @@ test("in try/, a write the model context asks for waits on the page's ask: Cance
     );
     assert.equal((await pods()).includes("wren-tolliver"), false);
     await asking.getByRole("button", { name: "Cancel" }).click();
-    assert.deepEqual(await refused, { error: "The person said no" });
+    assert.deepEqual(await refused, {
+      result: { refused: "The person said no" },
+    });
     assert.equal((await pods()).includes("wren-tolliver"), false);
 
     const allowed = called(page, "make_pod", { person: "Wren Tolliver" });
@@ -2378,9 +2380,54 @@ test("in try/, a write the model context asks for waits on the page's ask: Cance
       person: "Cora Diaz",
       encrypt: true,
     });
-    assert.ok("error" in encrypted, JSON.stringify(encrypted));
+    assert.ok("result" in encrypted, JSON.stringify(encrypted));
+    assert.ok(
+      typeof (encrypted.result as { refused?: unknown }).refused === "string",
+      JSON.stringify(encrypted),
+    );
     assert.equal(await asking.count(), 0);
     assert.equal((await pods()).includes("cora-diaz"), false);
+  } finally {
+    await context.close();
+  }
+});
+
+test("in try/, two open tools called back to back, with no wait between, each resolve once their screen is drawn, so the second is not refused as busy", async () => {
+  const context = await browser.newContext();
+  await context.addInitScript(recordTools);
+  try {
+    const page = watched(await context.newPage());
+    await page.goto(`${served.url}${AT.pod("priya-natarajan")}`);
+    await settled(page);
+    await inputOf(page, "open_panel", false);
+    const [first, second] = await page.evaluate(async () => {
+      const run = (name: string, input: object) => {
+        const { tool } = (
+          globalThis as unknown as {
+            registered: {
+              name: string;
+              signal: AbortSignal;
+              tool: { execute(input: object): Promise<unknown> };
+            }[];
+          }
+        ).registered
+          .filter(({ signal }) => !signal.aborted)
+          .find((each) => each.name === name)!;
+        return tool.execute(input);
+      };
+      const first = await run("open_classes", {});
+      const at = location.pathname;
+      const second = await run("open_panel", { panel: "24326-1" });
+      return [{ first, at }, second] as const;
+    });
+    assert.ok(!("refused" in (first.first as object)), JSON.stringify(first));
+    assert.match(first.at, /\/classes$/);
+    assert.ok(!("refused" in (second as object)), JSON.stringify(second));
+    const { pathname, search } = new URL(page.url());
+    assert.equal(
+      pathname + search,
+      "/try/pods/priya-natarajan/panel?panel=24326-1",
+    );
   } finally {
     await context.close();
   }

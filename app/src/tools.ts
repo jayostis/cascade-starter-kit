@@ -14,29 +14,17 @@ import {
 } from "../said.ts";
 import { useActions, type Actions } from "./actions.tsx";
 import { routed, useAddress } from "./address.tsx";
-import { useHost, type ReadTool } from "./api.tsx";
+import { isRefusal, useHost, type ReadTool } from "./api.tsx";
+import { checkToolInput, type Input, type Schema } from "./check.ts";
 import { ACTIONS, SAID_NO, useConfirm, type Confirm } from "./confirm.tsx";
-
-/** The part of JSON Schema the tools' inputs use. */
-interface Schema {
-  readonly type?: string;
-  readonly description?: string;
-  readonly properties?: Readonly<Record<string, Schema>>;
-  readonly required?: readonly string[];
-  readonly additionalProperties?: boolean;
-  readonly enum?: readonly unknown[];
-  readonly minimum?: number;
-  readonly maximum?: number;
-}
-
-type Input = Record<string, unknown>;
+import { settled } from "./doing.ts";
 
 /** The tool WebMCP's `registerTool` takes: it goes when its `signal` aborts. */
 interface ModelTool {
   readonly name: string;
   readonly description: string;
   readonly inputSchema: Schema;
-  execute(input: Input): Promise<unknown>;
+  execute(input: Input, options?: { signal?: AbortSignal }): Promise<unknown>;
 }
 
 interface ModelContext {
@@ -46,35 +34,16 @@ interface ModelContext {
 const modelContext = () =>
   (document as unknown as { modelContext?: ModelContext }).modelContext;
 
-/** Refuses, as the runtime's `checkInput` does, an `input` that `schema` does not allow. */
-export function checkToolInput(
-  schema: Schema,
-  input: unknown,
-): asserts input is Input {
-  if (typeof input !== "object" || input === null || Array.isArray(input))
-    throw refusal("input must be an object");
-  const given = input as Input;
-  for (const name of schema.required ?? [])
-    if (given[name] === undefined) throw refusal(`${name} is required`);
-  for (const [name, value] of Object.entries(given)) {
-    const property = schema.properties?.[name];
-    if (property === undefined) {
-      if (schema.additionalProperties === false)
-        throw refusal(`${name} is not an input of this tool`);
-      continue;
-    }
-    if (property.type === "string" && typeof value !== "string")
-      throw refusal(`${name} must be a string`);
-    if (property.type === "integer" && !Number.isInteger(value))
-      throw refusal(`${name} must be an integer`);
-    if (property.enum !== undefined && !property.enum.includes(value))
-      throw refusal(`${name} must be one of ${property.enum.join(", ")}`);
-    if (typeof value === "number") {
-      if (property.minimum !== undefined && value < property.minimum)
-        throw refusal(`${name} must be at least ${property.minimum}`);
-      if (property.maximum !== undefined && value > property.maximum)
-        throw refusal(`${name} must be at most ${property.maximum}`);
-    }
+/**
+ * What the agent reads when a call is refused: WebMCP only logs a rejected `execute` and tells the agent an opaque
+ * `OperationError`, so a refusal resolves, and only a broken runtime rejects.
+ */
+async function answering(run: () => Promise<unknown>): Promise<unknown> {
+  try {
+    return await run();
+  } catch (error) {
+    if (isRefusal(error)) return { refused: error.message };
+    throw error;
   }
 }
 
@@ -93,23 +62,31 @@ function withPod(schema: Schema): Schema {
   };
 }
 
-/** The pod last read as open: a locked pod is offered as no pod shown. */
+/** The pod last read as open: a locked pod is offered as no pod shown; `checked` is the pod that read was of. */
 function useOpened(pod: string | undefined) {
   const { api } = useHost();
   const { pathname } = useLocation();
-  const [opened, setOpened] = useState<string>();
+  const [read, setRead] = useState<{
+    readonly checked: string | undefined;
+    readonly opened: string | undefined;
+  }>({ checked: undefined, opened: undefined });
   useEffect(() => {
     if (pod === undefined) return;
     let live = true;
     api.pod({ pod }).then(
-      ({ locked }) => live && setOpened(locked === undefined ? pod : undefined),
-      () => live && setOpened(undefined),
+      ({ locked }) =>
+        live &&
+        setRead({
+          checked: pod,
+          opened: locked === undefined ? pod : undefined,
+        }),
+      () => live && setRead({ checked: pod, opened: undefined }),
     );
     return () => {
       live = false;
     };
   }, [api, pod, pathname]);
-  return opened;
+  return read;
 }
 
 /** What a tool's run reads at the time of the call, not of the commit that offered it. */
@@ -119,6 +96,8 @@ interface Now {
   readonly refreshPods: Actions["refreshPods"];
   readonly heldNow: Actions["heldNow"];
   readonly here: string;
+  /** Whether the tools offered are those of the screen shown: its pod, if any, has been read. */
+  readonly offered: boolean;
 }
 
 /**
@@ -132,7 +111,8 @@ export function useTools(screen: { readonly pod: string | undefined }) {
   const confirm = useConfirm();
   const address = useAddress();
   const { pathname, search } = useLocation();
-  const opened = useOpened(screen.pod);
+  const { opened, checked } = useOpened(screen.pod);
+  const offered = screen.pod === undefined || checked === screen.pod;
   const pod =
     screen.pod !== undefined && opened === screen.pod ? screen.pod : undefined;
   const [listed, setListed] = useState<readonly ReadTool[]>();
@@ -145,7 +125,9 @@ export function useTools(screen: { readonly pod: string | undefined }) {
     refreshPods,
     heldNow,
     here: pathname + search,
+    offered,
   });
+  const arriving = useRef<(() => void)[]>([]);
   useLayoutEffect(() => {
     now.current = {
       act,
@@ -153,7 +135,9 @@ export function useTools(screen: { readonly pod: string | undefined }) {
       refreshPods,
       heldNow,
       here: pathname + search,
+      offered,
     };
+    if (offered) for (const resolve of arriving.current.splice(0)) resolve();
   });
   useLayoutEffect(() => {
     const context = modelContext();
@@ -162,16 +146,22 @@ export function useTools(screen: { readonly pod: string | undefined }) {
     const { signal } = controller;
 
     /** Runs a tool the page runs itself: a move in place through a step, a write once the person has said yes. */
-    async function runPage(tool: PageTool, input: ToolInput) {
+    async function runPage(
+      tool: PageTool,
+      input: ToolInput,
+      called: AbortSignal | undefined,
+    ) {
       const writes = tool.tier === "ask";
       if (
         writes &&
         !(await now.current.confirm(
           { action: ACTIONS[tool.name] ?? tool.name, input },
-          signal,
+          called,
         ))
       )
-        throw refusal(SAID_NO);
+        throw refusal(
+          called?.aborted === true ? "The ask was withdrawn" : SAID_NO,
+        );
       let output: unknown;
       let failure: unknown;
       let ran = false;
@@ -203,6 +193,11 @@ export function useTools(screen: { readonly pod: string | undefined }) {
       if (!ran)
         throw refusal("The page is busy with something else; try again");
       if (failure !== undefined) throw failure;
+      if (tool.opens === true) {
+        await settled();
+        if (!now.current.offered)
+          await new Promise<void>((resolve) => arriving.current.push(resolve));
+      }
       return output;
     }
 
@@ -215,10 +210,11 @@ export function useTools(screen: { readonly pod: string | undefined }) {
           name: read.name,
           description: read.description,
           inputSchema: schema,
-          async execute(input) {
-            checkToolInput(schema, input);
-            return reads.run(read.name, filled ? { ...input, pod } : input);
-          },
+          execute: (input) =>
+            answering(async () => {
+              checkToolInput(schema, input);
+              return reads.run(read.name, filled ? { ...input, pod } : input);
+            }),
         };
       }),
       ...PAGE_TOOLS.map((tool): ModelTool => {
@@ -231,15 +227,17 @@ export function useTools(screen: { readonly pod: string | undefined }) {
           name: tool.name,
           description: tool.description,
           inputSchema: schema,
-          async execute(input) {
-            checkToolInput(schema, input);
-            return runPage(
-              tool,
-              tool.ofPod === true && !takes
-                ? { ...(input as ToolInput), pod }
-                : (input as ToolInput),
-            );
-          },
+          execute: (input, options) =>
+            answering(async () => {
+              checkToolInput(schema, input);
+              return runPage(
+                tool,
+                tool.ofPod === true && !takes
+                  ? { ...(input as ToolInput), pod }
+                  : (input as ToolInput),
+                options?.signal,
+              );
+            }),
         };
       }),
     ];
