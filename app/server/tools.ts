@@ -2,7 +2,6 @@
 // `POST /tools/<name>` runs one on a JSON input, so the page offers them to the model context as the browser target does.
 // The tools that move the app or write are the page's own (`PAGE_TOOLS` of `said.ts`), and are not here.
 import { checkInput } from "cascade-runtime";
-import type { JSONSchema7 } from "ai";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { addresses } from "../addresses.ts";
@@ -14,10 +13,13 @@ import type { Operations } from "./api.ts";
 const MAX_BODY_BYTES = 1024 * 1024;
 const FAILED = "the server failed; its log says why";
 
+/** A tool's input schema, as `tools.mjs` writes it: JSON Schema, which this route only passes on. */
+type InputSchema = Readonly<Record<string, unknown>>;
+
 interface Read {
   readonly name: string;
   readonly description: string;
-  readonly inputSchema: JSONSchema7;
+  readonly inputSchema: InputSchema;
   readonly tier: string;
   readonly ofPod?: boolean;
   readonly opens?: boolean;
