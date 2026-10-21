@@ -55,7 +55,7 @@ test("the app's AGENTS.md lists the starter's scripts and the variables its serv
   assert.deepEqual(
     sorted(
       itemsUnder(sections, "The starter").map((command) => {
-        const script = /^npm (?:run (\S+)|(start))/.exec(command);
+        const script = /^npm (?:run (\S+)|(start|test))/.exec(command);
         assert.ok(script, `"${command}" runs no npm script`);
         return script[1] ?? script[2] ?? "";
       }),
