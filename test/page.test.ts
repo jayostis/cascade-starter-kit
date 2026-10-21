@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 /** What the test reads of `addresses.ts`. */
@@ -54,6 +55,28 @@ test("a click moves the app in place to a screen under its base, and leaves a do
     true,
     "this window",
   );
+});
+
+test("every screen path App.tsx routes is one the app takes in place, so that a screen added there cannot be left to the browser", () => {
+  const routed = [
+    ...readFileSync(
+      new URL("../../app/src/App.tsx", import.meta.url),
+      "utf8",
+    ).matchAll(/<Route\s+path="([^"]*)"/g),
+  ].map(([, path = ""]) => path);
+  assert.ok(routed.length > 1, "found the routes");
+  const from = new URL("https://app.example/pods/x/");
+  for (const path of routed.filter((each) => each !== "*"))
+    assert.equal(
+      movesInPlace(
+        { target: "", download: false },
+        new URL(path.replace(/:\w+\??/g, "x"), from.origin),
+        from,
+        "/",
+      ),
+      true,
+      `${path} is a route the browser would follow, not the app: add it to SCREENS in addresses.ts`,
+    );
 });
 
 /** What the test reads of `doing.ts`. */
