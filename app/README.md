@@ -6,6 +6,12 @@ to load, make, remove and ask pods. It depends only on
 `cascade-runtime`, which keeps the pods; this app never writes a pod's files
 itself.
 
+It is written in TypeScript, on [React](https://react.dev) with
+[React Router](https://reactrouter.com), built by [Vite](https://vite.dev);
+its server is [Hono](https://hono.dev), and its chat runs on the
+[Vercel AI SDK](https://ai-sdk.dev) with [assistant-ui](https://www.assistant-ui.com).
+Node 22.18 or later runs its `.ts` files as they are.
+
 The app is made with four pods, `alex-rivera`, `priya-natarajan`,
 `martin-okafor` and `tamsin-vale`, loaded from the kits the package carries.
 Alex Rivera, Priya Natarajan, Martin Okafor and Tamsin Vale are made up. Alex's
@@ -120,13 +126,13 @@ app's only: `npm run browser` has none.
 
 ## The tools a model reaches
 
-`tools.mjs` is the one list of tools a model reaches the app by, the chat, an
+`tools.ts` is the one list of tools a model reaches the app by, the chat, an
 MCP client and the browser target's WebMCP alike. Each calls the app's PodApi only, and each
 has a consent tier:
 
 - **free**, reads: `list_pods`, `find_changes`, `finding_rows`, `lab_series`,
   `timeline`, `worth_a_look` and `ask`; and moving the app: `open_pod`,
-  `open_trend` and `open_entry`.
+  `open_trend`, `open_entry`, `open_classes`, `open_panel` and `open_table`.
 - **ask**, writes the person confirms first: `make_pod` (never encrypted),
   `check_tables` and `set_world_date`.
 - **never**, what no tool calls: making an encrypted pod, its six words and
@@ -134,8 +140,9 @@ has a consent tier:
   (`connect`), bringing a record in (`bring`: the person does it from its box),
   and Delete all and Reset all.
 
-The MCP server offers the free reads, and `npm run browser`'s WebMCP the free
-tools of the pod shown. `npm start`'s chat runs on the AI SDK: its server runs
+The MCP server offers the free reads. WebMCP, where the browser has
+`document.modelContext`, offers every tool on every screen of both targets, an
+`ask` write only after the page's own Allow. `npm start`'s chat runs on the AI SDK: its server runs
 the free reads, and offers the moves and the `ask` writes as tools the page
 runs, so a write waits for the person.
 
@@ -189,7 +196,7 @@ and start it again:
   "mcpServers": {
     "cascade": {
       "command": "node",
-      "args": ["C:/path/to/my-app/mcp.mjs"]
+      "args": ["C:/path/to/my-app/mcp.ts"]
     }
   }
 }
@@ -206,7 +213,7 @@ server from the file's Start link or from Chat in Agent mode:
     "cascade": {
       "type": "stdio",
       "command": "node",
-      "args": ["${workspaceFolder}/mcp.mjs"]
+      "args": ["${workspaceFolder}/mcp.ts"]
     }
   }
 }
@@ -223,7 +230,8 @@ script goes after `--`, or npm keeps it for itself.
   are older than their sources.
 - `npm run reset` removes every pod and loads Alex's, Priya's, Martin's and Tamsin's again, as
   the File menu's "Reset all data" does: both load the kits through
-  `restoreKits` in `pods.mjs`.
+  `restoreKits` in `pods.ts`.
+- `npm run pod:new <name>` makes an empty pod.
 - `npm run pod:load -- <kit> [--through <step>] [--as <name>]` replays a kit's
   story into `pods/<name>/`. One app can hold a kit at two points:
   `npm run pod:load -- alex-rivera --through J24 --as alex-rivera-j24` beside
@@ -242,17 +250,23 @@ script goes after `--`, or npm keeps it for itself.
   choice; `npm run model -- --off` removes it.
 - `ask` and `console` need `--pod <name>` whenever the app has more than one
   pod, as a made app does; it may be left out only when there is exactly one.
+- `npm run typecheck` checks the TypeScript of every file of the app.
 
 ## The files
 
-- `index.html`, `src/`: the app, in React, built by Vite (`vite.config.ts`,
-  with `vite/cascade.ts`, which adds what each target carries beside its
-  bundle). `src/App.tsx` holds the routes, and each screen has its file:
-  `pod.tsx`, `entry.tsx`, `trend.tsx`, `classes.tsx`, `panel.tsx`,
-  `tables.tsx`, `hospitals.tsx`, `newpod.tsx`. A screen reads the pods through
+Every file of the app is TypeScript: `.tsx` for the pages, `.ts` for the rest,
+which Node runs as it is.
+
+- `index.html`, `src/`: the app, in React, routed by React Router and built by
+  Vite (`vite.config.ts`, with `vite/cascade.ts`, which adds what each target
+  carries beside its bundle). `src/App.tsx` holds the routes, and each screen
+  has its file: `pod.tsx`, `entry.tsx`, `trend.tsx`, `classes.tsx`,
+  `panel.tsx`, `tables.tsx`, `hospitals.tsx`, `newpod.tsx`; `AGENTS.md` says
+  how to add one. A screen reads the pods through
   PodApi, `usePodApi()` of `src/api.tsx`, from the host the build chose: on
-  Node `src/hosts/http.ts`, which calls the server's `/api/`, and in a
-  browser `src/hosts/browser.ts`, which runs `pod-api.mjs` in the page.
+  Node `src/hosts/http.ts`, which calls the server's `/api/` through Hono's
+  typed client, and in a browser `src/hosts/browser.ts`, which runs
+  `pod-api.ts` in the page.
   `src/chat/` is the chat window, Node only. Under the pods, the sidebar lists
   the reference tables the pods are matched with; `/tables/<id>/` shows one
   with a search, and Check now reads their feeds again.
@@ -261,40 +275,40 @@ script goes after `--`, or npm keeps it for itself.
   the app.
 - `server/`: `npm start`'s server, on [Hono](https://hono.dev): `main.ts`
   starts it, `app.ts` answers, `api.ts` serves every operation of
-  `pod-api.mjs` as `POST /api/<operation>`, JSON in and out, with each input
+  `pod-api.ts` as `POST /api/<operation>`, JSON in and out, with each input
   checked by `inputs.ts`, `guard.ts` refuses another site's requests, and
   `chat.ts` is the chat's `/chat`, on the AI SDK: `POST` answers with its UI
   message stream, and `GET` names the model. `browser.ts` is
-  `npm run browser`.
-- `pod-api.mjs`: `podApi(host)`, every read and write the app makes of its
+  `npm run browser`, and `samples.ts` what its samples carry for a first
+  visit.
+- `pod-api.ts`: `podApi(host)`, every read and write the app makes of its
   pods and its reference tables, plain JSON in and out, refusing bad input
-  with a `Refusal`. The server, the chat, the MCP server and `npm run ask` all
-  call it, and the browser target loads the same file: it imports only
-  `cascade-runtime` and `said.ts`.
-- `node-host.mjs`: the host `podApi` reads on Node: the pods are folders in
+  with a `Refusal`; each operation's input is its route's schema and its
+  output what it gives (`PodApi`, `Output`). The server, the chat, the MCP
+  server and `npm run ask` all call it, and the browser target loads the same
+  file: it imports only `cascade-runtime` and `said.ts`.
+- `node-host.ts`: the host `podApi` reads on Node: the pods are folders in
   `pods/`, with the reference tables beside them; `opensEncrypted: false`
   refuses an encrypted pod, as the MCP server and `npm run ask` do. Also the
   hospitals and the world's date the server gives it.
-- `hospitals.mjs`: the sign-in at a hospital, which waits for the redirect
+- `hospitals.ts`: the sign-in at a hospital, which waits for the redirect
   back to `/callback`, and the world's date the demo hospitals answer as of.
 - `demo-hospital/`: the pretend hospitals, a package of this app's own.
-- `pods.mjs`: what the commands and the server share: where pods live and what
+- `pods.ts`: what the commands and the server share: where pods live and what
   they are called, which one a command works on, deleting them and loading the
   kits again, and the addresses of a pod's page and its trend.
-- `pod.mjs`, `kit.mjs`, `ask.mjs`, `console.mjs`: the commands, and
-  `help.mjs`, which lists them.
-- `mcp.mjs`, `mcp-server.mjs`: the MCP server on stdio, and the tools it
+- `pod.ts`, `kit.ts`, `ask.ts`, `console.ts`, `patient.ts`: the commands, and
+  `help.ts`, which lists them.
+- `mcp.ts`, `mcp-server.ts`: the MCP server on stdio, and the tools it
   offers.
 - `model.ts`, `models.ts`: `npm run model`, and the providers and the four
   settings, each provider through the AI SDK's own package for it:
   `@ai-sdk/anthropic`, `@ai-sdk/groq`, `@openrouter/ai-sdk-provider`, and
   `@ai-sdk/openai-compatible` for Gemini, Ollama, LM Studio and any other
   OpenAI-compatible address.
-- `tools.mjs`: the one list of tools a model reaches, with their tiers and
+- `tools.ts`: the one list of tools a model reaches, with their tiers and
   what no tool calls, which the MCP server, the chat and the browser's WebMCP
-  share. Each calls the operations of `pod-api.mjs`.
-- `server.mjs`, `summary.mjs`, `chat.mjs`, `model-client.mjs`,
-  `pod-api-http.mjs`: the app before React, run by no script; they go soon.
+  share. Each calls the operations of `pod-api.ts`.
 - `AGENTS.md`: for a coding agent building on this app.
 
 The full guide to `cascade-runtime` is in

@@ -180,7 +180,7 @@ export interface Host {
   readonly chat?: HostChat;
 }
 
-/** A read of the one list of tools (`tools.mjs`) as a host names it; `ofPod` for one that takes the pod's name. */
+/** A read of the one list of tools (`tools.ts`) as a host names it; `ofPod` for one that takes the pod's name. */
 export interface ReadTool {
   readonly name: string;
   readonly description: string;

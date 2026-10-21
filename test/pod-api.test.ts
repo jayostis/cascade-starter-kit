@@ -53,7 +53,7 @@ type Api = Record<
 type Host = Record<string, unknown> & { tables: unknown };
 
 const { podApi, maps, trendOf, notOpenedHere } = (await import(
-  new URL("../../app/pod-api.mjs", import.meta.url).href
+  new URL("../../app/pod-api.ts", import.meta.url).href
 )) as {
   podApi: (host: Host) => Api;
   maps: (output: Output) => Output;
@@ -96,7 +96,7 @@ const { remoteApi } = (await import(
   ) => Api;
 };
 const { nodeHost } = (await import(
-  new URL("../../app/node-host.mjs", import.meta.url).href
+  new URL("../../app/node-host.ts", import.meta.url).href
 )) as {
   nodeHost: (options: { folder: string; opensEncrypted?: boolean }) => Host & {
     pods: {

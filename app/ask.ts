@@ -1,9 +1,9 @@
 // `npm run ask -- [--pod <name>] "<question>"`: the question's rows, one JSON object a line.
 import { argv, stdout } from "node:process";
 import { Refusal } from "cascade-runtime";
-import { nodeHost } from "./node-host.mjs";
-import { podApi } from "./pod-api.mjs";
-import { argumentsOf, choosePod, PODS, refuse } from "./pods.mjs";
+import { nodeHost } from "./node-host.ts";
+import { podApi } from "./pod-api.ts";
+import { argumentsOf, choosePod, PODS, refuse } from "./pods.ts";
 
 const { positionals, values } = argumentsOf(
   argv.slice(2),

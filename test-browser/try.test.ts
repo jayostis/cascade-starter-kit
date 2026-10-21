@@ -459,7 +459,7 @@ interface Leaving {
  * Looks, in every page of the context, at the tools of the pod left at the first change of the page that follows from
  * `globalThis.leaving = { count, from }` being set: the title bar marking another pod than `from`. A mutation observer
  * calls back in the microtask after the commit that made the change, before the macrotask in which a passive effect
- * (React's scheduler) or a post-paint timer (Preact's) runs, so a tool taken away from one of those is still on. It
+ * (React's scheduler) runs, so a tool taken away from one is still on. It
  * sets `leaving.still` to how many of the first `count` tools registered are still on. No timer and no machine's speed
  * decides it.
  */
@@ -1167,6 +1167,17 @@ test("File, Delete all data empties the pods column, leaves no pod nor answers i
       await page.getAttribute('#about a:has-text("The code")', "href"),
       "https://github.com/jayostis/cascade-starter-kit",
     );
+    const openMenus = (): Promise<string[]> =>
+      texts(page, "details.menu[open] > summary");
+    await page.click('.menu summary:has-text("File")');
+    await page.click('.menu summary:has-text("Help")');
+    assert.deepEqual(
+      await openMenus(),
+      ["Help"],
+      "opening Help left File open",
+    );
+    await page.keyboard.press("Escape");
+    assert.deepEqual(await openMenus(), [], "Escape left a menu open");
     const before = await texts(page, "nav a");
     /** Opens File, picks `item`, and presses the confirming box's one button; waits for the page it draws in place. */
     const fromFile = async (item: string): Promise<void> => {

@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import { stdout } from "node:process";
 import { URL } from "node:url";
 
-const SAID = {
+const SAID: Readonly<Record<string, readonly [string, string]>> = {
   help: ["npm run help", "this list"],
   start: [
     "npm start",
@@ -58,7 +58,7 @@ const SAID = {
 
 const { scripts } = JSON.parse(
   await readFile(new URL("package.json", import.meta.url), "utf8"),
-);
+) as { scripts: Record<string, string> };
 const rows = Object.keys(scripts).map(
   (script) => SAID[script] ?? [`npm run ${script}`, ""],
 );

@@ -1,14 +1,15 @@
-// The MCP server over the app's pods: what `mcp.mjs` serves on stdio. A client such as Claude Desktop or VS Code lists
+// The MCP server over the app's pods: what `mcp.ts` serves on stdio. A client such as Claude Desktop or VS Code lists
 // the pods, asks the curated questions and runs the analytics of `cascade-runtime` (`changeTools`). It offers the free
-// reads of `tools.mjs`: an MCP client never moves the app, and never writes.
+// reads of `tools.ts`: an MCP client never moves the app, and never writes.
 import console from "node:console";
 import { readFile } from "node:fs/promises";
 import { URL } from "node:url";
 import { fromJsonSchema, McpServer } from "@modelcontextprotocol/server";
 import { Refusal } from "cascade-runtime";
-import { TOOLS, withPod } from "./tools.mjs";
+import type { PodApi } from "./pod-api.ts";
+import { type Door, TOOLS, type ToolInput, withPod } from "./tools.ts";
 
-export { DEFAULT_ROWS, MAXIMUM_ROWS, QUESTIONS } from "./tools.mjs";
+export { DEFAULT_ROWS, MAXIMUM_ROWS, QUESTIONS } from "./tools.ts";
 
 export const WARNING =
   "A hosted client (Claude Desktop, VS Code with a hosted model, any chat service) sends what these tools return to its provider. The example and story pods are made up; a person's own pod is theirs to decide about before it is asked here.";
@@ -23,22 +24,24 @@ const READS = TOOLS.filter(
 
 const { version } = JSON.parse(
   await readFile(new URL("package.json", import.meta.url), "utf8"),
-);
+) as { version: string };
 
 /**
  * A tool's answer as MCP sends it: its result as JSON; or, for input the rules refuse, `isError` and the reason, and
  * for any other error a fixed message, logged.
  */
-async function content(run) {
+async function content(run: () => Promise<unknown>) {
   try {
-    return { content: [{ type: "text", text: JSON.stringify(await run()) }] };
+    return {
+      content: [{ type: "text" as const, text: JSON.stringify(await run()) }],
+    };
   } catch (error) {
     const refused = error instanceof Refusal;
     if (!refused) console.error(error);
     return {
       content: [
         {
-          type: "text",
+          type: "text" as const,
           text: refused ? error.message : "the server failed; its log says why",
         },
       ],
@@ -52,8 +55,11 @@ async function content(run) {
  * connection, all sharing `api`. `options.viewOf(pod, { test, medication })` gives the address of the page that draws
  * a finding's results.
  */
-export function podServer(api, { viewOf } = {}) {
-  const door = { address: { trend: viewOf } };
+export function podServer(
+  api: PodApi,
+  { viewOf }: { viewOf?: Required<Door>["address"]["trend"] } = {},
+): { build(): McpServer } {
+  const door: Door = { address: { trend: viewOf } };
 
   function build() {
     const server = new McpServer(
@@ -73,7 +79,7 @@ export function podServer(api, { viewOf } = {}) {
             tool.ofPod ? withPod(tool.inputSchema) : tool.inputSchema,
           ),
         },
-        (input) => content(() => tool.run(api, input, door)),
+        (input) => content(() => tool.run(api, input as ToolInput, door)),
       );
     return server;
   }

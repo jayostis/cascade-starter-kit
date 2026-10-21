@@ -1,5 +1,5 @@
 // The tools a model reaches the app by through the page's model context (WebMCP), on every screen, where the browser
-// has one: the reads of the one list (`tools.mjs`) as the host runs them, and the tools the page runs itself
+// has one: the reads of the one list (`tools.ts`) as the host runs them, and the tools the page runs itself
 // (`PAGE_TOOLS` of `said.ts`). A tool that moves the app moves it in place, as a step does; a write waits on the
 // person's Allow. They are offered while the screen shown is the one they were offered for, and taken away in the
 // commit that draws the next, never after the next paint.

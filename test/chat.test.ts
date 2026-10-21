@@ -58,14 +58,14 @@ type Api = {
   close(): Promise<void>;
 };
 const { maps, podApi } = (await import(
-  new URL("../../app/pod-api.mjs", import.meta.url).href
+  new URL("../../app/pod-api.ts", import.meta.url).href
 )) as {
   maps: (output: object) => { about: Map<string, unknown> };
   podApi: (host: object) => Api;
 };
 type Schema = { properties?: Record<string, unknown> };
 const { NEVER, TOOLS, withPod } = (await import(
-  new URL("../../app/tools.mjs", import.meta.url).href
+  new URL("../../app/tools.ts", import.meta.url).href
 )) as {
   NEVER: { op: string; with?: string }[];
   TOOLS: {

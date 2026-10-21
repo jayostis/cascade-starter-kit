@@ -57,9 +57,6 @@ test("no source writes a code system's IRI stem: the starter reads each from the
           !/^(node_modules|dist|pods)\//.test(name),
       )
       .map((name) => `app/${name}`),
-    ...(await readdir(join(ROOT, "try")))
-      .filter((name) => name.endsWith(".js"))
-      .map((name) => `try/${name}`),
     ...(await readdir(join(ROOT, "try", "build")))
       .filter((name) => name.endsWith(".ts"))
       .map((name) => `try/build/${name}`),
@@ -67,11 +64,10 @@ test("no source writes a code system's IRI stem: the starter reads each from the
       .filter((name) => name.endsWith(".ts"))
       .map((name) => `create/src/${name}`),
   ];
-  assert.ok(sources.includes("app/summary.mjs"));
+  assert.ok(sources.includes("app/pod-api.ts"));
   assert.ok(sources.includes("app/said.ts"));
   assert.ok(sources.includes("app/src/pod.tsx"));
-  assert.ok(sources.includes("try/app.js"));
-  assert.ok(sources.includes("try/build/try.ts"));
+  assert.ok(sources.includes("try/build/cli.ts"));
   assert.ok(sources.includes("create/src/create.ts"));
   const spaces = (await registered()).map((space) =>
     space.replace(/^[a-z]+:\/\//, ""),

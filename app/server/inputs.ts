@@ -1,5 +1,5 @@
 // What each PodApi operation may be sent over `/api`: its fields' types, checked at the route before PodApi runs. The
-// route checks shape only; PodApi still checks meaning, and `typed` in `pod-api.mjs` for the browser, which has no
+// route checks shape only; PodApi still checks meaning, and `typed` in `pod-api.ts` for the browser, which has no
 // route. A refusal reads as PodApi's own: `<field> must be <what>`.
 import { z } from "zod";
 
@@ -62,6 +62,12 @@ export const INPUTS = {
 };
 
 export type Operation = keyof typeof INPUTS;
+
+/** Only the fields a schema names: its `looseObject` lets the server take others, but a caller may not send them. */
+type Named<T> = { [P in keyof T as string extends P ? never : P]: T[P] };
+
+/** What `operation` may be sent, as its route's schema says. */
+export type Input<K extends Operation> = Named<z.input<(typeof INPUTS)[K]>>;
 
 /** The sentence an input the schema refused is refused with, PodApi's own for the same input. */
 export function refusalOf(error: {

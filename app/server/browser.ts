@@ -9,46 +9,14 @@ import process, { env, exit, stdout } from "node:process";
 import { fileURLToPath } from "node:url";
 import { getRequestListener } from "@hono/node-server";
 import type { HttpBindings } from "@hono/node-server";
-import {
-  publishedSamples,
-  type Pod,
-  type Tables,
-} from "cascade-runtime/published";
+import { publishedSamples } from "cascade-runtime/published";
 import { Hono } from "hono";
 import { build } from "vite";
-import { podApi } from "../pod-api.mjs";
-import type { Operations } from "./api.ts";
 import { withPages } from "./app.ts";
+import { looks } from "./samples.ts";
 
 const APP = fileURLToPath(new URL("../", import.meta.url));
 const OUT = join(APP, "dist-browser");
-const SAMPLE = "pod";
-
-/**
- * What the pod's page asks the tables of it, asked as the page asks it, through PodApi, so a copy draws its names
- * before the engine; a lookup PodApi swallows into `unsaid` fails the build.
- */
-async function looks(pod: Pod, tables: Tables): Promise<void> {
-  const failed: unknown[] = [];
-  const api = podApi({
-    pods: {
-      names: async () => [SAMPLE],
-      title: async () => undefined,
-      open: async () => pod,
-    },
-    tables: async () => tables,
-    opensEncrypted: true,
-    unsaid: (_kind: string, error: unknown) => {
-      failed.push(error);
-    },
-  } as never) as unknown as Operations;
-  await api.said({ pod: SAMPLE });
-  if (failed.length > 0)
-    throw new AggregateError(
-      failed,
-      "the samples' first-paint lookups could not be recorded",
-    );
-}
 
 stdout.write("Making the kits' samples, which a first visit copies…\n");
 const samples = await publishedSamples({ look: looks });

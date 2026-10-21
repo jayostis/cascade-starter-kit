@@ -47,15 +47,22 @@ interface TrendRead {
   readonly about?: Abouts;
 }
 
+/**
+ * The trend drawn from `read`; with `naming`, while the tables are still to name its test and medications, the parts
+ * that name them are busy.
+ */
 export function TrendPage({
   pod,
   titles,
   read,
+  naming = false,
 }: {
   pod: string;
   titles: ReadonlyMap<string, string>;
   read: TrendRead;
+  naming?: boolean;
 }) {
+  const busy = naming ? "true" : undefined;
   const address = useAddress();
   const { labs, series, timeline, medication, about = new Map() } = read;
   const name = trendTitle(series, about);
@@ -111,7 +118,7 @@ export function TrendPage({
   return (
     <>
       <Back pod={pod} titles={titles} />
-      <h1>{name}</h1>
+      <h1 aria-busy={busy}>{name}</h1>
       <p className="lead">
         {series.results.length === 0
           ? "No result of this test is a number."
@@ -129,7 +136,7 @@ export function TrendPage({
         <p className="note">This pod holds no medication {medication}.</p>
       )}
       {points.length > 0 && (
-        <div className="card trend">
+        <div className="card trend" aria-busy={busy}>
           <Chart
             id="trend-chart"
             plot={plot}
@@ -189,7 +196,7 @@ export function TrendPage({
           </table>
         </div>
       </div>
-      <div className="card picker">
+      <div className="card picker" aria-busy={busy}>
         <h2>Show</h2>
         <h3>Test</h3>
         <ul>
@@ -246,22 +253,34 @@ export function TrendScreen({
   const [asked] = useSearchParams();
   const test = asked.get("test") || undefined;
   const medication = asked.get("medication") || undefined;
-  const loaded = useLoaded<TrendRead>(
+  const loaded = useLoaded<TrendRead & { named: boolean }>(
     pathname + search,
-    async (api) =>
-      maps(
-        await api.trend({
-          pod,
-          ...(test !== undefined && { test }),
-          ...(medication !== undefined && { medication }),
-          named: engine === "ready",
-        }),
-      ) as unknown as TrendRead,
+    async (api) => {
+      const named = engine === "ready";
+      return {
+        ...(maps(
+          await api.trend({
+            pod,
+            ...(test !== undefined && { test }),
+            ...(medication !== undefined && { medication }),
+            named,
+          }),
+        ) as unknown as TrendRead),
+        named,
+      };
+    },
     ({ series, about }) => trendTitle(series, about),
     engine === "ready",
   );
   if (loaded === undefined) return null;
   if ("wrong" in loaded) return <Wrong said={loaded.wrong} />;
   if ("refused" in loaded) return <NotFound said={loaded.refused} />;
-  return <TrendPage pod={pod} titles={titles} read={loaded.value} />;
+  return (
+    <TrendPage
+      pod={pod}
+      titles={titles}
+      read={loaded.value}
+      naming={!loaded.value.named && engine !== "failed"}
+    />
+  );
 }

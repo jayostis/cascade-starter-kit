@@ -23,9 +23,9 @@ import {
   worldDate,
 } from "@the-cascade-protocol/sandbox/web";
 import { addresses } from "../../addresses.ts";
-import { podApi } from "../../pod-api.mjs";
+import { podApi } from "../../pod-api.ts";
 import { PAGE_TOOLS, type Person } from "../../said.ts";
-import { TOOLS } from "../../tools.mjs";
+import { TOOLS } from "../../tools.ts";
 import type { Host, PodApi } from "../api.tsx";
 import { busy } from "../doing.ts";
 
@@ -161,7 +161,7 @@ const browser = {
     signIn(row: Row, { pod }: { pod: string }, report: (href: string) => void) {
       const signing = popup;
       popup = undefined;
-      return (authorize: URL, signal: AbortSignal) => {
+      return (authorize: URL, signal?: AbortSignal) => {
         if (row.vendor === "demo")
           authorize.searchParams.set("login_hint", pod);
         report(authorize.href);
@@ -180,18 +180,20 @@ const browser = {
 };
 
 /** PodApi in the page, an `Unopened` it throws named so, as the screens tell errors by name. */
-function named(api: Record<string, (input?: object) => Promise<unknown>>) {
+function named<T extends object>(api: T): T {
   return Object.fromEntries(
     Object.entries(api).map(([operation, run]) => [
       operation,
       (input?: object) =>
-        run(input).catch((error: unknown) => {
-          if (error instanceof Unopened)
-            Object.defineProperty(error, "name", { value: "Unopened" });
-          throw error;
-        }),
+        (run as (input?: object) => Promise<unknown>)(input).catch(
+          (error: unknown) => {
+            if (error instanceof Unopened)
+              Object.defineProperty(error, "name", { value: "Unopened" });
+            throw error;
+          },
+        ),
     ]),
-  ) as unknown as PodApi;
+  ) as T;
 }
 
 const inPage = named(podApi(browser));

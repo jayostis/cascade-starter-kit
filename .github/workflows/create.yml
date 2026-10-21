@@ -94,7 +94,7 @@ jobs:
           path: ${{ runner.temp }}/create
       - name: The starter's check, against the tarball
         working-directory: ${{ runner.temp }}
-        run: node "$GITHUB_WORKSPACE/check/starter.mjs" create/create-cascade-app-*.tgz
+        run: node "$GITHUB_WORKSPACE/check/starter.ts" create/create-cascade-app-*.tgz
 
   # Nothing needs macOS, so a release does not wait for it, and a failure still fails the run.
   other-systems:
@@ -146,7 +146,7 @@ jobs:
           path: ${{ runner.temp }}/create
       - name: The starter's check, against the tarball
         working-directory: ${{ runner.temp }}
-        run: node "$GITHUB_WORKSPACE/check/starter.mjs" create/create-cascade-app-*.tgz
+        run: node "$GITHUB_WORKSPACE/check/starter.ts" create/create-cascade-app-*.tgz
 
   # The tested tarball, as the pre-release build-<commit>, never the latest.
   release:
@@ -220,4 +220,4 @@ jobs:
           key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-shell
       - name: The starter's check, against the release
         working-directory: ${{ runner.temp }}
-        run: node "$GITHUB_WORKSPACE/check/starter.mjs" --release "$GITHUB_SHA"
+        run: node "$GITHUB_WORKSPACE/check/starter.ts" --release "$GITHUB_SHA"

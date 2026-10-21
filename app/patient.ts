@@ -6,7 +6,7 @@ import { argv, stdout } from "node:process";
 import { fileURLToPath, URL } from "node:url";
 import { HospitalDataError } from "@the-cascade-protocol/sandbox";
 import { addPatient } from "@the-cascade-protocol/sandbox/node";
-import { argumentsOf, refuse } from "./pods.mjs";
+import { argumentsOf, refuse } from "./pods.ts";
 
 const { positionals } = argumentsOf(
   argv.slice(2),

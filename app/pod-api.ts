@@ -1,5 +1,5 @@
-// What the starter reads of its pods and its reference tables, once, for every host: the Node server, try/ in a
-// browser, the chat, the MCP server and `npm run ask`. A host gives the pods, the tables and what only it knows;
+// What the starter reads of its pods and its reference tables, once, for every host: the Node server, the browser
+// target, the chat, the MCP server and `npm run ask`. A host gives the pods, the tables and what only it knows;
 // every operation takes and gives plain JSON, and refuses bad input with a `Refusal`.
 import {
   changesIn,
@@ -20,8 +20,19 @@ import {
   timelineIn,
   typedWords,
   Unopened,
+  type Checked,
+  type DirectoryRow,
+  type ImportProgress,
+  type InputSchema,
+  type Pod,
+  type Pull,
+  type Registration,
+  type SignIn,
+  type Tables,
 } from "cascade-runtime";
 import {
+  type Abouts,
+  type Answers,
   classedElsewhere,
   classesSaid,
   codesSaid,
@@ -46,16 +57,18 @@ import {
   testsIn,
   trendInput,
   utcInstant,
+  type VariantsSaid,
   variantsSaid,
   withMechanism,
   worldInstant,
   worthALook,
 } from "./said.ts";
+import type { Input, Operation } from "./server/inputs.ts";
 
 export { maps };
 
 /** Why a host that opens no encrypted pod refuses the pod `name`, in one line. */
-export function notOpenedHere(name) {
+export function notOpenedHere(name: string): string {
   return `${name} is encrypted: open it in the app (\`npm start\`) with its six words; this command does not open encrypted pods`;
 }
 
@@ -80,9 +93,22 @@ const DEVICES = /^(con|prn|aux|nul|com\d|lpt\d)$/;
 const NOT_WAITING =
   "These six words are not waiting any more. Make the pod again.";
 
-const pairs = (map) => (map === undefined ? undefined : [...map]);
+/** The pod as `said.ts` reads its rows: by the fields its queries give each, which `Row` leaves open. */
+const byFields = (pod: Pod) =>
+  pod as unknown as Parameters<typeof variantsSaid>[1]["pod"] &
+    Parameters<typeof joinedBy>[0];
 
-const WORTH_A_LOOK = {
+const pairs = <K, V>(map: ReadonlyMap<K, V> | undefined) =>
+  map === undefined ? undefined : [...map];
+
+/** A tool `tool` runs, as a model is told of it. */
+export interface PodTool {
+  readonly name: string;
+  readonly description: string;
+  readonly inputSchema: InputSchema;
+}
+
+const WORTH_A_LOOK: PodTool = {
   name: "worth_a_look",
   description:
     "What a pod's page lists under Worth a look, in its order: each line's sentence, the ID of the entry it is about and its tag. It states what is flagged (an entry that needs review, a report that differs from ClinVar today, medications that share an ingredient), never why; there are none when nothing is.",
@@ -90,7 +116,7 @@ const WORTH_A_LOOK = {
 };
 
 /** The tools `tool` runs, as a model is told of them: the change tools, then `worth_a_look`. */
-export const POD_TOOLS = [
+export const POD_TOOLS: readonly PodTool[] = [
   ...changeTools({ ask: async () => [] }).map(
     ({ name, description, inputSchema }) => ({
       name,
@@ -103,7 +129,13 @@ export const POD_TOOLS = [
 const TOOLS = POD_TOOLS.map(({ name }) => name);
 
 /** The test and medication codes of the trend a finding is about, the medication's name where it has no code. */
-export function trendOf({ test, medication }) {
+export function trendOf({
+  test,
+  medication,
+}: {
+  readonly test: { readonly code: string; readonly notation?: string };
+  readonly medication: { readonly name: string; readonly notation?: string };
+}): { test: string; medication?: string } {
   const drug = medication.notation ?? medication.name;
   return {
     test: test.notation ?? test.code,
@@ -112,27 +144,28 @@ export function trendOf({ test, medication }) {
 }
 
 /** What a field a client may send can be: how its refusal reads, and which values pass. */
-const CHECKS = {
-  string: ["a string", (value) => typeof value === "string"],
-  boolean: ["true or false", (value) => typeof value === "boolean"],
-  positiveInteger: [
-    "a whole number from 1",
-    (value) => Number.isSafeInteger(value) && value > 0,
-  ],
-  object: [
-    "an object",
-    (value) =>
-      value !== null && typeof value === "object" && !Array.isArray(value),
-  ],
-  waitFor: [
-    'true or "change"',
-    (value) => value === true || value === "change",
-  ],
-};
-const { string, boolean, positiveInteger, object, waitFor } = CHECKS;
+type Check = readonly [what: string, is: (value: unknown) => boolean];
+
+const string: Check = ["a string", (value) => typeof value === "string"];
+const boolean: Check = ["true or false", (value) => typeof value === "boolean"];
+const positiveInteger: Check = [
+  "a whole number from 1",
+  (value) => Number.isSafeInteger(value) && (value as number) > 0,
+];
+const object: Check = [
+  "an object",
+  (value) =>
+    value !== null && typeof value === "object" && !Array.isArray(value),
+];
+const waitFor: Check = [
+  'true or "change"',
+  (value) => value === true || value === "change",
+];
 
 /** The check each input a client may send must pass when it is given, by operation. */
-export const INPUTS = {
+export const INPUTS: Readonly<
+  Record<Operation, Readonly<Record<string, Check>>>
+> = {
   pods: {},
   held: {},
   pod: { pod: string },
@@ -165,20 +198,105 @@ export const INPUTS = {
 };
 
 /** The operations a client may call, which is every member of `podApi(host)` but `close`. */
-export const OPERATIONS = Object.keys(INPUTS);
+export const OPERATIONS = Object.keys(INPUTS) as Operation[];
 
 /** Why the operation `name` refuses `input`, an input that is no object or holds a field of the wrong type; else nothing. */
-export function inputRefusal(name, input) {
+export function inputRefusal(
+  name: Operation,
+  input: unknown,
+): string | undefined {
   if (!object[1](input)) return "the input must be an object";
+  const fields = input as Record<string, unknown>;
   for (const [field, [what, is]] of Object.entries(INPUTS[name]))
-    if (input[field] !== undefined && !is(input[field]))
+    if (fields[field] !== undefined && !is(fields[field]))
       return `${field} must be ${what}`;
   return undefined;
 }
 
+/** The hospitals a host signs in at: the directory, who the app is there, and how a sign-in reaches the person. */
+export interface Hospitals {
+  directory(): Promise<readonly DirectoryRow[]>;
+  readonly registration: Omit<Registration, "scopes">;
+  fetch: typeof fetch;
+  /** Resolves once the hospital of `row` can be signed in at. */
+  ready(row: DirectoryRow): Promise<void>;
+  /** The sign-in of one connection, which hands the authorize URL to `report` once it has one. */
+  signIn(
+    row: DirectoryRow,
+    at: { pod: string; connection: number },
+    report: (authorize: string) => void,
+  ): SignIn;
+  /** What a pull from the hospital is named after. */
+  pullName(row: DirectoryRow): string;
+}
+
+/** The world's date the demo hospitals answer as of: an instant, or undefined for every version they hold. */
+export interface World {
+  get(): string | undefined | Promise<string | undefined>;
+  set(asOf: string | undefined): void | Promise<void>;
+}
+
+/** What only the host knows: where the pods are, the tables, the samples, the hospitals and the world's date. */
+export interface PodHost {
+  readonly pods: {
+    names(): Promise<string[]>;
+    title(name: string): Promise<string | undefined>;
+    open(
+      name: string,
+      options?: { title?: string; secret?: string },
+    ): Promise<Pod>;
+    /** Removes the pods and their answers, with `all` every answer kept; never the reference tables. */
+    remove(
+      names: readonly string[],
+      options?: { all?: boolean },
+    ): Promise<void>;
+  };
+  /** The sample pods, by name, that a pod of that name is copied from; none on a host that has none. */
+  readonly samples?: readonly string[];
+  copySample?(name: string): Promise<Pod>;
+  /** Loads the kits' pods again, giving their names, on a host that has no samples. */
+  restore?(): Promise<string[]>;
+  tables(pod?: Pod): Promise<Tables>;
+  checkTables(): Promise<Checked[]>;
+  /** Whether an encrypted pod is asked for its words, rather than refused. */
+  readonly opensEncrypted: boolean;
+  /** Told when the tables cannot say what a page would name: `names`, or `variants`. */
+  unsaid?(kind: string, error: Error): void;
+  hospitals?: Hospitals;
+  world?: World;
+}
+
+/** Each connection to a hospital, as the operations follow it. */
+interface Underway {
+  readonly pod: string;
+  readonly row: DirectoryRow;
+  readonly n: number;
+  readonly name: string;
+  step: string;
+  requests: number;
+  readonly asOf: string | undefined;
+  readonly waiting: (() => void)[];
+  readonly stop: AbortController;
+  pulled?: Promise<Pull>;
+  files?: Promise<Saved>;
+  bringing?: ImportProgress;
+  failed?: string;
+  retry?: boolean;
+  imported?: boolean;
+  broughtIn?: boolean;
+}
+
+/** A connection's pull saved as files, or why there are none. */
+type Saved =
+  | { pulled: Pull; files: ReadonlyMap<string, Uint8Array>; failed?: never }
+  | { failed: string; failure?: string; pulled?: never; files?: never };
+
 /** `operation`, refusing an input that is no object or holds a field of the wrong type. */
-function typed(name, operation) {
-  return async (input = {}) => {
+function typed<K extends Operation, Output>(
+  name: K,
+  operation: (input: Input<K>) => Promise<Output>,
+): (input?: Input<K>) => Promise<Output> {
+  return async (input = {} as Input<K>) => {
     const refused = inputRefusal(name, input);
     if (refused !== undefined) throw new Refusal(refused);
     return operation(input);
@@ -186,49 +304,64 @@ function typed(name, operation) {
 }
 
 /** The operations over the pods and tables `host` gives; `host.hospitals` and `host.world` are read at each call. */
-export function podApi(host) {
+export function podApi(host: PodHost) {
   /** Each pod this instance opened, by name, as the promise of its opening. */
-  const opened = new Map();
+  const opened = new Map<string, Promise<Pod>>();
   /** The title each pod keeps, by name, once read. */
-  const titles = new Map();
+  const titles = new Map<string, string>();
   /** The last answers given for each pod, by name, as `answers` gave them. */
-  const last = new Map();
+  const last = new Map<string, Answered>();
   /** The pods the folder was last seen to hold, so one page scans it once: a pod seen needs no second scan. */
-  const seen = new Set();
+  const seen = new Set<string>();
   /** The six words of each encrypted pod being made, and the person's name as typed, by the pod's name, until checked. */
-  const waiting = new Map();
+  const waiting = new Map<string, { words: string; person: string }>();
   /** Each connection to a hospital, by its number; `count` numbers the next. */
-  const connections = new Map();
+  const connections = new Map<number, Underway>();
   let count = 0;
 
   /** Whether a record is being brought into the pod: its answers are then the ones last given, until it is in. */
-  const bringingInto = (name) =>
+  const bringingInto = (name: string) =>
     [...connections.values()].some(
       (each) => each.pod === name && each.bringing !== undefined,
     );
 
+  /** The hospitals the host signs in at, which a Node host is given once its server listens. */
+  function hospitalsOf(): Hospitals {
+    if (host.hospitals === undefined)
+      throw new Error("The app's hospitals are not set up yet.");
+    return host.hospitals;
+  }
+
   /** The pod named, opened once with `options` and kept; a failed opening is forgotten. */
-  function openOnce(name, options) {
-    if (!opened.has(name)) {
-      const opening = host.pods.open(name, options);
+  function openOnce(
+    name: string,
+    options?: { title?: string; secret?: string },
+  ): Promise<Pod> {
+    let opening = opened.get(name);
+    if (opening === undefined) {
+      opening = host.pods.open(name, options);
       opening.catch(() => opened.delete(name));
       opened.set(name, opening);
     }
-    return opened.get(name);
+    return opening;
   }
 
-  function sampleFor(name) {
-    if (!opened.has(name)) {
-      const copying = (async () => host.copySample(name))();
+  function sampleFor(name: string): Promise<Pod> {
+    let copying = opened.get(name);
+    if (copying === undefined) {
+      const copy = host.copySample;
+      if (copy === undefined)
+        throw new Error(`The host has no sample to copy ${name} from.`);
+      copying = (async () => copy(name))();
       copying.catch(() => opened.delete(name));
       opened.set(name, copying);
     }
-    return opened.get(name);
+    return copying;
   }
 
   /** Closes the pods this instance opened, the encrypted ones too unless `plaintextOnly`, and forgets the last answers. */
   async function closeOpened({ plaintextOnly = false } = {}) {
-    const closing = [];
+    const closing: Promise<void>[] = [];
     for (const [name, opening] of [...opened]) {
       const pod = await opening.catch(() => undefined);
       if (plaintextOnly && pod?.encrypted) continue;
@@ -242,7 +375,7 @@ export function podApi(host) {
   }
 
   /** The title the pod keeps, read once, else its name. */
-  async function titleOf(name) {
+  async function titleOf(name: string): Promise<string> {
     if (!titles.has(name)) {
       const title = await host.pods.title(name);
       if (title !== undefined) titles.set(name, title);
@@ -254,23 +387,23 @@ export function podApi(host) {
     return (await tables).held();
   }
 
-  /** The pod named, which must be one there is. */
-  async function known(name) {
-    if (seen.has(name) || opened.has(name)) return;
+  /** The pod named, which must be one there is: its name. */
+  async function known(name: string | undefined): Promise<string> {
+    if (name !== undefined && (seen.has(name) || opened.has(name))) return name;
     const names = await host.pods.names();
     seen.clear();
     for (const each of names) seen.add(each);
-    if (!names.includes(name))
+    if (name === undefined || !names.includes(name))
       throw new Refusal(
         names.length === 0
           ? `there is no pod ${name}, and no pod at all`
           : `there is no pod ${name}; the pods are ${names.join(", ")}`,
       );
+    return name;
   }
 
-  /** The pod named, opened; a host that opens no encrypted pod refuses one. */
-  async function podNamed(name) {
-    await known(name);
+  /** The pod there is by `name`, opened; a host that opens no encrypted pod refuses one. */
+  async function podNamed(name: string): Promise<Pod> {
     try {
       return await openOnce(name);
     } catch (error) {
@@ -280,13 +413,15 @@ export function podApi(host) {
     }
   }
 
-  async function asked(pod) {
-    const answers = Object.fromEntries(
+  async function asked(pod: Pod) {
+    const answers: Answers = Object.fromEntries(
       await Promise.all(
         QUESTIONS.map(async (question) => [question, await pod.ask(question)]),
       ),
     );
-    const changes = changesIn(answers[HISTORY], answers[LABS], { limit: 20 });
+    const changes = changesIn(answers[HISTORY] ?? [], answers[LABS] ?? [], {
+      limit: 20,
+    });
     return {
       answers: await withMechanism(answers, changes, (question) =>
         pod.ask(question),
@@ -295,49 +430,53 @@ export function podApi(host) {
       unheld: pod.opened?.unheld,
     };
   }
+  type Answered = Awaited<ReturnType<typeof asked>>;
 
-  async function answers({ pod: name }) {
+  async function answers({ pod: given }: Input<"answers">) {
+    const name = await known(given);
     const pod = await podNamed(name);
-    if (bringingInto(name) && last.has(name)) return last.get(name);
-    const given = await asked(pod);
-    last.set(name, given);
-    return given;
+    const kept = bringingInto(name) ? last.get(name) : undefined;
+    if (kept !== undefined) return kept;
+    const answered = await asked(pod);
+    last.set(name, answered);
+    return answered;
   }
 
   /** What the tables say of the codes `answered` holds; nothing when they cannot say, which the host is told. */
-  function aboutCodes(answered, pod) {
+  function aboutCodes(answered: Answers, pod: Pod) {
     return host
       .tables(pod)
       .then((tables) => codesSaid(answered, { tables }))
-      .catch((error) => {
+      .catch((error: Error) => {
         host.unsaid?.("names", error);
         return undefined;
       });
   }
 
-  async function variantsOf(answered, pod) {
+  async function variantsOf(answered: Answers, pod: Pod) {
     try {
       return await variantsSaid(answered, {
         tables: await host.tables(pod),
-        pod,
+        pod: byFields(pod),
       });
     } catch (error) {
-      host.unsaid?.("variants", error);
+      host.unsaid?.("variants", error as Error);
       return undefined;
     }
   }
 
-  async function said({ pod: name, entry: id }) {
+  async function said({ pod: given, entry: id }: Input<"said">) {
+    const name = await known(given);
     const pod = await podNamed(name);
-    let given = last.get(name) ?? (await answers({ pod: name }));
-    if (id !== undefined && entryOf(given.answers, id) === undefined) {
-      given = await answers({ pod: name });
-      if (entryOf(given.answers, id) === undefined)
+    let answered = last.get(name) ?? (await answers({ pod: name }));
+    if (id !== undefined && entryOf(answered.answers, id) === undefined) {
+      answered = await answers({ pod: name });
+      if (entryOf(answered.answers, id) === undefined)
         throw new Refusal(`the pod ${name} holds no entry ${id}`);
     }
     const [about, variants, heldNow] = await Promise.all([
-      aboutCodes(given.answers, pod),
-      variantsOf(given.answers, pod),
+      aboutCodes(answered.answers, pod),
+      variantsOf(answered.answers, pod),
       held().catch(() => []),
     ]);
     const output = {
@@ -357,17 +496,17 @@ export function podApi(host) {
       host
         .tables()
         .then(async (tables) =>
-          panelsOf(entryOf(given.answers, id), {
+          panelsOf(entryOf(answered.answers, id), {
             tables,
             held: await tables.held(),
           }),
         )
         .catch(() => []),
-      joinedBy(pod).catch(() => new Map()),
+      joinedBy(byFields(pod)).catch(() => new Map<string, string[]>()),
     ]);
     return {
       ...output,
-      entry: entryOf(given.answers, id, {
+      entry: entryOf(answered.answers, id, {
         about,
         said: variants,
         held: heldNow,
@@ -378,7 +517,13 @@ export function podApi(host) {
     };
   }
 
-  async function trend({ pod: name, test, medication, named = true }) {
+  async function trend({
+    pod: given,
+    test,
+    medication,
+    named = true,
+  }: Input<"trend">) {
+    const name = await known(given);
     const pod = await podNamed(name);
     const [medications, labs] = await Promise.all([
       pod.ask(HISTORY),
@@ -404,12 +549,13 @@ export function podApi(host) {
       );
     }
     const timeline = timelineIn(medications);
-    if (input.medication !== undefined) {
-      const wanted = input.medication.toLowerCase();
+    const drug = input.medication;
+    if (drug !== undefined) {
+      const wanted = drug.toLowerCase();
       const found = timeline.find(
         (each) =>
-          each.notation === input.medication ||
-          each.code === input.medication ||
+          each.notation === drug ||
+          each.code === drug ||
           each.name.toLowerCase() === wanted,
       );
       if (found === undefined) {
@@ -417,7 +563,7 @@ export function podApi(host) {
           ...new Set(timeline.map((each) => each.notation ?? each.name)),
         ];
         throw new Refusal(
-          `no medication ${input.medication} in the pod; ${drugs.length === 0 ? "it holds no medications" : `the medications it holds are ${drugs.join(", ")}`}`,
+          `no medication ${drug} in the pod; ${drugs.length === 0 ? "it holds no medications" : `the medications it holds are ${drugs.join(", ")}`}`,
         );
       }
     }
@@ -429,13 +575,13 @@ export function podApi(host) {
       timeline,
       series,
       test: input.test,
-      ...(input.medication !== undefined && { medication: input.medication }),
+      ...(drug !== undefined && { medication: drug }),
       ...(about !== undefined && { about: pairs(about) }),
     };
   }
 
-  async function classes({ pod: name }) {
-    const pod = await podNamed(name);
+  async function classes({ pod: given }: Input<"classes">) {
+    const pod = await podNamed(await known(given));
     const [rows, medications] = await Promise.all([
       pod.medicationClasses(),
       pod.ask(MEDICATIONS),
@@ -446,7 +592,7 @@ export function podApi(host) {
       (async () => classedElsewhere(rows, medications, { tables }))().catch(
         noop,
       ),
-      held(tables).catch(() => []),
+      held(Promise.resolve(tables)).catch(() => []),
     ]);
     return {
       rows,
@@ -457,8 +603,8 @@ export function podApi(host) {
     };
   }
 
-  async function panel({ pod: name, panel: code }) {
-    const pod = await podNamed(name);
+  async function panel({ pod: given, panel: code }: Input<"panel">) {
+    const pod = await podNamed(await known(given));
     if (typeof code !== "string" || code === "")
       throw new Refusal("a panel is a LOINC code: name one");
     const [rows, labs] = await Promise.all([
@@ -468,7 +614,7 @@ export function podApi(host) {
     const tables = await host.tables();
     const [about, heldNow] = await Promise.all([
       (async () => panelSaid(code, rows, { tables }))().catch(noop),
-      held(tables).catch(() => []),
+      held(Promise.resolve(tables)).catch(() => []),
     ]);
     return {
       panel: code,
@@ -479,7 +625,7 @@ export function podApi(host) {
     };
   }
 
-  async function table({ id, q = "", page, code }) {
+  async function table({ id, q = "", page, code }: Input<"table">) {
     const tables = await host.tables();
     const heldNow = await tables.held();
     const sources = sourcesOf(heldNow);
@@ -527,8 +673,8 @@ export function podApi(host) {
     };
   }
 
-  async function ask({ pod: name, question, limit }) {
-    const pod = await podNamed(name);
+  async function ask({ pod: given, question = "", limit }: Input<"ask">) {
+    const pod = await podNamed(await known(given));
     const rows = await pod.ask(question);
     return {
       question,
@@ -537,32 +683,37 @@ export function podApi(host) {
     };
   }
 
-  async function tool({ pod: name, tool: called, input = {} }) {
-    if (!TOOLS.includes(called))
+  async function tool({ pod: given, tool: called, input = {} }: Input<"tool">) {
+    if (called === undefined || !TOOLS.includes(called))
       throw new Refusal(`no tool ${called}; the tools are ${TOOLS.join(", ")}`);
+    const name = await known(given);
     const pod = await podNamed(name);
     if (called === WORTH_A_LOOK.name) {
       checkInput(WORTH_A_LOOK.inputSchema, input);
-      const given = last.get(name) ?? (await answers({ pod: name }));
+      const answered = last.get(name) ?? (await answers({ pod: name }));
       const { about, said: variants } = maps(await said({ pod: name }));
       return {
-        value: worthALook(given.answers, about, variants).map(
-          ({ sentence, entry, tag }) => ({
-            sentence,
-            entry: entryId(entry),
-            ...(tag === undefined ? {} : { tag }),
-          }),
-        ),
+        value: worthALook(
+          answered.answers,
+          about as Abouts | undefined,
+          variants as VariantsSaid | undefined,
+        ).map(({ sentence, entry, tag }) => ({
+          sentence,
+          entry: entryId(entry),
+          ...(tag === undefined ? {} : { tag }),
+        })),
       };
     }
     const run = changeTools(pod).find((each) => each.name === called);
+    if (run === undefined)
+      throw new Refusal(`no tool ${called}; the tools are ${TOOLS.join(", ")}`);
     if (called !== "find_changes") return { value: await run.execute(input) };
     checkInput(run.inputSchema, input);
     const found = await findChanges(pod, input);
     return { value: found.map(compact), found };
   }
 
-  async function makePod({ person = "", encrypt = false }) {
+  async function makePod({ person = "", encrypt = false }: Input<"makePod">) {
     const name = slug(person);
     if (name === "")
       throw new Refusal(
@@ -586,36 +737,37 @@ export function podApi(host) {
     return { pod: name, made: true };
   }
 
-  function waitingFor(name) {
-    const words = waiting.get(name);
+  function waitingFor(name: string | undefined) {
+    const words = name === undefined ? undefined : waiting.get(name);
     if (words === undefined) throw new Refusal(NOT_WAITING);
     return words;
   }
 
-  async function confirmWords(input) {
+  async function confirmWords(input: Input<"confirmWords">) {
     const { pod: name, word2 = "", word5 = "" } = input;
     const { words, person } = waitingFor(name);
+    const pod = name as string;
     const changed = savedLoginChanged(
       new Map(Object.entries(input)),
-      name,
+      pod,
       words,
     );
     if (changed !== undefined) throw new Refusal(changed);
     const asked = words.split(" ");
     if (typedWords(word2) !== asked[1] || typedWords(word5) !== asked[4])
       throw new Refusal(NOT_WORDS);
-    waiting.delete(name);
-    if ((await host.pods.names()).includes(name))
+    waiting.delete(pod);
+    if ((await host.pods.names()).includes(pod))
       throw new Refusal(
-        `A pod named ${name} exists already. Make the pod again under another name.`,
+        `A pod named ${pod} exists already. Make the pod again under another name.`,
       );
-    if (!(await openOnce(name, { secret: words, title: person })).encrypted)
-      throw new Error(`The pod ${name} was made without its words.`);
-    return { pod: name, made: true };
+    if (!(await openOnce(pod, { secret: words, title: person })).encrypted)
+      throw new Error(`The pod ${pod} was made without its words.`);
+    return { pod, made: true };
   }
 
-  async function unlock({ pod: name, secret = "" }) {
-    await known(name);
+  async function unlock({ pod: given, secret = "" }: Input<"unlock">) {
+    const name = await known(given);
     try {
       await openOnce(name);
     } catch (error) {
@@ -638,9 +790,10 @@ export function podApi(host) {
 
   async function resetAll() {
     await deleteAll();
-    if (!(host.samples?.length > 0)) return { pods: await host.restore() };
-    for (const name of host.samples) await sampleFor(name);
-    return { pods: [...host.samples] };
+    const samples = host.samples ?? [];
+    if (samples.length === 0) return { pods: (await host.restore?.()) ?? [] };
+    for (const name of samples) await sampleFor(name);
+    return { pods: [...samples] };
   }
 
   async function checkTables() {
@@ -651,21 +804,24 @@ export function podApi(host) {
     return { checked, held: await held() };
   }
 
-  async function setWorldDate({ date = "" }) {
+  async function setWorldDate({ date = "" }: Input<"setWorldDate">) {
     const asOf = worldInstant(date);
     if (date.trim() !== "" && asOf === undefined)
       throw new Refusal(
         `"${date}" is not a date: give a day as YYYY-MM-DD, or an instant with its timezone.`,
       );
+    if (host.world === undefined)
+      throw new Error("The app's world date is not set up yet.");
     await host.world.set(asOf);
     return asOf === undefined ? {} : { asOf };
   }
 
   /** The step a connection is at; `bringing in` while its record is brought in. */
-  const stepOf = (connection) =>
+  const stepOf = (connection: Underway) =>
     connection.bringing === undefined ? connection.step : "bringing in";
-  const settled = (connection) => !UNDER_WAY.includes(stepOf(connection));
-  const stateOf = (connection) =>
+  const settled = (connection: Underway) =>
+    !UNDER_WAY.includes(stepOf(connection));
+  const stateOf = (connection: Underway) =>
     JSON.stringify([
       stepOf(connection),
       connection.requests,
@@ -679,22 +835,22 @@ export function podApi(host) {
   }
 
   /** Wakes whoever waits for the connection to change. */
-  function changed(connection) {
+  function changed(connection: Underway) {
     for (const wake of connection.waiting.splice(0)) wake();
   }
 
-  const nextChange = (connection) =>
-    new Promise((wake) => connection.waiting.push(wake));
+  const nextChange = (connection: Underway) =>
+    new Promise<void>((wake) => connection.waiting.push(wake));
 
   /** Holds until the connection settles, or for `wait: "change"` changes, or `WAIT_MS` have passed. */
-  async function holdFor(connection, wait) {
+  async function holdFor(connection: Underway, wait: true | "change") {
     const was = stateOf(connection);
     const over = () =>
       settled(connection) || (wait === "change" && stateOf(connection) !== was);
-    let timer;
-    const late = new Promise((done) => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const late = new Promise<typeof LATE>((done) => {
       timer = globalThis.setTimeout(done, WAIT_MS, LATE);
-      timer.unref?.();
+      (timer as { unref?: () => void }).unref?.();
     });
     try {
       while (
@@ -706,16 +862,17 @@ export function podApi(host) {
     }
   }
 
-  async function connectTo({ pod: name, fhirBase }) {
+  async function connectTo({ pod: given, fhirBase }: Input<"connect">) {
+    const name = await known(given);
     await podNamed(name);
-    const { hospitals } = host;
+    const hospitals = hospitalsOf();
     const row = (await hospitals.directory()).find(
       (each) => each.fhirBase === fhirBase,
     );
     if (row === undefined)
       throw new Refusal("That hospital is not in the directory.");
     const n = ++count;
-    const connection = {
+    const connection: Underway = {
       pod: name,
       row,
       n,
@@ -727,8 +884,8 @@ export function podApi(host) {
       stop: new globalThis.AbortController(),
     };
     connections.set(n, connection);
-    let report;
-    const reported = new Promise((resolve) => (report = resolve));
+    let report: (authorize: string) => void = noop;
+    const reported = new Promise<string>((resolve) => (report = resolve));
     const signedIn = (async () => {
       await hospitals.ready(row);
       return connect(
@@ -746,12 +903,13 @@ export function podApi(host) {
         },
       );
     })();
-    connection.pulled = signedIn.then((signed) => {
+    const pulled = signedIn.then((signed) => {
       connection.step = "pulling";
       changed(connection);
       return pull(signed, DEMO_PLAN, { signal: connection.stop.signal });
     });
-    connection.pulled.then(
+    connection.pulled = pulled;
+    pulled.then(
       () => {
         connection.step = "pulled";
         changed(connection);
@@ -767,19 +925,19 @@ export function podApi(host) {
       : { connection: n, authorize };
   }
 
-  function connectionOf(name, n) {
-    const found = connections.get(n);
+  function connectionOf(name: string, n: number | undefined) {
+    const found = n === undefined ? undefined : connections.get(n);
     if (found?.pod !== name)
       throw new Refusal(`no connection ${n} for the pod ${name}`);
     return found;
   }
 
   /** The files a connection's pull is saved as, read once, or why there are none: it failed, or was refused. */
-  function filesOf(connection) {
-    connection.files ??= (async () => {
-      let pulled;
+  function filesOf(connection: Underway): Promise<Saved> {
+    connection.files ??= (async (): Promise<Saved> => {
+      let pulled: Pull;
       try {
-        pulled = await connection.pulled;
+        pulled = await (connection.pulled as Promise<Pull>);
       } catch (error) {
         if (!(error instanceof ConnectionFailure)) throw error;
         const said = error.message;
@@ -806,12 +964,16 @@ export function podApi(host) {
     return connection.files;
   }
 
-  async function connectionNow({ pod: name, connection: n, wait }) {
-    await known(name);
+  async function connectionNow({
+    pod: given,
+    connection: n,
+    wait,
+  }: Input<"connection">) {
+    const name = await known(given);
     const connection = connectionOf(name, n);
     if (wait !== undefined) await holdFor(connection, wait);
     const shown = {
-      n,
+      n: connection.n,
       row: connection.row,
       step: stepOf(connection),
       settled: settled(connection),
@@ -822,15 +984,20 @@ export function podApi(host) {
       }),
     };
     if (!settled(connection)) return shown;
-    const { failed, failure, pulled, files } = await filesOf(connection);
-    if (failed !== undefined)
-      return { ...shown, failed, ...(failure !== undefined && { failure }) };
+    const saved = await filesOf(connection);
+    if (saved.failed !== undefined)
+      return {
+        ...shown,
+        failed: saved.failed,
+        ...(saved.failure !== undefined && { failure: saved.failure }),
+      };
     if (connection.failed !== undefined)
       return {
         ...shown,
         failed: connection.failed,
         ...(connection.retry && { retry: true }),
       };
+    const { pulled, files } = saved;
     const patient = patientName(pulled.bundle);
     return {
       ...shown,
@@ -842,8 +1009,8 @@ export function podApi(host) {
     };
   }
 
-  async function bring({ pod: name, connection: n }) {
-    await known(name);
+  async function bring({ pod: given, connection: n }: Input<"bring">) {
+    const name = await known(given);
     const connection = connectionOf(name, n);
     if (connection.bringing !== undefined) return { step: "bringing in" };
     const { files } =
@@ -871,7 +1038,7 @@ export function podApi(host) {
           else connection.failed = `Refused: ${done.refused}`;
           last.delete(name);
         },
-        (error) => {
+        (error: unknown) => {
           globalThis.console.error(error);
           connection.failed = NOT_BROUGHT_IN;
           connection.retry = true;
@@ -885,7 +1052,7 @@ export function podApi(host) {
   }
 
   const operations = {
-    async pods() {
+    async pods(_input: Input<"pods">) {
       const names = await host.pods.names();
       seen.clear();
       for (const each of names) seen.add(each);
@@ -895,15 +1062,15 @@ export function podApi(host) {
         ),
       };
     },
-    async held() {
+    async held(_input: Input<"held">) {
       try {
         return { held: await held() };
       } catch {
         return { held: [], failed: true };
       }
     },
-    async pod({ pod: name }) {
-      await known(name);
+    async pod({ pod: given }: Input<"pod">) {
+      const name = await known(given);
       const title = await titleOf(name);
       try {
         const pod = await openOnce(name);
@@ -922,31 +1089,41 @@ export function podApi(host) {
     ask,
     tool,
     makePod,
-    waitingWords: async ({ pod: name }) => ({
-      pod: name,
+    waitingWords: async ({ pod: name }: Input<"waitingWords">) => ({
+      pod: name as string,
       ...waitingFor(name),
     }),
     confirmWords,
     unlock,
-    deleteAll,
-    resetAll,
-    checkTables,
+    deleteAll: (_input: Input<"deleteAll">) => deleteAll(),
+    resetAll: (_input: Input<"resetAll">) => resetAll(),
+    checkTables: (_input: Input<"checkTables">) => checkTables(),
     setWorldDate,
-    async hospitals({ q = "" }) {
+    async hospitals({ q = "" }: Input<"hospitals">) {
       const asOf = await host.world?.get();
       return {
-        rows: searchDirectory(await host.hospitals.directory(), q),
+        rows: searchDirectory(await hospitalsOf().directory(), q),
         ...(asOf !== undefined && { asOf }),
       };
     },
     connect: connectTo,
     connection: connectionNow,
     bring,
+  } satisfies {
+    readonly [K in Operation]: (input: Input<K>) => Promise<unknown>;
   };
+  type Operations = typeof operations;
   return {
-    ...Object.fromEntries(
-      OPERATIONS.map((name) => [name, typed(name, operations[name])]),
-    ),
+    ...(Object.fromEntries(
+      OPERATIONS.map((name) => [
+        name,
+        typed(name, operations[name] as (input: object) => Promise<unknown>),
+      ]),
+    ) as {
+      readonly [K in Operation]: (
+        input?: Input<K>,
+      ) => ReturnType<Operations[K]>;
+    }),
     close: async () => {
       forgetConnections();
       await closeOpened();
@@ -954,5 +1131,11 @@ export function podApi(host) {
   };
 }
 
-const noop = () => undefined;
+/** PodApi: each operation's input, as its route's schema says, and its output, as the operation gives it. */
+export type PodApi = ReturnType<typeof podApi>;
+
+/** What `operation` gives. */
+export type Output<K extends Operation> = Awaited<ReturnType<PodApi[K]>>;
+
+const noop = (): undefined => undefined;
 const LATE = Symbol("late");

@@ -1,5 +1,5 @@
 // `/chat`: a person's question goes to the model the app was set up with (`models.ts`) through the AI SDK. The server
-// runs the free reads of `tools.mjs` for up to `MAX_ROUNDS` rounds; every other tool it offers goes to the page with
+// runs the free reads of `tools.ts` for up to `MAX_ROUNDS` rounds; every other tool it offers goes to the page with
 // no server `execute`, so the page moves itself and asks the person before a write. `POST /chat` answers with the
 // AI SDK's UI message stream; `GET /chat` names the model.
 import {
@@ -18,16 +18,16 @@ import {
   type UIMessageChunk,
   validateUIMessages,
 } from "ai";
-import { checkInput, Refusal } from "cascade-runtime";
+import { checkInput, type InputSchema, Refusal } from "cascade-runtime";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
 import { addresses } from "../addresses.ts";
 import type { Model } from "../models.ts";
-import { maps } from "../pod-api.mjs";
-import { podPath, trendPath } from "../pods.mjs";
+import { maps } from "../pod-api.ts";
+import { podPath, trendPath } from "../pods.ts";
 import { CHANGED, changeSaid, entryId } from "../said.ts";
-import { TOOLS, withPod } from "../tools.mjs";
+import { TOOLS, withPod } from "../tools.ts";
 
 /** How many rounds of tool calls a chat runs before the model must answer. */
 export const MAX_ROUNDS = 6;
@@ -97,11 +97,11 @@ const ADDRESS = { pod: podPath, trend: trendPath, entry: addresses().entry };
 
 type Input = Record<string, unknown> & { pod: string };
 
-/** A tool of `tools.mjs`, as this route reads it. */
+/** A tool of `tools.ts`, as this route reads it. */
 interface Listed {
   readonly name: string;
   readonly description: string;
-  readonly inputSchema: JSONSchema7;
+  readonly inputSchema: InputSchema;
   readonly tier: string;
   readonly ofPod?: boolean;
   readonly opens?: boolean;
@@ -116,11 +116,11 @@ interface Listed {
 const LISTED = TOOLS as unknown as readonly Listed[];
 
 /** `schema` as the AI SDK takes it, its input checked as the runtime checks a tool's. */
-function checked(schema: JSONSchema7) {
-  return jsonSchema<Input>(schema, {
+function checked(schema: InputSchema) {
+  return jsonSchema<Input>(schema as JSONSchema7, {
     validate(value) {
       try {
-        checkInput(schema as never, value);
+        checkInput(schema, value);
         return { success: true, value: value as Input };
       } catch (error) {
         if (!isRefusal(error)) throw error;
@@ -133,7 +133,7 @@ function checked(schema: JSONSchema7) {
 const opened = z.object({ opened: z.string() });
 
 /**
- * What the page answers each tool it runs with, which is what `run` in `tools.mjs` gives: `validateUIMessages` holds
+ * What the page answers each tool it runs with, which is what `run` in `tools.ts` gives: `validateUIMessages` holds
  * a client's answer to the model to these before the model sees it.
  */
 export const CLIENT_OUTPUTS = {

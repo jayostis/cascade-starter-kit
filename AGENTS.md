@@ -56,12 +56,16 @@ jayostis/cascade-runtime-js`) rewrites it and `package-lock.json`; it refuses
 - **Fewer, better, faster tests.** One test per behaviour, on the smallest input
   that shows it; before adding one, change the test that already shows the
   behaviour. Build a pod or a dataset once and share it.
-- **The template is plain JavaScript.** `app/` is what a person gets; it imports
-  only `cascade-runtime`, its `fixtures`, `@the-cascade-protocol/sandbox` and its
-  own dependencies. The sandbox is not in `app/package.json`: here it resolves
-  through the root's github devDependency, and `npm run build:create` bundles
-  it into the template as `file:demo-hospital`. A made app never depends on
-  git: `check/starter.mjs` checks its lock.
+- **The template is TypeScript throughout.** `app/` is what a person gets: its
+  pages are React, built by Vite, and every other file is a `.ts` that Node runs
+  by type stripping, so the syntax is erasable only (`erasableSyntaxOnly`) and
+  imports name `.ts` files. It imports only `cascade-runtime`, its `fixtures`,
+  `@the-cascade-protocol/sandbox` and its own dependencies. The sandbox is not
+  in `app/package.json`: here it resolves through the root's github
+  devDependency, and `npm run build:create` bundles it into the template as
+  `file:demo-hospital`. A made app never depends on git: `check/starter.ts`
+  checks its lock. The root pins the packages it shares with the template
+  (React, Vite, TypeScript) at the template's versions.
 
 ## create-cascade-app
 

@@ -134,7 +134,7 @@ export type Classification =
       readonly series?: string;
     }
   | {
-      readonly found: "no table";
+      readonly found: "no series";
       readonly version?: undefined;
       readonly series?: undefined;
     };
@@ -3074,7 +3074,7 @@ async function going(address: string, { open }: PageDoor) {
 }
 
 /**
- * The tools a page runs itself, the last nine of `TOOLS` in `tools.mjs`: the six that move the app, each giving
+ * The tools a page runs itself, the last nine of `TOOLS` in `tools.ts`: the six that move the app, each giving
  * `{ opened }`, and the three writes the person confirms first, each giving PodApi's answer. They need no runtime, so
  * the Node target's chat runs them in the page.
  */

@@ -23,7 +23,7 @@ test("the lock forgets the runtime wherever npm put it, and nothing else", () =>
     "",
     "app",
     "node_modules/cascade-runtime-other",
-    "node_modules/preact",
+    "node_modules/react",
     "app/node_modules/cascade-runtime-other",
   ];
   const forgotten = [

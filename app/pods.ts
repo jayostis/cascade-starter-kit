@@ -5,10 +5,10 @@ import { join } from "node:path";
 import { env, exit, stderr } from "node:process";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath, URL } from "node:url";
-import { parseArgs } from "node:util";
-import { openPod, Refusal, Unopened } from "cascade-runtime";
+import { parseArgs, type ParseArgsOptionsConfig } from "node:util";
+import { openPod, type Pod, Refusal, Unopened } from "cascade-runtime";
 import { addresses } from "./addresses.ts";
-import { notOpenedHere } from "./pod-api.mjs";
+import { notOpenedHere } from "./pod-api.ts";
 import {
   phaseOn,
   replayKit,
@@ -29,7 +29,7 @@ export const POD_NAME = /^[a-z0-9][a-z0-9._-]*$/;
 export const NO_POD =
   "No pod loaded. Run `npm run reset` to load Alex's, Priya's, Martin's and Tamsin's pods.";
 
-export function podFolder(name) {
+export function podFolder(name: string): string {
   return join(PODS, name);
 }
 
@@ -37,7 +37,10 @@ export function podFolder(name) {
  * The pod `name` in `folder`, opened without words, as the scripts and the MCP server do: an encrypted pod is a
  * `Refusal` saying so in one line, since only the app asks for its six words.
  */
-export async function openWithoutWords(name, folder) {
+export async function openWithoutWords(
+  name: string,
+  folder: string,
+): Promise<Pod> {
   try {
     return await openPod(folder);
   } catch (error) {
@@ -59,12 +62,15 @@ export const podPath = ADDRESS.pod;
 export const trendPath = ADDRESS.trend;
 
 /** The origin `npm start` listens on, for a script that is not the server: `PORT`, else 3000. */
-export function appOrigin() {
+export function appOrigin(): string {
   return `http://127.0.0.1:${Number(env.PORT || 3000)}`;
 }
 
 /** `trendPath` on the app's origin: the address a model can be given. */
-export function trendUrl(name, trend) {
+export function trendUrl(
+  name: string,
+  trend: Parameters<typeof trendPath>[1],
+): string {
   return new URL(trendPath(name, trend), appOrigin()).href;
 }
 
@@ -72,10 +78,10 @@ export function trendUrl(name, trend) {
  * The pods there are, by name: a folder still empty is none, so reading it never makes a pod, and neither is
  * `.answers`, where the runtime keeps each pod's answers.
  */
-export async function podNames(folder = PODS) {
+export async function podNames(folder = PODS): Promise<string[]> {
   try {
     const entries = await readdir(folder, { withFileTypes: true });
-    const names = [];
+    const names: string[] = [];
     for (const entry of entries)
       if (
         entry.isDirectory() &&
@@ -85,22 +91,29 @@ export async function podNames(folder = PODS) {
         names.push(entry.name);
     return names.sort();
   } catch (error) {
-    if (error.code === "ENOENT") return [];
+    if (missing(error)) return [];
     throw error;
   }
 }
 
 /** The folder the runtime keeps the pod's answers in. */
-export function answersFolder(name, folder = PODS) {
+export function answersFolder(name: string, folder = PODS): string {
   return join(folder, ".answers", name);
 }
 
+/** Whether `error` says a file or folder is not there. */
+const missing = (error: unknown) =>
+  (error as NodeJS.ErrnoException | undefined)?.code === "ENOENT";
+
 /** The title `pod.json` keeps for the pod, the name typed when it was made; undefined where none is kept. */
-export async function podTitle(name, folder = PODS) {
+export async function podTitle(
+  name: string,
+  folder = PODS,
+): Promise<string | undefined> {
   try {
     const kept = JSON.parse(
       await readFile(join(answersFolder(name, folder), "pod.json"), "utf8"),
-    );
+    ) as { title?: unknown };
     return typeof kept.title === "string" ? kept.title : undefined;
   } catch {
     return undefined;
@@ -108,19 +121,19 @@ export async function podTitle(name, folder = PODS) {
 }
 
 /** Removes the pod and its answers. */
-export async function deletePod(name, folder = PODS) {
+export async function deletePod(name: string, folder = PODS): Promise<void> {
   await rm(join(folder, name), { recursive: true, force: true });
   await rm(answersFolder(name, folder), { recursive: true, force: true });
 }
 
 /** Removes every pod and every answer kept, and keeps the reference tables; gives the names of the pods there were. */
-export async function deleteAll() {
+export async function deleteAll(): Promise<string[]> {
   const names = await podNames();
-  let entries;
+  let entries: string[];
   try {
     entries = await readdir(PODS);
   } catch (error) {
-    if (error.code === "ENOENT") return names;
+    if (missing(error)) return names;
     throw error;
   }
   for (const entry of entries)
@@ -130,7 +143,10 @@ export async function deleteAll() {
 }
 
 /** Loads the kits' pods into `folder`; `out(text)`, when given, is told each kit with its seconds. Gives their names. */
-export async function restoreKits(folder = PODS, out) {
+export async function restoreKits(
+  folder = PODS,
+  out?: (text: string) => void,
+): Promise<string[]> {
   for (const kit of KITS) {
     const started = performance.now();
     out?.(`\nLoading the pod ${kit}, from the kit the package carries…`);
@@ -139,7 +155,7 @@ export async function restoreKits(folder = PODS, out) {
       out?.(` loaded in ${seconds(started)}\n`);
     } catch (error) {
       out?.("\n");
-      throw new Error(`the pod ${kit} did not load: ${error.message}`, {
+      throw new Error(`the pod ${kit} did not load: ${messageOf(error)}`, {
         cause: error,
       });
     }
@@ -152,25 +168,31 @@ export async function restoreKits(folder = PODS, out) {
  * when given, is told what is under way: the tables' setup as its own step with each phase's seconds, then each kit
  * with its own. Gives the names of the pods there were.
  */
-export async function resetAll(out) {
+export async function resetAll(
+  out?: (text: string) => void,
+): Promise<string[]> {
   const names = await deleteAll();
   if (out !== undefined)
     try {
       await setUpTables(PODS, phaseOn(out));
     } catch (error) {
-      out(`\nthe app's tables could not be set up: ${error.message}\n`);
+      out(`\nthe app's tables could not be set up: ${messageOf(error)}\n`);
     }
   await restoreKits(PODS, out);
   return names;
 }
 
+/** What an error says, whatever was thrown. */
+export const messageOf = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);
+
 /** Says why, and ends the script with exit code 2. */
-export function refuse(reason) {
+export function refuse(reason: string): never {
   stderr.write(`${reason}\n`);
-  exit(2);
+  return exit(2);
 }
 
-export function checkName(name) {
+export function checkName(name: string): string {
   if (!POD_NAME.test(name))
     refuse(
       `${name} is no pod name: use lower-case letters, digits, ".", "_" and "-", starting with a letter or digit`,
@@ -182,12 +204,17 @@ export function checkName(name) {
  * The script's arguments: its options and exactly as many positionals as `positionals` names. npm keeps an option
  * given before `--` for itself, so a stray positional most often means that.
  */
-export function argumentsOf(args, usage, options, positionals) {
+export function argumentsOf<const Options extends ParseArgsOptionsConfig>(
+  args: string[],
+  usage: string,
+  options: Options,
+  positionals: number,
+) {
   let parsed;
   try {
     parsed = parseArgs({ args, options, allowPositionals: true, strict: true });
   } catch (error) {
-    refuse(`${error.message}\nusage: ${usage}`);
+    return refuse(`${messageOf(error)}\nusage: ${usage}`);
   }
   if (parsed.positionals.length !== positionals)
     refuse(
@@ -197,7 +224,7 @@ export function argumentsOf(args, usage, options, positionals) {
 }
 
 /** The pod named by `--pod`, or the only one there is. */
-export async function choosePod(given) {
+export async function choosePod(given: string | undefined): Promise<string> {
   const names = await podNames();
   if (given !== undefined) {
     checkName(given);

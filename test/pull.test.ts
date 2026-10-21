@@ -8,7 +8,7 @@ import { openPod } from "cascade-runtime";
 import { rowOf } from "./hospitals.js";
 
 const { nodeHost, nodeHospitals } = (await import(
-  new URL("../../app/node-host.mjs", import.meta.url).href
+  new URL("../../app/node-host.ts", import.meta.url).href
 )) as {
   nodeHost: (options: { folder: string }) => object;
   nodeHospitals: (
@@ -19,7 +19,7 @@ const { nodeHost, nodeHospitals } = (await import(
 };
 type Connected = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 const { podApi } = (await import(
-  new URL("../../app/pod-api.mjs", import.meta.url).href
+  new URL("../../app/pod-api.ts", import.meta.url).href
 )) as {
   podApi: (
     host: object,

@@ -174,7 +174,7 @@ export function recordTools(): void {
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
 
 /**
- * The tools of the one list (`tools.mjs`), which every screen offers the model context, and the names of the ops that
+ * The tools of the one list (`tools.ts`), which every screen offers the model context, and the names of the ops that
  * no tool at all calls (`makePod` is not one: only a call with `encrypt` is).
  */
 export async function listed(): Promise<{
@@ -182,7 +182,7 @@ export async function listed(): Promise<{
   never: string[];
 }> {
   const { TOOLS, NEVER } = (await import(
-    pathToFileURL(join(ROOT, "app", "tools.mjs")).href
+    pathToFileURL(join(ROOT, "app", "tools.ts")).href
   )) as {
     TOOLS: { name: string }[];
     NEVER: { op: string; with?: string }[];

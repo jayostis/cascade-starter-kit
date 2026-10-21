@@ -13,8 +13,12 @@ the app as `apple_health_export`, and
 `npm run kit:export -- priya-natarajan kestrel-harbor-health-summary.xml` one
 of Priya's C-CDA files under its own name.
 
-The app is one React app, `index.html` and `src/`, built by Vite
-(`vite.config.ts`, with the plugin of `vite/cascade.ts`), with two targets:
+The app is TypeScript throughout. Its pages are one React app, `index.html`
+and `src/`, routed by React Router and built by Vite (`vite.config.ts`, with
+the plugin of `vite/cascade.ts`); every other file, the server and the
+commands among them, is a `.ts` that Node runs as it is, with no build (Node
+22.18 or later strips its types). `npm run typecheck` checks all of it. The
+app has two targets:
 
 - **On Node,** `npm start` builds it into `dist/` (again whenever a file it is
   built from is newer) and serves it from `server/main.ts` at
@@ -29,7 +33,7 @@ The app is one React app, `index.html` and `src/`, built by Vite
   with Vite's `browser` mode into `dist-browser/`, with the kits' samples that
   a first visit copies, and serves those files on 127.0.0.1; nothing answers
   `/api/`. Its pages run PodApi in the page: `src/hosts/browser.ts` calls
-  `podApi` of `pod-api.mjs` over `cascade-runtime`'s browser build, which the
+  `podApi` of `pod-api.ts` over `cascade-runtime`'s browser build, which the
   plugin copies beside the bundle with the demo hospitals' service worker, and
   the pods are kept in the browser's storage. It has no chat.
 
@@ -43,28 +47,47 @@ encrypted one's six words), with `parts.tsx`, `chart.tsx`, `screen.tsx`,
 `actions.tsx`, `doing.ts` and `style.css`. What they say comes from `said.ts`:
 plain functions with no imports, from a pod's question rows to what a page
 says. `addresses.ts` makes every address; a screen never builds one. Rewrite
-any of it as you like. The Preact app it replaced (`server.mjs`, `summary.mjs`,
-`chat.mjs`, `model-client.mjs`, `pod-api-http.mjs`) is still in the folder,
-run by no script, and goes soon.
+any of it as you like.
 
-`npm run mcp` runs `mcp.mjs`, an MCP server on stdio over the pods, for
+To add a screen:
+
+1. Give it an address in `addresses.ts`. A path that starts with none of
+   `pods/`, `tables/` and `encrypted-pods/` also goes in `SCREENS` there, or
+   a link to it loads the page again instead of moving in place.
+2. Write it in a file of `src/`: a `…Screen` that reads through
+   `useLoaded(at, load, titleOf)` of `screen.tsx`, which says the page is busy,
+   sets the tab's title and says `ready` once the answer is drawn, and a
+   `…Page` that draws what was read. A part still to come is `aria-busy`
+   (`Pending` of `parts.tsx`) until it is in: `ready` with no busy part means
+   drawn for good. Anything that moves the app or writes goes through
+   `useActions().act` of `actions.tsx`.
+3. Give it a route in `App.tsx`.
+4. An operation of PodApi it needs that the screens do not call yet: its line
+   in `PodApi` of `src/api.tsx`. A new operation is a function of
+   `podApi(host)` in `pod-api.ts`, its input's schema in `server/inputs.ts` and
+   its route in `server/api.ts`; the Node target's typed client then knows its
+   input and output, and the browser target calls it in the page.
+
+`npm run mcp` runs `mcp.ts`, an MCP server on stdio over the pods, for
 Claude Desktop, VS Code or any MCP client (the README says how to add it);
 the app, the chat, the MCP server and `npm run ask` reach the pods through
-`podApi(host)` in `pod-api.mjs`, plain JSON in and out, which the server also
-serves as `POST /api/<operation>`; `pod.mjs` (`npm run pod:load`, and `npm run reset`
-through `resetAll` in `pods.mjs`) writes pods with `openPod` and `replayKit` directly,
-and `console.mjs` opens a raw `Pod` through `openWithoutWords`;
+`podApi(host)` in `pod-api.ts`, plain JSON in and out, each operation with one
+input type, its route's schema (`Input` of `server/inputs.ts`), and one output
+type (`Output` of `pod-api.ts`), which the server also
+serves as `POST /api/<operation>`; `pod.ts` (`npm run pod:load`, and `npm run reset`
+through `resetAll` in `pods.ts`) writes pods with `openPod` and `replayKit` directly,
+and `console.ts` opens a raw `Pod` through `openWithoutWords`;
 an encrypted pod is opened only by the app, with its six words (`src/newpod.tsx`,
-at `/encrypted-pods/<name>`), and `mcp.mjs` and `npm run ask` refuse it, as their host is
-`nodeHost({ opensEncrypted: false })` (`node-host.mjs`), and `console.mjs` refuses it too;
-`tools.mjs` holds the one list of tools a model reaches the app by (`TOOLS`), each
+at `/encrypted-pods/<name>`), and `mcp.ts` and `npm run ask` refuse it, as their host is
+`nodeHost({ opensEncrypted: false })` (`node-host.ts`), and `console.ts` refuses it too;
+`tools.ts` holds the one list of tools a model reaches the app by (`TOOLS`), each
 calling `podApi`'s operations only, with its consent `tier`: `free` reads
 (`list_pods`, `changeTools` of `cascade-runtime` run by `podApi`'s `tool`, `worth_a_look`, `ask`) and moves the app
-(`open_pod`, `open_trend`, `open_entry`, through the door's `open` and its own addresses), and `ask` writes,
+(`open_pod`, `open_trend`, `open_entry`, `open_classes`, `open_panel`, `open_table`, through the door's `open` and its own addresses), and `ask` writes,
 which the person confirms first (`make_pod`, never encrypted; `check_tables`; `set_world_date`). `NEVER` is what
 no tool calls: `makePod` with `encrypt`, `waitingWords`, `confirmWords`, `unlock`, `connect`, `bring`,
-`deleteAll` and `resetAll`. The MCP server offers the free reads; the browser target's WebMCP
-(`src/tools.ts`) the free tools for the pod shown. The chat is the Node target's only. `server/chat.ts`, `npm start`'s
+`deleteAll` and `resetAll`. The MCP server offers the free reads; WebMCP (`src/tools.ts`), on both
+targets and every screen, every tool by its tier (the last section says how). The chat is the Node target's only. `server/chat.ts`, `npm start`'s
 `/chat`, runs on the Vercel AI SDK (`ai`): `chatTools(api)` offers
 every tool of the list, the free reads with a server `execute` and the navigation and `ask` tools with none, so a
 call to one ends the server's turn and the page runs it. `POST /chat` takes the SDK's
@@ -72,7 +95,7 @@ call to one ends the server's turn and the page runs it. `POST /chat` takes the 
 rounds of tool calls, and says the model's refusal as a `data-refused` part; `GET /chat` gives the model's
 `{ provider, name, local }`, or `{}`. The chat window, on the Node target only, is `src/chat/`:
 assistant-ui's components over the SDK's `useChat` at `/chat`. It runs the page's tools, `PAGE_TOOLS` of `said.ts`
-(which `tools.mjs` lists too), over the host's PodApi: a navigation moves the app in place with the chat open, and a
+(which `tools.ts` lists too), over the host's PodApi: a navigation moves the app in place with the chat open, and a
 write waits on the page's own ask, `useConfirm()` of `src/confirm.tsx` (Allow, or Cancel, which tells the model "The
 person said no"). It keeps the chats in `localStorage`, each under the pod it is about, and none of an encrypted
 pod's (`src/chat/chats.ts`). The screens draw "Ask about this" (`src/ask.tsx`) once `GET /chat` names a model; any
@@ -91,7 +114,7 @@ provider packages: `@ai-sdk/anthropic`, `@ai-sdk/groq`, `@openrouter/ai-sdk-prov
 other address. Nothing else may hold a model's key.
 A pod's page also brings in a record from a hospital of the test directory
 (`src/hospitals.tsx`). On Node the person signs in on the hospital's own page
-in the same tab, and `hospitals.mjs` receives the redirect on `/callback`,
+in the same tab, and `hospitals.ts` receives the redirect on `/callback`,
 which goes back to the pod's page with the connection in a box over it
 (`?connection=<n>#connection`); in a browser the sign-in opens in a popup that
 returns to `signed-in.html`. The demo hospitals, in `demo-hospital/`, are
@@ -99,7 +122,7 @@ pretend: on Node they answer on a loopback port of their own (`serveDemo`), in
 a browser from the service worker the build carries.
 The title bar's File menu runs `podApi`'s `deleteAll` and `resetAll`; both keep
 the reference tables, and on Node `resetAll` then loads the kits through
-`restoreKits` in `pods.mjs`, as `npm run reset` does; Help, About says the app's
+`restoreKits` in `pods.ts`, as `npm run reset` does; Help, About says the app's
 name and version and the `cascade-runtime` it runs on.
 Under the pods, the sidebar lists the sources of the reference tables the pods
 are matched with (`sourcesOf(held())`, from `tablesBeside`). `/tables/<id>/`
@@ -121,13 +144,13 @@ medication started or stopped, in `CHANGED`'s words, which state an order and a
 comparison of means and never a cause; each card links to its results
 (`#change-<key>`) and to the trend at `/pods/<name>/trend?test=<LOINC>&medication=<RxNorm>`
 (`trend.tsx`, over `podApi`'s `trend`; `addresses.ts` makes the address, and
-`trendPath` in `pods.mjs` gives it to the scripts). A pod that has been imported twice or more adds, under the cards,
+`trendPath` in `pods.ts` gives it to the scripts). A pod that has been imported twice or more adds, under the cards,
 "Where this comes from" (`howOf`, over `pod/What each import brought in`, `record/Its revisions, in the order they arrived` and
 `record/What each version says`): the imports in order, each with its source, its retrieved date and what it brought
 in, and the medication's versions with what differs between them. Alex's, Priya's and Martin's pods
 hold too little for a card; Tamsin's holds one, and so does a story patient's:
 Ines Calloway, at Cascade North, by "+ New pod" and "Sign in at Cascade North". `TREND_VIEW` is the trend as a tool
-a model can call, `open_trend` of `tools.mjs`; a model reaches the trend by it, or through each
+a model can call, `open_trend` of `tools.ts`; a model reaches the trend by it, or through each
 `find_changes` finding's `view` address.
 A row of a tile's table opens its entry at
 `/pods/<name>/entries/<id>`: what it is, where it came from (a line for each
@@ -174,7 +197,7 @@ keeping the package and the pods, under `pods/<name>/`. It is made with four,
   from `server/main.ts` on `PORT` (3000 if unset), with PodApi at `/api/` and
   the chat's `/chat` on the AI SDK; stop it with Ctrl+C or by its process, never
   by killing every Node process. A pod's page links to bringing in a record from
-  a hospital of the test directory: the app's `hospitals.mjs` signs in,
+  a hospital of the test directory: the app's `hospitals.ts` signs in,
   receiving the redirect on `/callback`. An option to an npm script goes after
   `--`.
 - `npm run dev` serves the same app from its sources through Vite, in the same
@@ -184,11 +207,13 @@ keeping the package and the pods, under `pods/<name>/`. It is made with four,
   beside it as files, with each kit's sample, which a first visit copies into
   the browser; it names them to the build in `CASCADE_SAMPLES`. It then serves
   the folder on `PORT` (3000 if unset), with no `/api/` and no chat. Making the
-  samples takes about a minute.
+  samples takes about a minute, and a port already in use stops it only once
+  they are made: stop what holds the port, or set `PORT` to another.
 - `npm run build` builds the app into `dist/` for `server/main.ts`, as
   `npm start` does when it needs to.
-- `npm run typecheck` checks the TypeScript of the app (`tsconfig.json`) and of
-  its server and build (`tsconfig.node.json`).
+- `npm run typecheck` checks the TypeScript of the app's pages
+  (`tsconfig.json`) and of its server, its commands and its build
+  (`tsconfig.node.json`).
 - `npm start` with `CASCADE_WORLD_DATE` set (`YYYY-MM-DD`, or an instant with
   its timezone) makes the demo hospitals answer with their records as they
   stood at the end of that day, and say so on their sign-in page; without it
@@ -258,13 +283,13 @@ offers nothing). The tools are the whole of `TOOLS`, every tool by its tier:
 - **ask** tools (`make_pod`, `check_tables`, `set_world_date`) show the page's own box, the one the chat's writes use
   (`useConfirm` in `src/confirm.tsx`), one at a time with the chat's. Allow runs the write; Cancel, or leaving the pod,
   rejects the call with `Refusal` and the sentence "The person said no", and writes nothing.
-- the **never** list (`NEVER` in `tools.mjs`) is no tool in any door.
+- the **never** list (`NEVER` in `tools.ts`) is no tool in any door.
 
 With a pod shown, a tool of one pod takes it as given; on a screen with none (the tables, a locked pod) it takes the
 pod's name as `pod`. `open_pod` always takes the name. The tools are offered again only when the pod shown changes, and
 taken away in the commit that draws the next one.
 
-There are three doors, one list: MCP (`mcp-server.mjs`) offers the free reads; the chat (`server/chat.ts`) offers every
+There are three doors, one list: MCP (`mcp-server.ts`) offers the free reads; the chat (`server/chat.ts`) offers every
 tool, the page running the ones with no server `execute`; WebMCP (`src/tools.ts`) offers every tool. The Node bundle
 carries no runtime, so its page gets the reads from the server: `GET /tools` lists them and `POST /tools/<name>` runs
 one (`server/tools.ts`), while the browser target runs them in the page (`reads` of `src/hosts/browser.ts`).
@@ -275,7 +300,7 @@ To add a tool:
   `said.ts`, with `run(api, input, door)` calling only PodApi's operations and moving through `door.open`. A write
   also needs an entry in `ACTIONS` in `src/confirm.tsx`, and every move needs an output in `CLIENT_OUTPUTS` in
   `server/chat.ts`. Every door then offers it.
-- one the server runs (a read): one entry in `TOOLS` in `tools.mjs`, with `tier: "free"`. The MCP server, the chat and
+- one the server runs (a read): one entry in `TOOLS` in `tools.ts`, with `tier: "free"`. The MCP server, the chat and
   both targets' WebMCP offer it, the Node page through `/tools`.
 
 Either way, add its row to the `runs` table in `test/mcp.test.ts`, which fails for a tool with none.
