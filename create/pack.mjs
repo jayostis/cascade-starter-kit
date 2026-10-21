@@ -1,5 +1,5 @@
-// `npm run build:create`: create/ staged in build/create as the package a person's npx fetches, with the template and
-// the demo hospital in it, and packed into build/ beside its release notes.
+// `npm run build:create`: create/ staged in build/create as the package a person's npx fetches, with the template, its
+// add-ons and the demo hospital in it, and packed into build/ beside its release notes.
 import { execFile } from "node:child_process";
 import { statSync } from "node:fs";
 import { cp, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
@@ -7,7 +7,11 @@ import { basename, dirname, join, relative } from "node:path";
 import { env, execPath, stdout } from "node:process";
 import { fileURLToPath, URL } from "node:url";
 import { promisify } from "node:util";
-import { releaseAddress, startLine } from "../dist/create/src/create.js";
+import {
+  LEFT_OUT,
+  releaseAddress,
+  startLine,
+} from "../dist/create/src/create.js";
 
 const ROOT = fileURLToPath(new URL("../", import.meta.url));
 const BUILD = join(ROOT, "build");
@@ -103,12 +107,10 @@ for (const file of ["create.js", "create-cli.js"])
   await cp(join(ROOT, COMPILED, file), join(STAGE, COMPILED, file));
 await cp(TEMPLATE, join(STAGE, "app"), {
   recursive: true,
-  filter: (source) =>
-    ![".env", "dist", "dist-browser", "node_modules", "pods"].includes(
-      relative(TEMPLATE, source),
-    ),
+  filter: (source) => !LEFT_OUT.includes(relative(TEMPLATE, source)),
 });
 await packDemoHospital(join(STAGE, "app"));
+await cp(join(ROOT, "add-ons"), join(STAGE, "add-ons"), { recursive: true });
 await cp(join(ROOT, "LICENSE"), join(STAGE, "LICENSE"));
 await writeJson(join(STAGE, "package.json"), {
   ...manifest,

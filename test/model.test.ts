@@ -36,13 +36,13 @@ interface Chosen {
 }
 
 const { modelFrom, modelOf } = (await import(
-  new URL("../../app/models.ts", import.meta.url).href
+  new URL("../../build/app/models.ts", import.meta.url).href
 )) as {
   modelOf(settings: Settings): Chosen;
   modelFrom(env: Record<string, string>): Chosen | undefined;
 };
 const { check, flow, save, remove, secret } = (await import(
-  new URL("../../app/model.ts", import.meta.url).href
+  new URL("../../build/app/model.ts", import.meta.url).href
 )) as {
   save(folder: string, values: Record<string, string>): Promise<void>;
   remove(folder: string): Promise<boolean>;

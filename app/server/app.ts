@@ -1,5 +1,6 @@
-// The Node target's server: the guard, PodApi at `/api/`, the reads of the tool list at `/tools`, the chat at `/chat`, a hospital's redirect back at
-// `/callback`, and the built app: its files as they are, and its page for any other address a person opens.
+// The Node target's server: the guard, PodApi at `/api/`, the reads of the tool list at `/tools`, the chat at `/chat`
+// when the app has it, a hospital's redirect back at `/callback`, and the built app: its files as they are, and its
+// page for any other address a person opens.
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { HttpBindings } from "@hono/node-server";
@@ -14,8 +15,8 @@ export interface Served {
   readonly api: Operations;
   /** This server's own addresses, known once it listens. */
   own(): Own;
-  /** `GET /chat` and `POST /chat` (`chat.ts`). */
-  readonly chat: Hono;
+  /** `GET /chat` and `POST /chat`, when the chat add-on is added (`chat.ts`); without it `/chat` is a 404. */
+  readonly chat?: Hono;
   /** The sign-in a hospital's redirect to `/callback` finishes, as `{ pod, connection }`; none when none waits. */
   back(url: URL): { pod: string; connection: number } | undefined;
   /** The demo people the hospitals hold, as `demoPeople` gives them, at `/demo-people.json`; none when not given. */
@@ -36,12 +37,15 @@ export function worldDateBack(back: string | undefined): string {
     ? `${url.pathname}${url.search}#world-date`
     : ADDRESS.home;
 }
+/** What the server answers itself, served or not, and never as the app's page. */
+const SERVED = /^\/(?:api\/|tools(?:\/|$)|chat$)/;
+
 /**
  * An address a person opens rather than a file a page reads. An id may hold a dot, so a last part with one is a page
  * only when the request is a navigation or asks for HTML.
  */
 const isPage = (path: string, headers: Headers) =>
-  !path.startsWith("/api/") &&
+  !SERVED.test(path) &&
   (!/\.[^/]*$/.test(path) ||
     headers.get("sec-fetch-mode") === "navigate" ||
     (headers.get("accept") ?? "").includes("text/html"));
@@ -62,12 +66,15 @@ export function withPages<T extends Hono<{ Bindings: HttpBindings }>>(
 
 const notWaiting = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Not waiting · Cascade</title></head><body><h1>No sign-in is waiting for this</h1></body></html>`;
 
+/** What the chat add-on's `server/chat.ts` gives the server: its routes over `api`, with the model the app was set up with. */
+export type ChatServed = (api: Operations) => Hono;
+
 export function appServer(served: Served) {
   const app = new Hono<{ Bindings: HttpBindings }>()
     .use(guard(served.own))
     .route("/", apiRoutes(served.api))
     .route("/", toolRoutes(served.api))
-    .route("/", served.chat)
+    .route("/", served.chat ?? new Hono())
     .get("/callback", (c) => {
       const at = served.back(new URL(c.req.url));
       return at === undefined

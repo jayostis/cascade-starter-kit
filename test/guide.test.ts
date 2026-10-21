@@ -6,6 +6,8 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 const APP = fileURLToPath(new URL("../../app/", import.meta.url));
+/** The template, and the template with every add-on added. */
+const APPS = [APP, fileURLToPath(new URL("../../build/app/", import.meta.url))];
 const INSTALLED = fileURLToPath(
   new URL("../../package.json", import.meta.resolve("cascade-runtime")),
 );
@@ -47,35 +49,38 @@ function sorted(names: Iterable<string>): string[] {
   return [...new Set(names)].sort();
 }
 
-test("the app's AGENTS.md lists the starter's scripts and the variables its server reads", async () => {
-  const sections = sectionsOf(await readFile(join(APP, "AGENTS.md"), "utf8"));
-  const starter = JSON.parse(
-    await readFile(join(APP, "package.json"), "utf8"),
-  ) as { scripts: Record<string, string> };
-  assert.deepEqual(
-    sorted(
-      itemsUnder(sections, "The starter").map((command) => {
-        const script = /^npm (?:run (\S+)|(start|test))/.exec(command);
-        assert.ok(script, `"${command}" runs no npm script`);
-        return script[1] ?? script[2] ?? "";
-      }),
-    ),
-    sorted(Object.keys(starter.scripts)),
-  );
-  const server = (
-    await Promise.all(
-      (await readdir(join(APP, "server"))).map((name) =>
-        readFile(join(APP, "server", name), "utf8"),
+test("the app's AGENTS.md lists the starter's scripts and the variables its server reads, with every add-on and with none", async () => {
+  for (const app of APPS) {
+    const sections = sectionsOf(await readFile(join(app, "AGENTS.md"), "utf8"));
+    const starter = JSON.parse(
+      await readFile(join(app, "package.json"), "utf8"),
+    ) as { scripts: Record<string, string> };
+    assert.deepEqual(
+      sorted(
+        itemsUnder(sections, "The starter").map((command) => {
+          const script = /^npm (?:run (\S+)|(start|test))/.exec(command);
+          assert.ok(script, `"${command}" runs no npm script`);
+          return script[1] ?? script[2] ?? "";
+        }),
       ),
-    )
-  ).join("\n");
-  assert.match(server, /CASCADE_WORLD_DATE/);
-  const stated = (sections.get("The starter") ?? []).join("\n");
-  for (const [, name] of server.matchAll(/env\.(CASCADE_[A-Z_]+)/g))
-    assert.ok(
-      stated.includes(`\`${name}\``),
-      `no item under "The starter" names ${name}`,
+      sorted(Object.keys(starter.scripts)),
+      app,
     );
+    const server = (
+      await Promise.all(
+        (await readdir(join(app, "server"))).map((name) =>
+          readFile(join(app, "server", name), "utf8"),
+        ),
+      )
+    ).join("\n");
+    assert.match(server, /CASCADE_WORLD_DATE/);
+    const stated = (sections.get("The starter") ?? []).join("\n");
+    for (const [, name] of server.matchAll(/env\.(CASCADE_[A-Z_]+)/g))
+      assert.ok(
+        stated.includes(`\`${name}\``),
+        `no item under "The starter" names ${name}`,
+      );
+  }
 });
 
 test("the starter's AGENTS.md points at the guide that ships", async () => {

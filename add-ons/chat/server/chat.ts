@@ -23,11 +23,12 @@ import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
 import { addresses } from "../addresses.ts";
-import type { Model } from "../models.ts";
+import { type Model, modelFrom } from "../models.ts";
 import { maps } from "../pod-api.ts";
 import { podPath, trendPath } from "../pods.ts";
 import { CHANGED, changeSaid, entryId } from "../said.ts";
 import { TOOLS, withPod } from "../tools.ts";
+import type { ChatServed } from "./app.ts";
 
 /** How many rounds of tool calls a chat runs before the model must answer. */
 export const MAX_ROUNDS = 6;
@@ -543,3 +544,18 @@ export function chatRoutes({
       },
     );
 }
+
+/** The model the app was set up with (`npm run model`), or none, a setting the client refuses said on the console. */
+function modelSet(): Model | undefined {
+  try {
+    return modelFrom();
+  } catch (error) {
+    if (!(error instanceof Refusal)) throw error;
+    console.error(`No model is used: ${error.message}`);
+    return undefined;
+  }
+}
+
+/** What `server/main.ts` serves at `/chat` when this file is here: the routes over `api`, with the model set up. */
+export const chatServed: ChatServed = (api) =>
+  chatRoutes({ api, model: modelSet() });

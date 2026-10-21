@@ -233,7 +233,9 @@ test("--with adds exactly each named add-on's files, pinned dependencies and com
     const before = new Set(await filesOf(template));
     assert.deepEqual(
       (await filesOf(folder)).filter((path) => !before.has(path)),
-      manifests.flatMap(({ files }) => files.map(({ target }) => target)).sort(),
+      manifests
+        .flatMap(({ files }) => files.map(({ target }) => target))
+        .sort(),
       `${names.join(",")}: the files added`,
     );
     for (const [kind, listed] of [
@@ -244,7 +246,11 @@ test("--with adds exactly each named add-on's files, pinned dependencies and com
         ([name, version]) => base[kind][name] !== version,
       );
       const pins = manifests.flatMap((each) => (each[listed] ?? []).map(pinOf));
-      assert.deepEqual(added.sort(), pins.sort(), `${names.join(",")}: ${kind}`);
+      assert.deepEqual(
+        added.sort(),
+        pins.sort(),
+        `${names.join(",")}: ${kind}`,
+      );
       for (const [name, version] of pins)
         assert.equal(tested[name], version, `the repository tests ${name}`);
     }
@@ -275,7 +281,7 @@ test("--with adds exactly each named add-on's files, pinned dependencies and com
 
 test("every file of an add-on's folder is one its manifest adds or merges", async () => {
   for (const name of ["chat", "mcp"]) {
-    const manifest = await manifestOf(name) as Manifest & {
+    const manifest = (await manifestOf(name)) as Manifest & {
       meta?: { merge?: Record<string, string> };
     };
     const folder = fileURLToPath(
@@ -370,7 +376,10 @@ test("with no --with a terminal asks which add-ons to add, none by default, and 
     }),
     2,
   );
-  assert.match(unknown.text(), /no add-on named nope: the add-ons are chat and mcp/);
+  assert.match(
+    unknown.text(),
+    /no add-on named nope: the add-ons are chat and mcp/,
+  );
   assert.ok(!existsSync(join(parent, "chosen-unknown")));
 });
 

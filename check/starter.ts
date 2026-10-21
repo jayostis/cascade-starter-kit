@@ -1,8 +1,8 @@
 // The starter, made by the command from create-cascade-app's tarball and used as a person would, in a new folder under
 // the current one. `node starter.ts <tarball> [--runtime <cascade-runtime tarball>]` before a merge, the made app on
 // the template's pinned runtime unless another is given; `node starter.ts --release <commit>` once that commit's
-// release exists. Run from the repository after `npm ci` and `npm run build`. `--only <behaviour>` runs only the
-// behaviours whose name holds that text, after making the app.
+// release exists. Run from the repository after `npm ci` and `npm run build`. `--with chat,mcp` makes the app with
+// those add-ons. `--only <behaviour>` runs only the behaviours whose name holds that text, after making the app.
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -16,6 +16,8 @@ import { setTimeout } from "node:timers";
 import { parseArgs } from "node:util";
 import * as oxigraph from "oxigraph";
 import { chromium } from "playwright";
+import { Client } from "@modelcontextprotocol/client";
+import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import { answerSignIn } from "@the-cascade-protocol/sandbox/testing";
 import {
   agentPrompt,
@@ -115,11 +117,15 @@ const { values, positionals } = parseArgs({
     release: { type: "string" },
     runtime: { type: "string" },
     only: { type: "string" },
+    with: { type: "string" },
   },
   allowPositionals: true,
 });
 const release = values.release;
 const only = values.only;
+/** The add-ons the app is made with, as `--with` names them to the command. */
+const added = (values.with ?? "").split(",").filter(Boolean);
+const withAdded = added.length === 0 ? [] : ["--with", added.join(",")];
 const tarball =
   positionals[0] === undefined ? undefined : resolve(positionals[0]);
 const runtime =
@@ -129,7 +135,7 @@ if (
   (release !== undefined && runtime !== undefined)
 )
   throw new Error(
-    "usage: node starter.ts <tarball> [--runtime <tarball>] [--only <behaviour>] | node starter.ts --release <commit> [--only <behaviour>]",
+    "usage: node starter.ts <tarball> [--runtime <tarball>] [--with <add-on>,…] [--only <behaviour>] | node starter.ts --release <commit> [--with <add-on>,…] [--only <behaviour>]",
   );
 const PIN = JSON.parse(
   await readFile(new URL("../app/package.json", import.meta.url), "utf8"),
@@ -641,14 +647,18 @@ await setUp("the command makes the app", async () => {
             `--package=${tarball}`,
             "create-cascade-app",
             "my-app",
+            ...withAdded,
             ...(runtime === undefined ? [] : ["--tarball", runtime]),
           ],
           { cwd: work },
         )
-      : await run(startLine(releaseAddress(release), "my-app"), [], {
-          cwd: work,
-          shell: true,
-        });
+      : await run(
+          [startLine(releaseAddress(release), "my-app"), ...withAdded].join(
+            " ",
+          ),
+          [],
+          { cwd: work, shell: true },
+        );
   assert.equal(code, 0, "the command failed");
   assert.ok(out.includes(agentPrompt("my-app")), "no agent prompt");
   assert.deepEqual(await podsOf(), [...KITS].sort());
@@ -946,6 +956,43 @@ const server = await (async () => {
 })();
 
 try {
+  await behaviour(
+    "an add-on is the app's only when added: the chat's /chat and window, the MCP server's npm run mcp and its tools",
+    async () => {
+      const chat = added.includes("chat");
+      const answer = await fetch(new URL("/chat", server.address));
+      assert.equal(answer.status, chat ? 200 : 404, "GET /chat");
+      if (chat)
+        assert.deepEqual(await answer.json(), {}, "a model with none set");
+      const page = await opened(await tab(), server, "/pods/alex-rivera/");
+      if (chat) await page.locator(".chat-off").waitFor();
+      else assert.equal(await page.locator(".chat").count(), 0, "a chat");
+      await page.close();
+      const { scripts } = JSON.parse(
+        await readFile(join(app, "package.json"), "utf8"),
+      );
+      assert.equal("mcp" in scripts, added.includes("mcp"), "npm run mcp");
+      if (!added.includes("mcp")) return;
+      const client = new Client({ name: "check", version: "0.0.0" });
+      await client.connect(
+        new StdioClientTransport({
+          command: execPath,
+          args: [join(app, "mcp.ts")],
+          cwd: app,
+        }),
+      );
+      const { tools } = await client.listTools();
+      await client.close();
+      stdout.write(
+        `npm run mcp lists ${tools.map(({ name }) => name).join(", ")}\n`,
+      );
+      assert.ok(
+        tools.some(({ name }) => name === "list_pods"),
+        "npm run mcp lists no list_pods",
+      );
+    },
+  );
+
   await behaviour(
     "every link on each kit's pod page and its entries opens",
     async () => {

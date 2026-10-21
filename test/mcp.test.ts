@@ -13,7 +13,7 @@ import { removed } from "./settled.js";
 type Api = { close(): Promise<void> };
 
 const { podServer, QUESTIONS, WARNING } = (await import(
-  new URL("../../app/mcp-server.ts", import.meta.url).href
+  new URL("../../build/app/mcp-server.ts", import.meta.url).href
 )) as {
   podServer: (
     api: Api,
@@ -23,15 +23,15 @@ const { podServer, QUESTIONS, WARNING } = (await import(
   WARNING: string;
 };
 const { podApi } = (await import(
-  new URL("../../app/pod-api.ts", import.meta.url).href
+  new URL("../../build/app/pod-api.ts", import.meta.url).href
 )) as { podApi: (host: object) => Api };
 const { nodeHost } = (await import(
-  new URL("../../app/node-host.ts", import.meta.url).href
+  new URL("../../build/app/node-host.ts", import.meta.url).href
 )) as {
   nodeHost: (options: { folder: string; opensEncrypted: boolean }) => object;
 };
 const { trendUrl } = (await import(
-  new URL("../../app/pods.ts", import.meta.url).href
+  new URL("../../build/app/pods.ts", import.meta.url).href
 )) as { trendUrl: (pod: string, trend: object) => string };
 type Input = Record<string, unknown>;
 interface Tool {
@@ -48,7 +48,7 @@ interface Tool {
   ): Promise<unknown>;
 }
 const { NEVER, TOOLS } = (await import(
-  new URL("../../app/tools.ts", import.meta.url).href
+  new URL("../../build/app/tools.ts", import.meta.url).href
 )) as { NEVER: { op: string; with?: string }[]; TOOLS: Tool[] };
 
 const STATIN = "story-statin";

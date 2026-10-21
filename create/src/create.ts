@@ -1,6 +1,14 @@
 import { spawn } from "node:child_process";
 import { existsSync, statSync } from "node:fs";
-import { cp, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import {
+  cp,
+  mkdir,
+  readdir,
+  readFile,
+  rename,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { createRequire } from "node:module";
 import {
   basename,
@@ -16,11 +24,21 @@ import type { Phase } from "cascade-runtime/fixtures";
 /** The repository's root, or the packed package's, this file being compiled to `dist/create/src/` in both. */
 const ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 const STARTER = join(ROOT, "app");
+/** The add-ons' registry: a folder each, named for the add-on, holding its `registry-item.json` and its files. */
+const ADD_ONS = join(ROOT, "add-ons");
 const COMMAND = "create-cascade-app";
 const RELEASES =
   "https://github.com/jayostis/cascade-starter-kit/releases/download";
 const PROJECT_NAME = /^[a-z0-9][a-z0-9._-]*$/;
-const USAGE = `usage: ${COMMAND} <folder> [--tarball <address>]`;
+const USAGE = `usage: ${COMMAND} <folder> [--with <add-on>,…] [--tarball <address>]`;
+/** What the template holds that a made app does not get: what an app makes or installs, and its secrets. */
+export const LEFT_OUT = [
+  ".env",
+  "dist",
+  "dist-browser",
+  "node_modules",
+  "pods",
+];
 /** The kits whose pods a made app starts with, in the order they are loaded; the starter's `npm run reset` loads the same. */
 export const KITS = [
   "alex-rivera",
@@ -50,8 +68,134 @@ export interface Terminal {
   readonly install: (folder: string) => Promise<boolean>;
   /** The installed project's own fixtures, which set up its tables and load its kits on the runtime it installed. */
   readonly fixtures: (folder: string) => Promise<Fixtures>;
+  /** Asks the person which of the add-ons to add, by name, none unless they name one; absent when no person is at a terminal. */
+  readonly choose?: (
+    addOns: readonly Pick<AddOn, "name" | "description">[],
+  ) => Promise<readonly string[]>;
   /** Offers to connect a model in the made app and runs the app's `npm run model` when taken up; absent when no person is at a terminal. Resolves whether a model was set up. */
   readonly model?: (folder: string) => Promise<boolean>;
+}
+
+/**
+ * An add-on as its `registry-item.json` holds it, in shadcn's registry-item shape: each file's `path` is from the
+ * registry's folder and its `target` from the app's. `meta` holds what the shape has no field for: the npm scripts it
+ * adds, their lines in `help.json`, and the documents whose sections it adds to (the app's file, then its part's path).
+ */
+export interface AddOn {
+  readonly name: string;
+  readonly title: string;
+  readonly description: string;
+  readonly dependencies?: readonly string[];
+  readonly devDependencies?: readonly string[];
+  readonly files: readonly {
+    readonly path: string;
+    readonly type: string;
+    readonly target: string;
+  }[];
+  readonly meta?: {
+    readonly scripts?: Readonly<Record<string, string>>;
+    readonly help?: Readonly<Record<string, readonly [string, string]>>;
+    readonly merge?: Readonly<Record<string, string>>;
+  };
+}
+
+/** The add-ons of the registry, by name. */
+export async function addOns(): Promise<AddOn[]> {
+  const folders = (await readdir(ADD_ONS, { withFileTypes: true }))
+    .filter((entry) => entry.isDirectory())
+    .map(({ name }) => name)
+    .sort();
+  return Promise.all(
+    folders.map(
+      async (folder) =>
+        JSON.parse(
+          await readFile(join(ADD_ONS, folder, "registry-item.json"), "utf8"),
+        ) as AddOn,
+    ),
+  );
+}
+
+/** "a", "a and b", "a, b and c". */
+function inWords(items: readonly string[]): string {
+  return [items.slice(0, -1).join(", "), items.at(-1)]
+    .filter(Boolean)
+    .join(" and ");
+}
+
+/** `name@version`'s two parts, a scope's `@` kept with the name. */
+function pinOf(spec: string): [string, string] {
+  const at = spec.lastIndexOf("@");
+  return [spec.slice(0, at), spec.slice(at + 1)];
+}
+
+const byName = (entries: Record<string, string>) =>
+  Object.fromEntries(
+    Object.entries(entries).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)),
+  );
+
+/** The parts of a Markdown document under its `## ` headings, each heading with its lines. */
+function sectionsOf(text: string): [string, string[]][] {
+  const sections: [string, string[]][] = [];
+  for (const line of text.split("\n"))
+    if (line.startsWith("## ")) sections.push([line, []]);
+    else sections.at(-1)?.[1].push(line);
+  return sections;
+}
+
+/** `text` with each section of `part` added: at the end of the section of `text` under the same heading, else as a section at its end. */
+export function withSections(text: string, part: string): string {
+  const lines = text.replace(/\n+$/, "").split("\n");
+  for (const [heading, body] of sectionsOf(part)) {
+    const trimmed = body
+      .join("\n")
+      .replace(/^\n+|\n+$/g, "")
+      .split("\n");
+    const at = lines.indexOf(heading);
+    if (at < 0) {
+      lines.push("", heading, "", ...trimmed);
+      continue;
+    }
+    let end = lines.findIndex(
+      (line, index) => index > at && line.startsWith("## "),
+    );
+    if (end < 0) end = lines.length;
+    while (end > at + 1 && lines[end - 1]?.trim() === "") end -= 1;
+    const continuesList =
+      trimmed[0]?.startsWith("- ") === true &&
+      /^(- | {2})/.test(lines[end - 1] ?? "");
+    lines.splice(end, 0, ...(continuesList ? [] : [""]), ...trimmed);
+  }
+  return `${lines.join("\n")}\n`;
+}
+
+/** Adds the add-on to the app in `target`, as shadcn adds a registry item: its files at their targets and its pinned dependencies, then its scripts, their help and its sections of the app's documents. */
+export async function addOn(target: string, addOn: AddOn): Promise<void> {
+  for (const file of addOn.files) {
+    const to = join(target, ...file.target.split("/"));
+    await mkdir(dirname(to), { recursive: true });
+    await cp(join(ADD_ONS, ...file.path.split("/")), to);
+  }
+  await rewrite(join(target, "package.json"), (text) => {
+    const manifest = JSON.parse(text) as Record<string, Record<string, string>>;
+    for (const kind of ["dependencies", "devDependencies"] as const)
+      if (addOn[kind] !== undefined)
+        manifest[kind] = byName({
+          ...manifest[kind],
+          ...Object.fromEntries(addOn[kind].map(pinOf)),
+        });
+    manifest.scripts = { ...manifest.scripts, ...addOn.meta?.scripts };
+    return `${JSON.stringify(manifest, null, 2)}\n`;
+  });
+  if (addOn.meta?.help !== undefined)
+    await rewrite(
+      join(target, "help.json"),
+      (text) =>
+        `${JSON.stringify({ ...JSON.parse(text), ...addOn.meta?.help }, null, 2)}\n`,
+    );
+  for (const [file, part] of Object.entries(addOn.meta?.merge ?? {})) {
+    const added = await readFile(join(ADD_ONS, ...part.split("/")), "utf8");
+    await rewrite(join(target, file), (text) => withSections(text, added));
+  }
 }
 
 /** The word as a shell reads it: quoted when it holds a space or a character a shell would act on. */
@@ -133,10 +277,7 @@ async function copyStarter(
 ): Promise<void> {
   await cp(STARTER, target, {
     recursive: true,
-    filter: (source) =>
-      ![".env", "dist", "dist-browser", "node_modules", "pods"].includes(
-        relative(STARTER, source),
-      ),
+    filter: (source) => !LEFT_OUT.includes(relative(STARTER, source)),
   });
   await rename(join(target, "gitignore"), join(target, ".gitignore"));
   await rewrite(join(target, "package.json"), (text) => {
@@ -154,7 +295,7 @@ async function copyStarter(
   );
 }
 
-/** `create-cascade-app <folder> [--tarball <address>]`: the exit code, having written only what it says. */
+/** `create-cascade-app <folder> [--with <add-on>,…] [--tarball <address>]`: the exit code, having written only what it says. */
 export async function create(
   args: readonly string[],
   terminal: Terminal,
@@ -172,7 +313,10 @@ export async function create(
   try {
     parsed = parseArgs({
       args: [...args],
-      options: { tarball: { type: "string" } },
+      options: {
+        tarball: { type: "string" },
+        with: { type: "string", multiple: true },
+      },
       allowPositionals: true,
       strict: true,
     });
@@ -189,10 +333,29 @@ export async function create(
   const target = absolute(folder);
   const reason = await unusable(target);
   if (reason !== undefined) return refuse(reason);
+  const known = await addOns();
+  const named =
+    parsed.values.with !== undefined
+      ? parsed.values.with.flatMap((given) => given.split(","))
+      : terminal.choose === undefined
+        ? []
+        : await terminal.choose(
+            known.map(({ name, description }) => ({ name, description })),
+          );
+  const names = named.map((given) => given.trim()).filter(Boolean);
+  const unknown = names.find(
+    (given) => !known.some(({ name }) => name === given),
+  );
+  if (unknown !== undefined)
+    return refuse(
+      `no add-on named ${unknown}: the add-ons are ${inWords(known.map(({ name }) => name))}`,
+    );
+  const chosen = known.filter(({ name }) => names.includes(name));
 
   const name = basename(target);
   try {
     await copyStarter(target, name, parsed.values.tarball);
+    for (const each of chosen) await addOn(target, each);
   } catch (error) {
     terminal.err(
       `the starter could not be copied into ${target}, which may be left half made: ${(error as Error).message}
@@ -241,11 +404,17 @@ export async function create(
     }
   }
   const chat =
-    terminal.model === undefined ? undefined : await terminal.model(target);
+    terminal.model === undefined || !chosen.some(({ name }) => name === "chat")
+      ? undefined
+      : await terminal.model(target);
+  const commands = chosen.flatMap(({ meta }) =>
+    Object.values(meta?.help ?? {}),
+  );
+  const width = Math.max(0, ...commands.map(([command]) => command.length));
   terminal.out(
     [
       "",
-      `Made ${target}${loaded.length === 0 ? "" : `, with ${loaded.length === 1 ? "the pod" : "the pods"} ${[loaded.slice(0, -1).join(", "), loaded.at(-1)].filter(Boolean).join(" and ")}`}. Start your coding agent in ${dirname(target)}, the folder holding it, and give it this, with your idea in its last line:`,
+      `Made ${target}${loaded.length === 0 ? "" : `, with ${loaded.length === 1 ? "the pod" : "the pods"} ${inWords(loaded)}`}${chosen.length === 0 ? "" : `, and with the ${chosen.length === 1 ? "add-on" : "add-ons"} ${inWords(chosen.map(({ name }) => name))}`}. Start your coding agent in ${dirname(target)}, the folder holding it, and give it this, with your idea in its last line:`,
       "",
       agentPrompt(name),
       "",
@@ -259,6 +428,16 @@ export async function create(
       "  npm run browser",
       "",
       "and open the same address. `npm run help` lists the app's commands.",
+      ...(commands.length === 0
+        ? []
+        : [
+            "",
+            "The add-ons' commands:",
+            "",
+            ...commands.map(([command, what]) =>
+              `  ${command.padEnd(width)}  ${what}`.trimEnd(),
+            ),
+          ]),
       ...(chat === false
         ? ["", "`npm run model` connects a model to the app's chat later."]
         : []),

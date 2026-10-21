@@ -1,74 +1,19 @@
-// `npm run help`: every script of package.json, in its order, with what it does; a script with no line here shows its
-// name alone.
+// `npm run help`: every script of package.json, in its order, with what `help.json` says it does (an add-on adds its
+// scripts' lines there); a script with no line shows its name alone.
 import { readFile } from "node:fs/promises";
 import { stdout } from "node:process";
 import { URL } from "node:url";
 
-const SAID: Readonly<Record<string, readonly [string, string]>> = {
-  help: ["npm run help", "this list"],
-  start: [
-    "npm start",
-    "build the app into dist/ when its sources are newer, serve it over the pods in pods/, then open the address it prints; stop it with Ctrl+C",
-  ],
-  dev: [
-    "npm run dev",
-    "serve the app from its sources, the pages redrawn whenever a file is saved",
-  ],
-  browser: [
-    "npm run browser",
-    "build the app to run in a browser alone into dist-browser/, the pods kept in the browser and copied from the kits' samples, and serve it",
-  ],
-  build: ["npm run build", "build the app's pages into dist/"],
-  typecheck: ["npm run typecheck", "check the app's TypeScript"],
-  test: [
-    "npm test",
-    "run the app's own tests, in test/, on Vitest; they take seconds",
-  ],
-  "test:e2e": [
-    "npm run test:e2e",
-    "run the browser test, in e2e/, on Playwright; needs Chromium: npx playwright install chromium",
-  ],
-  reset: [
-    "npm run reset",
-    "remove every pod and load Alex's, Priya's, Martin's and Tamsin's again, as when the app was made",
-  ],
-  "pod:load": [
-    "npm run pod:load -- <kit> [--through <step>] [--as <name>]",
-    "load a kit's pod: alex-rivera, priya-natarajan, martin-okafor or tamsin-vale",
-  ],
-  "pod:new": ["npm run pod:new <name>", "make an empty pod"],
-  "pod:reset": ["npm run pod:reset <name>", "remove one pod and all it holds"],
-  "kit:export": [
-    "npm run kit:export -- <kit> <download>",
-    "copy one of a kit's downloads into this folder, as its person saved it",
-  ],
-  "patient:add": [
-    "npm run patient:add -- <hospital id> <file>",
-    "check a patient's file, compiling its shorthand, and add it to people/ as their record at that hospital",
-  ],
-  ask: [
-    'npm run ask -- [--pod <name>] "<question>"',
-    "print a question's rows, as pod/My active allergies",
-  ],
-  console: [
-    "npm run console -- [--pod <name>]",
-    "open Node's prompt with the pod as `pod`",
-  ],
-  mcp: [
-    "npm run mcp",
-    "serve the pods to an MCP client such as Claude Desktop or VS Code, on stdin and stdout",
-  ],
-  model: [
-    "npm run model [-- --off]",
-    "choose the model the chat uses and check that it calls tools, keeping the choice in .env; --off removes it",
-  ],
-};
+const read = async <T>(file: string) =>
+  JSON.parse(await readFile(new URL(file, import.meta.url), "utf8")) as T;
 
-const { scripts } = JSON.parse(
-  await readFile(new URL("package.json", import.meta.url), "utf8"),
-) as { scripts: Record<string, string> };
+const said =
+  await read<Readonly<Record<string, readonly [string, string]>>>("help.json");
+const { scripts } = await read<{ scripts: Record<string, string> }>(
+  "package.json",
+);
 const rows = Object.keys(scripts).map(
-  (script) => SAID[script] ?? [`npm run ${script}`, ""],
+  (script) => said[script] ?? [`npm run ${script}`, ""],
 );
 const width = Math.max(...rows.map(([command]) => command.length));
 stdout.write("The app's commands, run in this folder:\n\n");

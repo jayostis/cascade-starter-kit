@@ -12,6 +12,19 @@ async function question(text: string): Promise<string> {
   }
 }
 
+async function chooseAddOns(
+  addOns: readonly { name: string; description: string }[],
+): Promise<string[]> {
+  const width = Math.max(...addOns.map(({ name }) => name.length));
+  stdout.write(
+    `\nThe add-ons:\n\n${addOns.map(({ name, description }) => `  ${name.padEnd(width)}  ${description}\n`).join("")}\n`,
+  );
+  const answer = await question(
+    "Which to add, by name and separated by commas? (none) ",
+  );
+  return answer.split(",");
+}
+
 async function offerModel(folder: string): Promise<boolean> {
   const answer = (await question("\nAdd a chat with a model? (y/N) "))
     .trim()
@@ -25,6 +38,7 @@ process.exitCode = await create(process.argv.slice(2), {
   ...(stdin.isTTY
     ? {
         ask: () => question("A name for the app's folder: "),
+        choose: chooseAddOns,
         model: offerModel,
       }
     : {}),

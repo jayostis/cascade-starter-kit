@@ -2,7 +2,6 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { replayKit } from "cascade-runtime/fixtures";
-import { Hono } from "hono";
 import { afterAll, beforeAll, expect, test } from "vitest";
 import { nodeHost } from "../node-host.ts";
 import { podApi } from "../pod-api.ts";
@@ -30,7 +29,6 @@ beforeAll(async () => {
   app = appServer({
     api,
     own: () => ({ hosts: new Set(["app.test"]), origins: new Set([ORIGIN]) }),
-    chat: new Hono(),
     back: () => undefined,
     pages: folder,
   });
@@ -55,6 +53,13 @@ test("Alex's answers come back: what the first two imports brought in", async ()
     answers: Record<string, unknown[]>;
   };
   expect(answers["pod/What each import brought in"].length).toBeGreaterThan(0);
+});
+
+test("with no chat added, /chat is no page of the app: a 404", async () => {
+  const response = await app.request(`${ORIGIN}/chat`, {
+    headers: { accept: "text/html" },
+  });
+  expect(response.status).toBe(404);
 });
 
 test("an input the rules refuse is a 400 that says why, never a 500", async () => {
