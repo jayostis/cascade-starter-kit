@@ -38,7 +38,19 @@ import * as oxigraph from "oxigraph";
 import { installedParts } from "cascade-runtime/fixtures";
 import { openPodWith } from "cascade-runtime/published";
 import { type Served, servePages } from "../try/build/serve.js";
-import { inPlace, newPod, settled, tiles, watched } from "./shown.js";
+import {
+  called,
+  inPlace,
+  inputOf,
+  listed,
+  newPod,
+  offered,
+  recordTools,
+  type Registered,
+  settled,
+  tiles,
+  watched,
+} from "./shown.js";
 
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const PAGES = join(ROOT, "build", "pages");
@@ -177,14 +189,7 @@ interface View {
 const view = (await import(
   pathToFileURL(join(ROOT, "app", "said.ts")).href
 )) as View;
-/** The names of the free tools of the one list, which try/ offers for the pod shown. */
-const FREE_TOOLS = (
-  (await import(pathToFileURL(join(ROOT, "app", "tools.mjs")).href)) as {
-    TOOLS: { name: string; tier: string }[];
-  }
-).TOOLS.filter(({ tier }) => tier === "free")
-  .map(({ name }) => name)
-  .sort();
+const TOOLS = await listed();
 
 let served: Served;
 let browser: Browser;
@@ -444,30 +449,6 @@ function recordDraws(): void {
     },
     true,
   );
-}
-
-interface Registered {
-  registered: { name: string; signal: AbortSignal }[];
-}
-
-/**
- * Gives every page of the context a stand-in `document.modelContext`, as WebMCP's gives one, recording each tool
- * registered and the signal that takes it away.
- */
-function recordTools(): void {
-  const registered: Registered["registered"] = [];
-  Object.assign(globalThis, { registered });
-  Object.defineProperty(document, "modelContext", {
-    configurable: true,
-    value: {
-      registerTool: (
-        tool: { name: string },
-        options: { signal: AbortSignal },
-      ) => {
-        registered.push({ name: tool.name, signal: options.signal });
-      },
-    },
-  });
 }
 
 interface Leaving {
@@ -2201,19 +2182,13 @@ test("in try/, Priya's pod, copied on a first visit, names her potassium result 
   }
 });
 
-test("in try/, the pod shown offers the free tools of the one list to the model context, a change card opens the trend at its address, and going to another pod takes every tool of the pod left away when the page shows the other, never after the next paint", async () => {
+test("in try/, every tool of the one list is offered to the model context, never one the never list holds, a change card opens the trend at its address, and going to another pod takes every tool of the pod left away when the page shows the other, never after the next paint", async () => {
   const context = await browser.newContext();
   await context.addInitScript(recordTools);
   await context.addInitScript(watchLeaving);
   try {
     const page = watched(await context.newPage());
-    const live = (): Promise<string[]> =>
-      page.evaluate(() =>
-        (globalThis as unknown as Registered).registered
-          .filter(({ signal }) => !signal.aborted)
-          .map(({ name }) => name)
-          .sort(),
-      );
+    const live = (): Promise<string[]> => offered(page);
     await page.goto(`${served.url}${AT.home}`);
     await settled(page);
     await page.goto(`${served.url}${AT.pod("tamsin-vale")}`);
@@ -2224,12 +2199,16 @@ test("in try/, the pod shown offers the free tools of the one list to the model 
         ({ name, signal }) => name === "open_trend" && !signal.aborted,
       ),
     );
-    assert.deepEqual(await live(), FREE_TOOLS);
+    assert.deepEqual(await live(), TOOLS.names);
+    assert.deepEqual(
+      (await live()).filter((name) => TOOLS.never.includes(name)),
+      [],
+    );
     const total = (): Promise<number> =>
       page.evaluate(
         () => (globalThis as unknown as Registered).registered.length,
       );
-    const offered = await total();
+    const before = await total();
 
     await inPlace(page, () =>
       page.click('.change a:has-text("Open the trend")'),
@@ -2245,10 +2224,10 @@ test("in try/, the pod shown offers the free tools of the one list to the model 
       await chart.locator("title").first().textContent(),
       await page.textContent("main h1"),
     );
-    assert.deepEqual(await live(), FREE_TOOLS);
+    assert.deepEqual(await live(), TOOLS.names);
     assert.equal(
       await total(),
-      offered,
+      before,
       "a move between the pod's screens offered the tools again",
     );
 
@@ -2267,7 +2246,7 @@ test("in try/, the pod shown offers the free tools of the one list to the model 
       0,
       "a tool of the pod left was still on when the page showed another pod",
     );
-    assert.deepEqual(await live(), FREE_TOOLS);
+    assert.deepEqual(await live(), TOOLS.names);
 
     await page.goto(`${served.url}${AT.trend("tamsin-vale", "0000-0")}`);
     await settled(page);
@@ -2275,6 +2254,179 @@ test("in try/, the pod shown offers the free tools of the one list to the model 
     assert.match(
       (await page.textContent("main p")) ?? "",
       /no test 0000-0 in the pod/,
+    );
+  } finally {
+    await context.close();
+  }
+});
+
+test("in try/, the model context is offered the one list on the entry, classes, panel and table screens, with the pod filled in only where a pod is shown, and open_classes, open_entry, open_panel, open_table and open_pod move the app in place", async () => {
+  const context = await browser.newContext();
+  await context.addInitScript(recordTools);
+  try {
+    const page = watched(await context.newPage());
+    await page.goto(`${served.url}${AT.pod("alex-rivera")}`);
+    await settled(page);
+    const podFilled = {
+      properties: ["test", "medication"],
+      required: ["test"],
+    };
+    const named = {
+      properties: ["pod", "test", "medication"],
+      required: ["pod", "test"],
+    };
+    const opens = async (
+      name: string,
+      input: object,
+      path: string,
+      takesPod?: boolean,
+    ) => {
+      await inPlace(page, async () => {
+        const answer = await called(page, name, input, takesPod);
+        assert.ok("result" in answer, JSON.stringify(answer));
+      });
+      const { pathname, search } = new URL(page.url());
+      assert.equal(pathname + search, path);
+      assert.deepEqual(await offered(page), TOOLS.names, name);
+    };
+
+    await opens("open_classes", {}, "/try/pods/alex-rivera/classes", false);
+    assert.deepEqual(await inputOf(page, "open_trend", false), podFilled);
+
+    await opens(
+      "open_pod",
+      { pod: "priya-natarajan" },
+      "/try/pods/priya-natarajan/",
+    );
+    await opens(
+      "open_panel",
+      { panel: "24326-1" },
+      "/try/pods/priya-natarajan/panel?panel=24326-1",
+      false,
+    );
+    assert.match((await page.textContent("main h1")) ?? "", /^Your results in/);
+
+    await opens("open_table", {}, "/try/tables/");
+    assert.deepEqual(await inputOf(page, "open_trend", true), named);
+    assert.deepEqual(await inputOf(page, "open_pod", true), {
+      properties: ["pod"],
+      required: ["pod"],
+    });
+
+    await opens(
+      "open_pod",
+      { pod: "priya-natarajan" },
+      "/try/pods/priya-natarajan/",
+    );
+    const labs = await called(
+      page,
+      "ask",
+      { question: "pod/My lab results", limit: 1 },
+      false,
+    );
+    assert.ok("result" in labs, JSON.stringify(labs));
+    const [lab] = (labs.result as { rows: { entry: string }[] }).rows;
+    await inPlace(page, async () => {
+      await called(page, "open_entry", { entry: lab!.entry }, false);
+    });
+    assert.equal(AT.entryOf(page.url()), view.entryId(lab!.entry));
+    assert.deepEqual(await offered(page), TOOLS.names);
+    assert.deepEqual(await inputOf(page, "open_entry", false), {
+      properties: ["entry"],
+      required: ["entry"],
+    });
+  } finally {
+    await context.close();
+  }
+});
+
+test("in try/, a write the model context asks for waits on the page's ask: Cancel refuses it and makes no pod, Allow makes the pod, and an encrypted pod is refused with no ask", async () => {
+  const context = await browser.newContext();
+  await context.addInitScript(recordTools);
+  try {
+    const page = watched(await context.newPage());
+    await page.goto(`${served.url}${AT.pod("alex-rivera")}`);
+    await settled(page);
+    const asking = page.getByRole("alertdialog");
+    const pods = async (): Promise<string[]> => {
+      const listed = await called(page, "list_pods");
+      assert.ok("result" in listed, JSON.stringify(listed));
+      return listed.result as string[];
+    };
+
+    const refused = called(page, "make_pod", { person: "Wren Tolliver" });
+    await asking.waitFor();
+    assert.match(
+      (await asking.textContent()) ?? "",
+      /Make a pod.*Wren Tolliver/,
+    );
+    assert.equal((await pods()).includes("wren-tolliver"), false);
+    await asking.getByRole("button", { name: "Cancel" }).click();
+    assert.deepEqual(await refused, {
+      result: { refused: "The person said no" },
+    });
+    assert.equal((await pods()).includes("wren-tolliver"), false);
+
+    const allowed = called(page, "make_pod", { person: "Wren Tolliver" });
+    await asking.waitFor();
+    await asking.getByRole("button", { name: "Allow" }).click();
+    const made = await allowed;
+    assert.ok("result" in made, JSON.stringify(made));
+    assert.equal((made.result as { pod: string }).pod, "wren-tolliver");
+    await settled(page);
+    assert.equal((await pods()).includes("wren-tolliver"), true);
+
+    const encrypted = await called(page, "make_pod", {
+      person: "Cora Diaz",
+      encrypt: true,
+    });
+    assert.ok("result" in encrypted, JSON.stringify(encrypted));
+    assert.ok(
+      typeof (encrypted.result as { refused?: unknown }).refused === "string",
+      JSON.stringify(encrypted),
+    );
+    assert.equal(await asking.count(), 0);
+    assert.equal((await pods()).includes("cora-diaz"), false);
+  } finally {
+    await context.close();
+  }
+});
+
+test("in try/, two open tools called back to back, with no wait between, each resolve once their screen is drawn, so the second is not refused as busy", async () => {
+  const context = await browser.newContext();
+  await context.addInitScript(recordTools);
+  try {
+    const page = watched(await context.newPage());
+    await page.goto(`${served.url}${AT.pod("priya-natarajan")}`);
+    await settled(page);
+    await inputOf(page, "open_panel", false);
+    const [first, second] = await page.evaluate(async () => {
+      const run = (name: string, input: object) => {
+        const { tool } = (
+          globalThis as unknown as {
+            registered: {
+              name: string;
+              signal: AbortSignal;
+              tool: { execute(input: object): Promise<unknown> };
+            }[];
+          }
+        ).registered
+          .filter(({ signal }) => !signal.aborted)
+          .find((each) => each.name === name)!;
+        return tool.execute(input);
+      };
+      const first = await run("open_classes", {});
+      const at = location.pathname;
+      const second = await run("open_panel", { panel: "24326-1" });
+      return [{ first, at }, second] as const;
+    });
+    assert.ok(!("refused" in (first.first as object)), JSON.stringify(first));
+    assert.match(first.at, /\/classes$/);
+    assert.ok(!("refused" in (second as object)), JSON.stringify(second));
+    const { pathname, search } = new URL(page.url());
+    assert.equal(
+      pathname + search,
+      "/try/pods/priya-natarajan/panel?panel=24326-1",
     );
   } finally {
     await context.close();

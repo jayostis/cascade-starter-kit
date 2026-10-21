@@ -99,6 +99,19 @@ export function landed(mark: number | undefined, path: string) {
   trace(`landed ${mark ?? "unmarked"} at ${path}`);
 }
 
+/** Settles once the page is not busy: at once when it is not, else when it next says ready or error. */
+export function settled(): Promise<void> {
+  if (!isBusy()) return Promise.resolve();
+  return new Promise((resolve) => {
+    const listener = () => {
+      if (isBusy()) return;
+      listeners.delete(listener);
+      resolve();
+    };
+    listeners.add(listener);
+  });
+}
+
 /** What the doing line says, while the page is busy. */
 export const sayingNow = () => saying;
 

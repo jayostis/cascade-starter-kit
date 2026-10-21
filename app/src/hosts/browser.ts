@@ -3,7 +3,6 @@
 // signed in at in a popup. Every address is the app's base's, never the screen's: a screen's address is a path.
 import {
   appTables,
-  checkInput,
   checkTables,
   configureRuntime,
   configureTables,
@@ -14,7 +13,6 @@ import {
   podTitle,
   popupSignIn,
   TEST_DIRECTORY,
-  toolRegistry,
   Unopened,
   warm,
 } from "cascade-runtime";
@@ -26,7 +24,7 @@ import {
 } from "@the-cascade-protocol/sandbox/web";
 import { addresses } from "../../addresses.ts";
 import { podApi } from "../../pod-api.mjs";
-import type { Person } from "../../said.ts";
+import { PAGE_TOOLS, type Person } from "../../said.ts";
 import { TOOLS } from "../../tools.mjs";
 import type { Host, PodApi } from "../api.tsx";
 import { busy } from "../doing.ts";
@@ -237,45 +235,30 @@ async function firstVisit() {
 
 const { dataset } = document.body;
 
-const registry = toolRegistry(
-  (document as unknown as { modelContext?: Parameters<typeof toolRegistry>[0] })
-    .modelContext,
-);
 const ADDRESS = addresses(BASE.pathname);
-type InputSchema = Parameters<typeof checkInput>[0];
 type Run = (api: PodApi, input: unknown, door: unknown) => Promise<unknown>;
+
+/** The reads of the one list: the free tools the page does not run itself, which move nothing. */
+const READS = TOOLS.filter(
+  ({ name, tier, opens }) =>
+    tier === "free" && !opens && !PAGE_TOOLS.some((each) => each.name === name),
+);
 
 export const host: Host = {
   api,
-  offer(pod, open) {
-    const controller = new AbortController();
-    const door = {
-      address: {
-        pod: ADDRESS.pod,
-        trend: ADDRESS.trend,
-        entry: ADDRESS.entry,
-      },
-      open,
-    };
-    for (const tool of TOOLS)
-      if (tool.tier === "free")
-        registry.register(
-          {
-            name: tool.name,
-            description: tool.description,
-            inputSchema: tool.inputSchema as InputSchema,
-            async execute(input: unknown) {
-              checkInput(tool.inputSchema as InputSchema, input);
-              return (tool.run as Run)(
-                api,
-                tool.ofPod ? { ...(input as object), pod } : input,
-                door,
-              );
-            },
-          },
-          { signal: controller.signal },
-        );
-    return () => controller.abort();
+  reads: {
+    list: async () =>
+      READS.map(({ name, description, inputSchema, ofPod }) => ({
+        name,
+        description,
+        inputSchema,
+        ofPod: ofPod === true,
+      })),
+    async run(name, input) {
+      const tool = READS.find((each) => each.name === name);
+      if (tool === undefined) throw new Error(`no read tool ${name}`);
+      return (tool.run as Run)(api, input, { address: ADDRESS });
+    },
   },
   about: {
     name: dataset.name ?? "",

@@ -69,7 +69,7 @@ import { PodPage, type PodShown } from "./pod.tsx";
 import { NotFound, Wrong } from "./screen.tsx";
 import { Layout, type TablesHeld } from "./shell.tsx";
 import { TableScreen } from "./tables.tsx";
-import { usePodTools } from "./tools.ts";
+import { WebTools } from "./tools.ts";
 import { TrendScreen } from "./trend.tsx";
 
 type Engine = "waiting" | "ready" | "failed";
@@ -467,7 +467,7 @@ export function App() {
   const act = useCallback<Actions["act"]>(
     (step, doing = "Working…") => {
       let unopened = false;
-      void flight(
+      return flight(
         async () => {
           let going = false;
           try {
@@ -583,13 +583,13 @@ export function App() {
   const shown = current === undefined ? undefined : decodeURIComponent(current);
   const known =
     shown !== undefined && names.includes(shown) ? shown : undefined;
-  usePodTools(known);
   if (pods === undefined) return null;
   const Chat = host.chat?.Window;
   return (
     <HostProvider value={guarded}>
       <ActionsProvider value={actions}>
         <ConfirmProvider>
+          <WebTools pod={known} />
           <AskProvider value={model?.named !== undefined}>
             <Layout
               pods={names}
