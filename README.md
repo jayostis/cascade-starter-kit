@@ -9,14 +9,23 @@ numbered v1, and no claim is made that it is fit for clinical use.
 
 ## What is here
 
-| Folder          | What it is                                                                                                                        |
-| --------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `app/`          | The template: a React app, on Node or in a browser alone. A made app is a copy of it. Its `AGENTS.md` is the made app's own.      |
-| `try/`          | The app in a browser: the page, its host, and `try/build/`, which builds the page over the installed package.                     |
-| `create/`       | `create-cascade-app`: copies the template, installs it and loads the four kits' pods. `pack.mjs` packs it with the demo hospital. |
-| `test/`         | The unit tests of the template, try/'s build and `create`.                                                                        |
-| `test-browser/` | try/ and the template's chat in Chromium.                                                                                         |
-| `check/`        | `starter.mjs`: a made app, end to end, as a person makes it.                                                                      |
+| Folder          | What it is                                                                                                                           |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `app/`          | The template, a React app in TypeScript, on Node or in a browser alone. A made app is a copy of it; its `README.md` names its parts. |
+| `try/`          | `try/build/`: the site Pages serves, the app's browser build at `try/` with the kits' samples beside it.                             |
+| `create/`       | `create-cascade-app`: copies the template, installs it and loads the four kits' pods. `pack.mjs` packs it with the demo hospital.    |
+| `test/`         | The unit tests of the template, try/'s build and `create`.                                                                           |
+| `test-browser/` | try/ and the template's chat in Chromium.                                                                                            |
+| `check/`        | `starter.ts`: a made app, end to end, as a person makes it.                                                                          |
+
+The template's pages are React with React Router, built by Vite. On Node,
+`npm start` serves them from a [Hono](https://hono.dev) server that answers
+PodApi at `/api/` and the chat, on the [Vercel AI SDK](https://ai-sdk.dev) and
+[assistant-ui](https://www.assistant-ui.com), at `/chat`; `npm run browser`
+builds the same app to run PodApi in the page, which is what try/ is. Every
+file of it is TypeScript, and Node runs the server and the commands as they
+are. The tools a model reaches, MCP, the chat and WebMCP alike, are one list
+with consent tiers (`app/tools.ts`).
 
 ## The runtime it runs on
 
@@ -44,7 +53,7 @@ merges.
 
 ## Working on it
 
-Node 22 or later.
+Node 22.18 or later, which runs the template's `.ts` files as they are.
 
 ```sh
 npm ci
@@ -55,10 +64,12 @@ npm run build:create
 ```
 
 Then, from a folder outside the repository,
-`node <repository>/check/starter.mjs <repository>/build/create-cascade-app-*.tgz`
+`node <repository>/check/starter.ts <repository>/build/create-cascade-app-*.tgz`
 makes an app from the packed command in a new folder under it and uses it as a
 person would: its data through `/api`, its screens in Chromium (run
-`npx playwright install --only-shell chromium` once); it takes minutes.
+`npx playwright install --only-shell chromium` once); it takes minutes, and
+stops at the first behaviour that fails. `--only <text>` checks only the
+behaviours whose name holds the text, after those the others need.
 
 try/ in Chromium: `npm run build:try` writes `build/pages/` (try/, the four
 samples, a root page that sends a visitor to try/), then `npm run test:browser`;
