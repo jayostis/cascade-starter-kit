@@ -1,5 +1,5 @@
 {
-  "screens": ["pod", "entry"],
+  "screens": ["pod", "entry", "table"],
   "claimed": [
     "a first visit copies Alex's, Martin's, Priya's and Tamsin's pods and opens Alex's, which reads as her record: her name, her places, what is worth a look with each line linking to its entry, and a tile per kind counting the question's rows; it and a switch to Priya's draw in place before the engine loads, a click on the pod shown adds no entry to the history, so Back draws Alex's again, and the engine then loads in the background, an entry opened and left for a code page before it does leaves the code page drawn when it lands; a fresh browser's first visit draws the tables' names within twice its budget",
     "after a reload, the pods made in this browser are still on the left",
@@ -8,6 +8,13 @@
     "in try/, the pod shown offers the free tools of the one list to the model context, a change card opens the trend at its address, and going to another pod takes every tool of the pod left away when the page shows the other, never after the next paint",
     "in try/, Ines Calloway's new pod signed in at North says what changed after atorvastatin started, opens the trend at its address, and its class page puts her estradiol in estrogen",
     "in try/, the sample pod tamsin-vale draws What changed and, in its card, where it comes from: the story's pulls in order, each with its source and the date it answered as of, and the metformin's two versions",
-    "try/ ships the starter tables its published answers were computed with: after a check that finds nothing new, a visit draws a copied pod from its kept answers, the engine held back, and the browser keeps one set of tables for every address"
+    "try/ ships the starter tables its published answers were computed with: after a check that finds nothing new, a visit draws a copied pod from its kept answers, the engine held back, and the browser keeps one set of tables for every address",
+    "in the lab results' box of Tamsin's pod, a heading sorts by its column one way then the other, numbers as numbers, the filter keeps only the rows holding its text, and a click outside the box or Escape closes it",
+    "File, Delete all data empties the pods column, leaves no pod nor answers in the browser and says how many went, a later visit still has no pods, and Reset all data brings the four samples back; Help, About links the code to this repository",
+    "a first visit where no sample copies leaves no database, says there are no pods yet, and offers each sample to load, which loads it; a first visit to a sample's link copies them all and opens that sample, and to any other pod's link says it is not found",
+    "a failed copy whose database another connection holds open says so, and one into a database another copy filled keeps it",
+    "in the browser, look and import read the files a person picks as Node reads them by path, the Bridge in a Web Worker started by the first import, each import loading only the adapter of its documents",
+    "in the browser, a check keeps the test feed's planted newer version in the app's own database, and a pod opened after it adopts it: the version is recorded, the Same it newly joins is filed and the one that used the replaced version filed again",
+    "in try/, an encrypted pod shows six words, is made once words 2 and 5 are typed, keeps nothing readable in the browser's storage, and after a reload opens only with the words"
   ]
 }

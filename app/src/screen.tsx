@@ -2,9 +2,9 @@
 // drawing what the rules refused as the screen's own "Not found".
 import { useEffect, useRef, useState } from "react";
 import { personName, type Series, type Source } from "../said.ts";
-import { useAddress } from "./address.tsx";
+import { useAddress, useGeneration } from "./address.tsx";
 import { usePodApi, type PodApi } from "./api.tsx";
-import { busy, failed, ready } from "./doing.ts";
+import { failed, ready } from "./doing.ts";
 
 /** What a read of the screen's address came to: its data, the sentence of a refusal, or what went wrong. */
 export type Loaded<T> = { readonly at: string } & (
@@ -17,11 +17,11 @@ const sentenceOf = (error: unknown) =>
   error instanceof Error ? error.message : String(error);
 
 /**
- * Calls `load` for the address `at`, and again when `again` changes or the address does; the last answer stays until the
- * next arrives, and the body says `busy` between them. Once the answer to `at` is in, the tab says `titleOf` of it
- * ("Not found" for a refusal) and the body says `ready`, or `error` for a failure that is no refusal. A Back to another
- * screen says `busy` as it leaves. A `load` that has more to add once the screen is drawn calls `later` with the whole
- * value again.
+ * Calls `load` for the address `at`, and again when `again` changes, a step moves the app (`useGeneration`) or the
+ * address does; the last answer stays until the next arrives. Once the answer to `at` is in, the tab says `titleOf` of
+ * it ("Not found" for a refusal) and the body says `ready`, or `error` for a failure that is no refusal. A `load` that
+ * has more to add once the screen is drawn calls `later` with the whole value again. The page is busy between answers
+ * as `useOpening` and a step say.
  */
 export function useLoaded<T>(
   at: string,
@@ -31,15 +31,12 @@ export function useLoaded<T>(
 ): Loaded<T> | undefined {
   const api = usePodApi();
   const [loaded, setLoaded] = useState<Loaded<T>>();
+  const generation = useGeneration();
   const latest = useRef({ load, titleOf });
-  const was = useRef<string | undefined>(undefined);
   useEffect(() => {
     latest.current = { load, titleOf };
   });
   useEffect(() => {
-    if (was.current !== at && document.body.dataset.state === "ready")
-      busy("Opening…");
-    was.current = at;
     let live = true;
     latest.current
       .load(api, (value) => live && setLoaded({ at, value }))
@@ -56,15 +53,7 @@ export function useLoaded<T>(
     return () => {
       live = false;
     };
-  }, [api, at, again]);
-  useEffect(() => {
-    const here = location.pathname + location.search;
-    const leaving = () => {
-      if (location.pathname + location.search !== here) busy("Opening…");
-    };
-    window.addEventListener("popstate", leaving);
-    return () => window.removeEventListener("popstate", leaving);
-  }, [at]);
+  }, [api, at, again, generation]);
   useEffect(() => {
     if (loaded?.at !== at) return;
     if ("wrong" in loaded) return failed();

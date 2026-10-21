@@ -95,20 +95,23 @@ export function Tag({ tag }: { tag: string }) {
 }
 
 /**
- * A button that is a form of its own, posting `fields` to `action`; `doing` is what the page says while it acts. Its
- * action comes with the screen that acts on it: until then it does nothing.
+ * A button that is a form of its own, posting `fields` to `action`; `doing` is what the page says while it acts. It
+ * does `onPost` with the fields when it has one; a button whose action comes with a later screen does nothing until
+ * then.
  */
 export function PostButton({
   action,
   fields = {},
   className,
   doing,
+  onPost,
   children,
 }: {
   action: string;
   fields?: Record<string, string>;
   className?: string;
   doing?: string;
+  onPost?: (fields: FormData) => void;
   children: ReactNode;
 }) {
   return (
@@ -117,7 +120,10 @@ export function PostButton({
       method="post"
       action={action}
       data-doing={doing}
-      onSubmit={(event) => event.preventDefault()}
+      onSubmit={(event) => {
+        event.preventDefault();
+        onPost?.(new FormData(event.currentTarget));
+      }}
     >
       {Object.entries(fields).map(([name, value]) => (
         <input key={name} type="hidden" name={name} value={value} />

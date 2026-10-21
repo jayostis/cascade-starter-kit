@@ -100,6 +100,9 @@ const AT =
           `try/index.html?pod=${pod}&trend&test=${test}`,
         podOf: (url: string) => new URL(url).searchParams.get("pod"),
         entryOf: (url: string) => new URL(url).searchParams.get("entry"),
+        table: (id: string, q: string) => `try/index.html?table=${id}&q=${q}`,
+        tableOf: (url: string) => new URL(url).searchParams.get("table"),
+        codeOf: (url: string) => new URL(url).searchParams.get("code"),
         trendOf: (url: string) => {
           const query = new URL(url).searchParams;
           return query.has("trend")
@@ -129,6 +132,10 @@ const AT =
           const id = /\/entries\/([^/]+)$/.exec(new URL(url).pathname)?.[1];
           return id === undefined ? null : decodeURIComponent(id);
         },
+        table: (id: string, q: string) => `next/tables/${id}/?q=${q}`,
+        tableOf: (url: string) =>
+          /\/tables\/([^/]+)\//.exec(new URL(url).pathname)?.[1] ?? null,
+        codeOf: (url: string) => new URL(url).searchParams.get("code"),
         classes: (pod: string) => `next/pods/${pod}/classes`,
         trend: (pod: string, test: string) =>
           `next/pods/${pod}/trend?test=${test}`,
@@ -145,11 +152,7 @@ const AT =
         },
         links: 'a[href^="/next/"]',
         screenOf: (shape: string): string | undefined =>
-          shape.startsWith("tables/") || shape.startsWith("tables?")
-            ? "table"
-            : shape.startsWith("pods/*/hospitals")
-              ? "hospitals"
-              : undefined,
+          shape.startsWith("pods/*/hospitals") ? "hospitals" : undefined,
         shapeOf: (href: string) => {
           const at = new URL(href, "http://x/");
           return [
@@ -1093,11 +1096,9 @@ async function column(page: Page, head: string): Promise<string[]> {
   );
 }
 
-test("in the lab results' box of the joined pod, a heading sorts by its column one way then the other, numbers as numbers, the filter keeps only the rows holding its text, and a click outside the box or Escape closes it", async () => {
+test("in the lab results' box of Tamsin's pod, a heading sorts by its column one way then the other, numbers as numbers, the filter keeps only the rows holding its text, and a click outside the box or Escape closes it", async (t) => {
   const page = watched(await profile.newPage());
-  await page.goto(
-    `${served.url}try/index.html?pod=${view.slug(joined.person.name)}`,
-  );
+  await page.goto(`${served.url}${AT.pod("tamsin-vale")}`);
   await settled(page);
   await page.waitForSelector('body[data-tables="ready"]', {
     timeout: 120_000,
@@ -1114,18 +1115,7 @@ test("in the lab results' box of the joined pod, a heading sorts by its column o
   assert.deepEqual(await column(page, "Date"), opened);
 
   await sort("Value");
-  const values = await column(page, "Value");
-  const isNumber = (value: string): boolean =>
-    value.trim() !== "" && Number.isFinite(Number(value));
-  const numbers = values.filter(isNumber).map(Number);
-  assert.ok(numbers.length > 1);
-  assert.deepEqual(
-    numbers,
-    [...numbers].sort((a, b) => a - b),
-  );
-  assert.ok(values.slice(0, numbers.length).every(isNumber));
-
-  const [first = ""] = await column(page, "Test");
+  const [first = ""] = await column(page, "Value");
   const rows = await texts(page, "#see-lab-results tbody tr");
   await page.fill("#see-lab-results .filter", first);
   const kept = await texts(page, "#see-lab-results tbody tr:not([hidden])");
@@ -1133,6 +1123,7 @@ test("in the lab results' box of the joined pod, a heading sorts by its column o
     kept,
     rows.filter((row) => row.toLowerCase().includes(first.toLowerCase())),
   );
+  assert.ok(kept.length > 0, "the filter kept nothing");
   assert.ok(kept.length < rows.length, "the filter hid nothing");
 
   const open = (): Promise<boolean> => page.isVisible("#see-lab-results");
@@ -1144,6 +1135,46 @@ test("in the lab results' box of the joined pod, a heading sorts by its column o
   assert.ok(await open());
   await page.keyboard.press("Escape");
   assert.ok(!(await open()), "Escape left the box open");
+
+  // Tamsin's values (8.3, 7.9, 7.4, 6.7, 6.5, 6.6) sort alike as text and as numbers; Marsh's differ in length.
+  if (!ported(t, "#4's numeric sort", "hospitals")) return;
+  const { person, patients } = joined;
+  const context = await browser.newContext();
+  try {
+    const marsh = watched(await context.newPage());
+    await marsh.goto(`${served.url}try/index.html`);
+    await settled(marsh);
+    await newPod(marsh, view.familyFirst(person));
+    const [north = ""] = person.at.map(({ name }) => name);
+    const [popup] = await Promise.all([
+      marsh.waitForEvent("popup"),
+      marsh.click(`button:has-text("Sign in at ${view.hospitalName(north)}")`),
+    ]);
+    await popup.waitForSelector('button[value="allow"]');
+    await popup.check(`input[name="patient"][value="${patients.get(north)}"]`);
+    await popup.click('button[value="allow"]');
+    await settled(marsh);
+    await marsh.click("#connection button:has-text('Bring it into')");
+    await settled(marsh, 300_000);
+    await marsh.click('a.tile[href="#see-lab-results"]');
+    await marsh.click('#see-lab-results th button:has-text("Value")');
+    const values = await column(marsh, "Value");
+    const isNumber = (value: string): boolean =>
+      value.trim() !== "" && Number.isFinite(Number(value));
+    const numbers = values.filter(isNumber).map(Number);
+    assert.ok(numbers.length > 1);
+    assert.ok(
+      new Set(numbers.map((each) => String(Math.trunc(each)).length)).size > 1,
+      "the values are all of one length, so a sort as text would pass",
+    );
+    assert.deepEqual(
+      numbers,
+      [...numbers].sort((a, b) => a - b),
+    );
+    assert.ok(values.slice(0, numbers.length).every(isNumber));
+  } finally {
+    await context.close();
+  }
 });
 
 test("after a reload, the pods made in this browser are still on the left", async () => {
@@ -1166,7 +1197,7 @@ test("File, Delete all data empties the pods column, leaves no pod nor answers i
   const context = await browser.newContext();
   try {
     const page = watched(await context.newPage());
-    await page.goto(`${served.url}try/index.html`);
+    await page.goto(`${served.url}${AT.home}`);
     await settled(page);
     assert.equal(
       await page.getAttribute('#about a:has-text("The code")', "href"),
@@ -1194,7 +1225,7 @@ test("File, Delete all data empties the pods column, leaves no pod nor answers i
       await page.textContent("main .note"),
       `Deleted ${before.length} pods.`,
     );
-    await page.goto(`${served.url}try/index.html`);
+    await page.goto(`${served.url}${AT.home}`);
     await settled(page);
     assert.equal(await page.textContent("main h1"), "No pods yet");
     assert.deepEqual(await texts(page, "nav a"), []);
@@ -1209,6 +1240,14 @@ test("File, Delete all data empties the pods column, leaves no pod nor answers i
       await page.textContent("main .note"),
       "Reset: Alex Rivera, Martin Okafor, Priya Natarajan and Tamsin Vale are back.",
     );
+    const loaded = watched(await context.newPage());
+    await loaded.goto(`${served.url}${AT.pod(ALEX)}#about`);
+    await settled(loaded);
+    assert.equal(
+      await loaded.isVisible("#about"),
+      true,
+      "a page loaded at a box's address shows the box",
+    );
   } finally {
     await context.close();
   }
@@ -1218,11 +1257,11 @@ test("a first visit where no sample copies leaves no database, says there are no
   const link = await browser.newContext();
   try {
     const page = watched(await link.newPage());
-    await page.goto(`${served.url}try/index.html?pod=martin-okafor`);
+    await page.goto(`${served.url}${AT.pod("martin-okafor")}`);
     await settled(page);
     assert.equal(await page.textContent("main h1"), "Martin Okafor");
     assert.equal((await texts(page, "nav a")).length, 4);
-    await page.goto(`${served.url}try/index.html?pod=nobody`);
+    await page.goto(`${served.url}${AT.pod("nobody")}`);
     await settled(page);
     assert.equal(await page.textContent("main h1"), "Not found");
   } finally {
@@ -1234,7 +1273,7 @@ test("a first visit where no sample copies leaves no database, says there are no
     const samples =
       /\/(alex-rivera|martin-okafor|priya-natarajan|tamsin-vale)\/pod[/.]/;
     await page.route(samples, (route) => route.abort());
-    await page.goto(`${served.url}try/index.html`);
+    await page.goto(`${served.url}${AT.home}`);
     await settled(page);
     assert.deepEqual(
       await page.evaluate(async () =>
@@ -1270,7 +1309,7 @@ test("a failed copy whose database another connection holds open says so, and on
       /\/(alex-rivera|martin-okafor|priya-natarajan|tamsin-vale)\/pod[/.]/,
       (route) => route.abort(),
     );
-    await page.goto(`${served.url}try/index.html`);
+    await page.goto(`${served.url}${AT.home}`);
     await settled(page);
     const outcome = await page.evaluate(async () => {
       const { openPod } = (await import("cascade-runtime" as string)) as {
@@ -1464,7 +1503,7 @@ test("in the browser, look and import read the files a person picks as Node read
     predicate: (worker) => worker.url().endsWith("/tables-worker.js"),
     timeout: 120_000,
   });
-  await page.goto(`${served.url}try/index.html`);
+  await page.goto(`${served.url}${AT.home}`);
   await settled(page);
   await tablesWorker;
   await page.evaluate(() => {
@@ -1552,7 +1591,7 @@ test("in the browser, look and import read the files a person picks as Node read
   for (const iri of loads) assert.ok(carried.includes(iri), iri);
 });
 
-test("in the browser, a check keeps the test feed's planted newer version in the app's own database, and a pod opened after it adopts it: the version is recorded, the Same it newly joins is filed and the one that used the replaced version filed again", async () => {
+test("in the browser, a check keeps the test feed's planted newer version in the app's own database, and a pod opened after it adopts it: the version is recorded, the Same it newly joins is filed and the one that used the replaced version filed again", async (t) => {
   const [feedUrl] = (await servedConfig()).tables.feeds;
   assert.ok(feedUrl);
   const valid = join(
@@ -1610,7 +1649,7 @@ test("in the browser, a check keeps the test feed's planted newer version in the
       route.fulfill({ status: 404 }),
     );
     const page = watched(await context.newPage());
-    await page.goto(`${served.url}try/index.html`);
+    await page.goto(`${served.url}${AT.home}`);
     await settled(page);
     interface Runtime {
       checkTables(): Promise<{ kept: string[]; refused: unknown[] }[]>;
@@ -1706,7 +1745,7 @@ ${shots.join("\n")}`);
     );
 
     await page.goto(
-      `${served.url}try/index.html?table=${series.replace(/^urn:uuid:/, "")}&q=141`,
+      `${served.url}${AT.table(series.replace(/^urn:uuid:/, ""), "141")}`,
     );
     await settled(page);
     const label = of(series, "http://www.w3.org/2000/01/rdf-schema#label");
@@ -1788,9 +1827,7 @@ ${shots.join("\n")}`);
       said.some(({ retired }) => retired),
       "the status series retires no shot",
     );
-    await page.goto(
-      `${served.url}try/index.html?pod=tables-proof#see-immunizations`,
-    );
+    await page.goto(`${served.url}${AT.pod("tables-proof")}#see-immunizations`);
     await settled(page);
     await page.waitForSelector('body[data-tables="ready"]');
     assert.deepEqual(
@@ -1807,6 +1844,7 @@ ${shots.join("\n")}`);
         .sort(),
     );
 
+    if (!ported(t, "#10's entry and code pages", "entry", "table")) return;
     const retired = said.find((each) => each.retired);
     assert.ok(retired);
     const opened = (title: string): Promise<boolean> =>
@@ -1827,7 +1865,7 @@ ${shots.join("\n")}`);
         .click();
       await opened(retired.label);
     });
-    assert.ok(new URL(page.url()).searchParams.has("entry"));
+    assert.ok(AT.entryOf(page.url()) !== null);
     assert.ok(
       (await page.locator("main h1 .tag").allInnerTexts()).includes(
         "Retired code",
@@ -1840,9 +1878,8 @@ ${shots.join("\n")}`);
       await code.click();
       await opened(notation);
     });
-    const at = new URL(page.url()).searchParams;
-    assert.ok(at.has("table"));
-    assert.equal(at.get("code"), notation);
+    assert.ok(AT.tableOf(page.url()) !== null);
+    assert.equal(AT.codeOf(page.url()), notation);
     for (const expected of [retired.label, "Tables Proof"])
       await inPlace(page, async () => {
         await page.goBack();
@@ -2838,11 +2875,40 @@ test("in try/, a pod for Rowan Ellery Marsh signed in at North as Odalys Brandt 
   }
 });
 
+/** The words of `words` that the page's local or session storage holds. */
+async function wordsKept(page: Page, words: readonly string[]) {
+  return page.evaluate((words) => {
+    const kept = [localStorage, sessionStorage]
+      .flatMap((store) => Object.entries(store))
+      .flat()
+      .join(" ");
+    return words.filter((word) => new RegExp(`\\b${word}\\b`).test(kept));
+  }, words);
+}
+
 test("in try/, an encrypted pod shows six words, is made once words 2 and 5 are typed, keeps nothing readable in the browser's storage, and after a reload opens only with the words", async () => {
   const context = await browser.newContext();
+  await context.addInitScript(() => {
+    const offered: { id: string; password: string }[] = [];
+    Object.assign(globalThis, {
+      offered,
+      PasswordCredential: class {
+        init: { id: string; password: string };
+        constructor(init: { id: string; password: string }) {
+          this.init = init;
+        }
+      },
+    });
+    navigator.credentials.store = async (credential) => {
+      offered.push(
+        (credential as unknown as { init: (typeof offered)[0] }).init,
+      );
+      return undefined;
+    };
+  });
   try {
     const page = watched(await context.newPage());
-    await page.goto(`${served.url}try/index.html`);
+    await page.goto(`${served.url}${AT.home}`);
     await settled(page);
     await page.click('a[href="#new-pod"]');
     await page.check("#encrypt-pod");
@@ -2893,6 +2959,11 @@ test("in try/, an encrypted pod shows six words, is made once words 2 and 5 are 
       page.url().includes(words[0]!),
       false,
       "the words are never in the address",
+    );
+    assert.deepEqual(
+      await wordsKept(page, words),
+      [],
+      "the words are never in local or session storage",
     );
 
     assert.equal(
@@ -2955,7 +3026,16 @@ test("in try/, an encrypted pod shows six words, is made once words 2 and 5 are 
     await inPlace(page, () =>
       page.click('button:has-text("Make the encrypted pod")'),
     );
-    assert.match(await page.url(), /pod=grace-hopper/);
+    assert.equal(AT.podOf(page.url()), "grace-hopper");
+    assert.deepEqual(await wordsKept(page, words), []);
+    assert.deepEqual(
+      await page.evaluate(
+        () =>
+          (globalThis as unknown as { offered: unknown[] }).offered as object[],
+      ),
+      [{ id: "grace-hopper", name: "grace-hopper", password: words.join(" ") }],
+      "the browser's password manager is offered the words, once",
+    );
 
     for (const database of [
       "cascade-pod:grace-hopper",
@@ -2972,7 +3052,7 @@ test("in try/, an encrypted pod shows six words, is made once words 2 and 5 are 
       }
     }
 
-    await page.goto(`${served.url}try/index.html?pod=grace-hopper`);
+    await page.goto(`${served.url}${AT.pod("grace-hopper")}`);
     await settled(page);
     await page.fill('input[name="password"]', "one two three four five six");
     await inPlace(page, () => page.click('button:has-text("Open this pod")'));

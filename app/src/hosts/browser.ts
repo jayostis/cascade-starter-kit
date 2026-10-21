@@ -79,6 +79,16 @@ function deletedAll(): boolean {
   }
 }
 
+/** Notes, or with `false` forgets, that Delete all data was the last thing done; nothing when storage cannot be written. */
+function markDeletedAll(deleted: boolean): void {
+  try {
+    if (deleted) globalThis.localStorage.setItem(DELETED_ALL, "1");
+    else globalThis.localStorage.removeItem(DELETED_ALL);
+  } catch {
+    // Without storage, a later visit copies the samples, as a first one does.
+  }
+}
+
 interface Row {
   readonly vendor: string;
   readonly fhirBase: string;
@@ -186,7 +196,26 @@ function named(api: Record<string, (input?: object) => Promise<unknown>>) {
   ) as unknown as PodApi;
 }
 
-const api = named(podApi(browser));
+const inPage = named(podApi(browser));
+
+/** PodApi in the page, with Delete all data noted in this browser's storage and a pod made or a reset forgetting it. */
+const api: PodApi = {
+  ...inPage,
+  async makePod(input) {
+    const made = await inPage.makePod(input);
+    markDeletedAll(false);
+    return made;
+  },
+  async deleteAll(input) {
+    const gone = await inPage.deleteAll(input);
+    markDeletedAll(true);
+    return gone;
+  },
+  resetAll(input) {
+    markDeletedAll(false);
+    return inPage.resetAll(input);
+  },
+};
 
 /**
  * A browser with no pod starts with a copy of every sample, unless Delete all data was the last thing done; a sample
@@ -255,6 +284,7 @@ export const host: Host = {
     ...(dataset.code && { code: dataset.code }),
   },
   people: () => beside<Person[]>("demo-people.json", []),
+  samples,
   firstVisit,
   async engine() {
     warm().catch(() => undefined);

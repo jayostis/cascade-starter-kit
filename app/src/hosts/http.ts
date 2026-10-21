@@ -22,6 +22,13 @@ const api: PodApi = {
   classes: (input) => as<"classes">(remote.classes(input)),
   panel: (input) => as<"panel">(remote.panel(input)),
   makePod: (input) => as<"makePod">(remote.makePod(input)),
+  table: (input) => as<"table">(remote.table(input)),
+  checkTables: (input) => as<"checkTables">(remote.checkTables(input)),
+  waitingWords: (input) => as<"waitingWords">(remote.waitingWords(input)),
+  confirmWords: (input) => as<"confirmWords">(remote.confirmWords(input)),
+  unlock: (input) => as<"unlock">(remote.unlock(input)),
+  deleteAll: (input) => as<"deleteAll">(remote.deleteAll(input)),
+  resetAll: (input) => as<"resetAll">(remote.resetAll(input)),
 };
 
 const { dataset } = document.body;
@@ -32,8 +39,10 @@ export const host: Host = {
     name: dataset.name ?? "",
     version: dataset.version ?? "",
     runtime: dataset.runtime ?? "",
+    ...(dataset.code && { code: dataset.code }),
   },
   people: async () => [],
+  samples: [],
   firstVisit: async () => undefined,
   engine: async () => undefined,
   tables: async () => undefined,
