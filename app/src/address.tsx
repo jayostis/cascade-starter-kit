@@ -2,7 +2,7 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { addresses, movesInPlace } from "../addresses.ts";
-import { busy } from "./doing.ts";
+import { busy, landed } from "./doing.ts";
 
 export const BASE = import.meta.env.BASE_URL;
 const ADDRESS = addresses(BASE);
@@ -45,10 +45,11 @@ export function useGeneration(): number {
 /**
  * Says the page is busy when the address changes under a screen with nothing said yet: at a Back or Forward as it
  * leaves, and at any other move in the commit that draws the new address, before the screen's own effects run, so that
- * the page is not ready for a screen that is still being drawn.
+ * the page is not ready for a screen that is still being drawn. The commit that draws a step's own move tells the step
+ * it has landed, in the same layout phase, so that only screens drawn there say the step is done.
  */
 export function useOpening() {
-  const { pathname, search } = useLocation();
+  const { pathname, search, state } = useLocation();
   const first = useRef(true);
   useEffect(() => {
     const here = location.pathname + location.search;
@@ -62,6 +63,7 @@ export function useOpening() {
     if (first.current) first.current = false;
     else if (document.body.dataset.state === "ready") busy("Opening…");
   }, [pathname, search]);
+  useLayoutEffect(() => landed((state as { go?: number } | null)?.go), [state]);
 }
 
 /**
