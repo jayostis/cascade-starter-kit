@@ -31,7 +31,7 @@ export function worldDateBack(back: string | undefined): string {
     return ADDRESS.home;
   if (/[\\\s]/.test(back)) return ADDRESS.home;
   const url = new URL(back, "http://app.invalid");
-  return url.origin === "http://app.invalid"
+  return url.origin === "http://app.invalid" && !url.pathname.startsWith("//")
     ? `${url.pathname}${url.search}#world-date`
     : ADDRESS.home;
 }
