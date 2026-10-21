@@ -1147,6 +1147,10 @@ test("the world's date's old address goes back to the page of this app it came f
     ["//evil.test/", "/"],
     ["https://evil.test/", "/"],
     ["/\\evil.test/", "/"],
+    ["/..//evil.test/", "/"],
+    ["/.//evil.test/", "/"],
+    ["/%2e%2e//evil.test/", "/"],
+    ["/a/..//evil.test", "/"],
     ["pods/a/", "/"],
   ] as const) {
     const response = await app.request(
