@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseEnv } from "node:util";
 import { after, before, test } from "node:test";
 import { Refusal } from "cascade-runtime";
+import { gone } from "./settled.js";
 
 interface Settings {
   provider: string;
@@ -261,7 +262,7 @@ before(async () => {
 
 after(async () => {
   for (const server of stubs) server.close();
-  await rm(folder, { recursive: true, force: true });
+  await gone(folder);
 });
 
 test("the settings make a model, none make nothing, and no property of a model shows its key", () => {
