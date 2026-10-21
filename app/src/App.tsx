@@ -56,7 +56,7 @@ import {
   firstReady,
   flight,
   isBusy,
-  isStepping,
+  moved,
   ready,
   stayed,
   type Outcome,
@@ -198,7 +198,6 @@ function PodScreen({
   const generation = useGeneration();
   const stepped = byStep(state);
   const [shown, setShown] = useState<Screen>();
-  const saidReady = useRef<string>(undefined);
   const known = pods.includes(pod);
   useEffect(() => {
     let live = true;
@@ -356,9 +355,6 @@ function PodScreen({
       return failed(
         `the connection failed: ${page.connection.failed ?? page.connection.step}`,
       );
-    const drawing = `${at} ${shown.generation}`;
-    if (isStepping() && saidReady.current === drawing) return;
-    saidReady.current = drawing;
     ready();
   }, [shown, at, page, titles, following]);
   if (shown === undefined) return null;
@@ -477,6 +473,7 @@ export function App() {
           try {
             const go = (to: string, text?: string) => {
               going = true;
+              moved();
               const [path = to, hash] = to.split("#");
               if (hash === undefined || location.hash !== `#${hash}`)
                 closeBox();

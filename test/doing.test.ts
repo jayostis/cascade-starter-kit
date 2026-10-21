@@ -24,7 +24,11 @@ const state = () => body.dataset.state;
 function started() {
   let release: (value: boolean) => void = () => undefined;
   const gate = new Promise<boolean>((resolve) => (release = resolve));
-  const run = doing.flight(() => gate, "Working…", () => false);
+  const run = doing.flight(
+    () => gate,
+    "Working…",
+    () => false,
+  );
   return { release, run };
 }
 
