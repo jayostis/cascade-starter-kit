@@ -1167,6 +1167,17 @@ test("File, Delete all data empties the pods column, leaves no pod nor answers i
       await page.getAttribute('#about a:has-text("The code")', "href"),
       "https://github.com/jayostis/cascade-starter-kit",
     );
+    const openMenus = (): Promise<string[]> =>
+      texts(page, "details.menu[open] > summary");
+    await page.click('.menu summary:has-text("File")');
+    await page.click('.menu summary:has-text("Help")');
+    assert.deepEqual(
+      await openMenus(),
+      ["Help"],
+      "opening Help left File open",
+    );
+    await page.keyboard.press("Escape");
+    assert.deepEqual(await openMenus(), [], "Escape left a menu open");
     const before = await texts(page, "nav a");
     /** Opens File, picks `item`, and presses the confirming box's one button; waits for the page it draws in place. */
     const fromFile = async (item: string): Promise<void> => {
