@@ -2,7 +2,6 @@
 // http://127.0.0.1:3000/ (`PORT` to change it), with PodApi over the pods in `pods/` at `/api/`, the chat at `/chat`
 // and the demo hospitals on a loopback port of their own. `npm run dev` (`--dev`) serves the app's sources through Vite
 // instead, in the same process, rebuilt on every save.
-import { existsSync, readdirSync, statSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import process, { argv, env, exit, stderr, stdout } from "node:process";
@@ -24,43 +23,25 @@ import { PODS } from "../pods.mjs";
 import { demoPeople, worldInstant } from "../said.ts";
 import type { Operations } from "./api.ts";
 import { appServer, type Served } from "./app.ts";
+import { builtPages } from "./built.ts";
 import { chatRoutes, type PodApi } from "./chat.ts";
 import type { Own } from "./guard.ts";
 
 const APP = fileURLToPath(new URL("../", import.meta.url));
 const DIST = join(APP, "dist");
-/** What the app's pages are built from, by their paths in the app. */
-const SOURCES = [
-  "index.html",
-  "src",
-  "said.ts",
-  "addresses.ts",
-  "vite.config.ts",
-  "vite",
-];
 const told = new Set<string>();
 
-/** When the newest file at `path` was written, a folder's files included; 0 when there is none. */
-function newest(path: string): number {
-  if (!existsSync(path)) return 0;
-  const stats = statSync(path);
-  if (!stats.isDirectory()) return stats.mtimeMs;
-  return Math.max(
-    0,
-    ...readdirSync(path, { recursive: true, withFileTypes: true })
-      .filter((entry) => entry.isFile())
-      .map((entry) => statSync(join(entry.parentPath, entry.name)).mtimeMs),
+/** The pages built into `dist/` when it has none, or what they are built from or with has changed since. */
+async function pagesBuilt() {
+  await builtPages(
+    APP,
+    async () => {
+      stdout.write("Building the app's pages into dist/…\n");
+      const { build } = await import("vite");
+      await build({ root: APP, logLevel: "warn" });
+    },
+    env,
   );
-}
-
-/** The pages built into `dist/` when it has none, or a file they are built from was written since. */
-async function builtPages() {
-  const built = newest(join(DIST, "index.html"));
-  if (built > 0 && SOURCES.every((path) => newest(join(APP, path)) <= built))
-    return;
-  stdout.write("Building the app's pages into dist/…\n");
-  const { build } = await import("vite");
-  await build({ root: APP, logLevel: "warn" });
 }
 
 /** Says once on the console, for each kind, that the tables could not say what the pages would name. */
@@ -131,7 +112,7 @@ let own: Own = { hosts: new Set(), origins: new Set() };
 let back: Served["back"] = () => undefined;
 
 const dev = argv.includes("--dev");
-if (!dev) await builtPages();
+if (!dev) await pagesBuilt();
 const vite = dev
   ? await (
       await import("vite")
