@@ -23,7 +23,7 @@ import {
 import { useAddress } from "./address.tsx";
 import { AskButton } from "./ask.tsx";
 import { failed } from "./doing.ts";
-import { Tag } from "./parts.tsx";
+import { Pending, Tag } from "./parts.tsx";
 import { Back, NotFound, sourceOf, useLoaded, Wrong } from "./screen.tsx";
 import type { TablesHeld } from "./shell.tsx";
 
@@ -33,6 +33,8 @@ type Panels = Awaited<ReturnType<typeof panelsOf>>;
 interface EntryRead {
   readonly entry: Entry | undefined;
   readonly panels: Panels;
+  /** Whether what the tables say of the entry, its panels among it, is still to come. */
+  readonly coming?: boolean;
 }
 
 export function EntryPage({
@@ -40,11 +42,13 @@ export function EntryPage({
   titles,
   read,
   held,
+  engine,
 }: {
   pod: string;
   titles: ReadonlyMap<string, string>;
   read: EntryRead;
   held: readonly Series[];
+  engine: "waiting" | "ready" | "failed";
 }) {
   const address = useAddress();
   const { entry, panels } = read;
@@ -216,6 +220,9 @@ export function EntryPage({
           </p>
         </div>
       ))}
+      {read.coming === true && engine !== "failed" && (
+        <Pending lines={2} said="Reading what the tables say of it…" />
+      )}
     </>
   );
 }
@@ -238,7 +245,11 @@ export function EntryScreen({
       const { answers } = await api.answers({ pod });
       const own = entryOf(answers, id);
       if (own === undefined || engine !== "ready")
-        return { entry: own, panels: [] };
+        return {
+          entry: own,
+          panels: [],
+          coming: own !== undefined && engine === "waiting",
+        };
       const { about, said, held } = maps(await api.said({ pod })) as {
         about?: Abouts;
         said?: VariantsSaid;
@@ -252,24 +263,30 @@ export function EntryScreen({
           later({ entry: full.entry ?? named, panels: full.panels ?? [] });
         },
         (error: unknown) => {
-          if (
-            !(error instanceof Error && error.name === "Refusal") &&
-            location.pathname + location.search === here
-          )
+          if (location.pathname + location.search !== here) return;
+          if (error instanceof Error && error.name === "Refusal")
+            later({ entry: named, panels: [] });
+          else
             failed(
               `the entry's tables could not be read: ${error instanceof Error ? error.message : String(error)}`,
             );
         },
       );
-      return { entry: named, panels: [] };
+      return { entry: named, panels: [], coming: true };
     },
     ({ entry }) => entry?.name ?? "Not found",
-    engine === "ready",
+    engine,
   );
   if (loaded === undefined) return null;
   if ("wrong" in loaded) return <Wrong said={loaded.wrong} />;
   if ("refused" in loaded) return <NotFound said={loaded.refused} />;
   return (
-    <EntryPage pod={pod} titles={titles} read={loaded.value} held={held.held} />
+    <EntryPage
+      pod={pod}
+      titles={titles}
+      read={loaded.value}
+      held={held.held}
+      engine={engine}
+    />
   );
 }

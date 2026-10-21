@@ -45,6 +45,20 @@ const isPage = (path: string, headers: Headers) =>
     headers.get("sec-fetch-mode") === "navigate" ||
     (headers.get("accept") ?? "").includes("text/html"));
 
+/** `app` serving the built app in `folder`: its files as they are, and its `index.html` for any page a person opens. */
+export function withPages<T extends Hono<{ Bindings: HttpBindings }>>(
+  app: T,
+  folder: string,
+): T {
+  let page: Promise<string> | undefined;
+  app.get("*", serveStatic({ root: folder }), async (c, next) => {
+    if (!isPage(c.req.path, c.req.raw.headers)) return next();
+    page ??= readFile(join(folder, "index.html"), "utf8");
+    return c.html(await page);
+  });
+  return app;
+}
+
 const notWaiting = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Not waiting · Cascade</title></head><body><h1>No sign-in is waiting for this</h1></body></html>`;
 
 export function appServer(served: Served) {
@@ -62,14 +76,7 @@ export function appServer(served: Served) {
     .get("/demo-people.json", (c) => c.json(served.people?.() ?? []));
   const { pages } = served;
   if (typeof pages !== "string") app.get("*", pages);
-  else {
-    let page: Promise<string> | undefined;
-    app.get("*", serveStatic({ root: pages }), async (c, next) => {
-      if (!isPage(c.req.path, c.req.raw.headers)) return next();
-      page ??= readFile(join(pages, "index.html"), "utf8");
-      return c.html(await page);
-    });
-  }
+  else withPages(app, pages);
   app.notFound((c) =>
     c.req.path.startsWith("/api/")
       ? c.json({ refused: "no such operation" }, 404)

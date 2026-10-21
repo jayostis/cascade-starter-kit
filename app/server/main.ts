@@ -1,7 +1,9 @@
-// `npm run next`: the built app at http://127.0.0.1:3001/ (`PORT` to change it), PodApi over the pods in `pods/` at
-// `/api/`, and the demo hospitals on a loopback port of their own. `npm run dev:next` (`--dev`) serves the app's
-// sources through Vite instead, in the same process, rebuilt on every save.
+// `npm start`: the app built into `dist/` (again when a file it is built from is newer), served at
+// http://127.0.0.1:3000/ (`PORT` to change it), with PodApi over the pods in `pods/` at `/api/`, the chat at `/chat`
+// and the demo hospitals on a loopback port of their own. `npm run dev` (`--dev`) serves the app's sources through Vite
+// instead, in the same process, rebuilt on every save.
 import type { AddressInfo } from "node:net";
+import { join } from "node:path";
 import process, { argv, env, exit, stderr, stdout } from "node:process";
 import { fileURLToPath } from "node:url";
 import { getRequestListener } from "@hono/node-server";
@@ -21,11 +23,26 @@ import { PODS } from "../pods.mjs";
 import { demoPeople, worldInstant } from "../said.ts";
 import type { Operations } from "./api.ts";
 import { appServer, type Served } from "./app.ts";
+import { builtPages } from "./built.ts";
 import { chatRoutes, type PodApi } from "./chat.ts";
 import type { Own } from "./guard.ts";
 
 const APP = fileURLToPath(new URL("../", import.meta.url));
+const DIST = join(APP, "dist");
 const told = new Set<string>();
+
+/** The pages built into `dist/` when it has none, or what they are built from or with has changed since. */
+async function pagesBuilt() {
+  await builtPages(
+    APP,
+    async () => {
+      stdout.write("Building the app's pages into dist/…\n");
+      const { build } = await import("vite");
+      await build({ root: APP, logLevel: "warn" });
+    },
+    env,
+  );
+}
 
 /** Says once on the console, for each kind, that the tables could not say what the pages would name. */
 function unsaid(kind: string, error: Error) {
@@ -95,6 +112,7 @@ let own: Own = { hosts: new Set(), origins: new Set() };
 let back: Served["back"] = () => undefined;
 
 const dev = argv.includes("--dev");
+if (!dev) await pagesBuilt();
 const vite = dev
   ? await (
       await import("vite")
@@ -113,7 +131,7 @@ const app = appServer({
   people: () => people,
   pages:
     vite === undefined
-      ? fileURLToPath(new URL("../dist/", import.meta.url))
+      ? DIST
       : async (c) => {
           await new Promise<void>((resolve) => {
             c.env.outgoing.once("close", resolve);
@@ -127,7 +145,7 @@ const app = appServer({
 
 const listener = await serveDemo(demo, { asOf: startedAsOf });
 const server = createServer(getRequestListener(app.fetch));
-server.listen(Number(env.PORT || 3001), "127.0.0.1", () => {
+server.listen(Number(env.PORT || 3000), "127.0.0.1", () => {
   const { port } = server.address() as AddressInfo;
   const origin = `http://127.0.0.1:${port}`;
   own = {

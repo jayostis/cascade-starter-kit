@@ -58,7 +58,7 @@ export const podPath = ADDRESS.pod;
  */
 export const trendPath = ADDRESS.trend;
 
-/** The origin `server.mjs` listens on, for a script that is not the server: `PORT`, else 3000. */
+/** The origin `npm start` listens on, for a script that is not the server: `PORT`, else 3000. */
 export function appOrigin() {
   return `http://127.0.0.1:${Number(env.PORT || 3000)}`;
 }

@@ -8,22 +8,17 @@ const SAID = {
   help: ["npm run help", "this list"],
   start: [
     "npm start",
-    "serve the app, then open the address it prints; stop it with Ctrl+C",
+    "build the app into dist/ when its sources are newer, serve it over the pods in pods/, then open the address it prints; stop it with Ctrl+C",
   ],
-  dev: ["npm run dev", "serve the app, restarting it whenever a file is saved"],
-  build: ["npm run build", "build the app's React pages into dist/"],
-  "build:browser": [
-    "npm run build:browser",
-    "build the same pages to run in a browser alone, with the pods kept in it",
+  dev: [
+    "npm run dev",
+    "serve the app from its sources, the pages redrawn whenever a file is saved",
   ],
-  next: [
-    "npm run next",
-    "build the React pages and serve them at the address it prints (port 3001)",
+  browser: [
+    "npm run browser",
+    "build the app to run in a browser alone into dist-browser/, the pods kept in the browser and copied from the kits' samples, and serve it",
   ],
-  "dev:next": [
-    "npm run dev:next",
-    "serve the React pages from their sources, rebuilt whenever a file is saved",
-  ],
+  build: ["npm run build", "build the app's pages into dist/"],
   typecheck: ["npm run typecheck", "check the app's TypeScript"],
   reset: [
     "npm run reset",

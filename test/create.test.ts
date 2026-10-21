@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
 import {
   mkdir,
   mkdtemp,
@@ -76,7 +77,7 @@ function recording(
   };
 }
 
-test("given a folder, it makes the project and names it, with the template's packages, its pinned runtime among them, at the versions the repository tests", async () => {
+test("given a folder, it makes the project and names it, with the template's packages, its pinned runtime among them, at the versions the repository tests, and says how to run it on Node and in a browser alone", async () => {
   const folder = join(parent, "my-app");
   const terminal = recording();
   assert.equal(await create([folder], terminal), 0);
@@ -97,7 +98,7 @@ test("given a folder, it makes the project and names it, with the template's pac
   const ignored = (await readFile(join(folder, ".gitignore"), "utf8")).split(
     /\r?\n/,
   );
-  for (const entry of ["pods/", ".env", "dist/"])
+  for (const entry of ["pods/", ".env", "dist/", "dist-browser/"])
     assert.ok(ignored.includes(entry), `.gitignore does not list ${entry}`);
   assert.deepEqual(terminal.done, [
     `install ${folder}`,
@@ -110,6 +111,7 @@ test("given a folder, it makes the project and names it, with the template's pac
   for (const line of [
     "with the pods alex-rivera, priya-natarajan, martin-okafor and tamsin-vale.",
     "npm start",
+    "npm run browser",
     "npm run help",
     agentPrompt("my-app"),
   ])
@@ -253,6 +255,34 @@ test("it refuses a folder it cannot use and writes nothing", async () => {
     assert.match(terminal.text(), reason, what);
     assert.deepEqual(terminal.done, [], what);
     assert.deepEqual(await readdir(parent, { recursive: true }), before, what);
+  }
+});
+
+test("on a Node.js older than the first to run .ts files by default it makes nothing and says which to get; from that release on each line it makes the app", async () => {
+  for (const [version, runs] of [
+    ["v22.17.1", false],
+    ["v23.5.0", false],
+    ["v22.18.0", true],
+    ["v23.6.0", true],
+  ] as const) {
+    const folder = join(parent, `node-${version}`);
+    const terminal = recording();
+    assert.equal(
+      await create([folder], { ...terminal, node: version }),
+      runs ? 0 : 2,
+      version,
+    );
+    assert.equal(
+      terminal
+        .text()
+        .includes(
+          `This app needs Node.js 22.18 or later; you have ${version}. Get it from https://nodejs.org`,
+        ),
+      !runs,
+      version,
+    );
+    assert.equal(existsSync(folder), runs, version);
+    assert.equal(terminal.done.length > 0, runs, version);
   }
 });
 

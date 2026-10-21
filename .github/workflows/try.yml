@@ -54,11 +54,6 @@ jobs:
           key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-shell
       - name: try/ and the starter in Chromium, served from build/pages
         run: npm run test:browser
-      - name: The starter on its React app (server/main.ts) in Chromium, the chat window's tests included
-        if: ${{ !cancelled() }}
-        run: node --test dist/test-browser/starter.test.js
-        env:
-          STARTER: next
       - uses: actions/upload-artifact@v7
         if: ${{ !cancelled() }}
         with:
