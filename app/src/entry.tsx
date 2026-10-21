@@ -23,7 +23,7 @@ import {
 import { useAddress } from "./address.tsx";
 import { AskButton } from "./ask.tsx";
 import { failed } from "./doing.ts";
-import { Tag } from "./parts.tsx";
+import { Pending, Tag } from "./parts.tsx";
 import { Back, NotFound, sourceOf, useLoaded, Wrong } from "./screen.tsx";
 import type { TablesHeld } from "./shell.tsx";
 
@@ -33,6 +33,8 @@ type Panels = Awaited<ReturnType<typeof panelsOf>>;
 interface EntryRead {
   readonly entry: Entry | undefined;
   readonly panels: Panels;
+  /** Whether what the tables say of the entry, its panels among it, is still to come. */
+  readonly coming?: boolean;
 }
 
 export function EntryPage({
@@ -216,6 +218,9 @@ export function EntryPage({
           </p>
         </div>
       ))}
+      {read.coming === true && (
+        <Pending lines={2} said="Reading what the tables say of it…" />
+      )}
     </>
   );
 }
@@ -238,7 +243,11 @@ export function EntryScreen({
       const { answers } = await api.answers({ pod });
       const own = entryOf(answers, id);
       if (own === undefined || engine !== "ready")
-        return { entry: own, panels: [] };
+        return {
+          entry: own,
+          panels: [],
+          coming: own !== undefined && engine === "waiting",
+        };
       const { about, said, held } = maps(await api.said({ pod })) as {
         about?: Abouts;
         said?: VariantsSaid;
@@ -259,7 +268,7 @@ export function EntryScreen({
             failed();
         },
       );
-      return { entry: named, panels: [] };
+      return { entry: named, panels: [], coming: true };
     },
     ({ entry }) => entry?.name ?? "Not found",
     engine === "ready",

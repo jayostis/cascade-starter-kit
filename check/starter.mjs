@@ -21,7 +21,13 @@ import {
   releaseAddress,
   startLine,
 } from "../dist/create/src/create.js";
-import { drawn, readable, tiles, watched } from "../dist/test-browser/shown.js";
+import {
+  drawn,
+  readable,
+  settled,
+  tiles,
+  watched,
+} from "../dist/test-browser/shown.js";
 
 /** What the tables the app holds now name each code, set once the app is installed. */
 /** @type {(codes: readonly string[]) => Promise<Map<string, any>>} */
@@ -755,7 +761,7 @@ await behaviour(
           apiCalls.push(sent.url());
       });
       await page.goto(served.address);
-      await drawn(page);
+      await settled(page);
       assert.equal(
         new URL(page.url()).pathname,
         "/pods/alex-rivera/",
