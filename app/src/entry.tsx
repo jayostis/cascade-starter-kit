@@ -42,11 +42,13 @@ export function EntryPage({
   titles,
   read,
   held,
+  engine,
 }: {
   pod: string;
   titles: ReadonlyMap<string, string>;
   read: EntryRead;
   held: readonly Series[];
+  engine: "waiting" | "ready" | "failed";
 }) {
   const address = useAddress();
   const { entry, panels } = read;
@@ -218,7 +220,7 @@ export function EntryPage({
           </p>
         </div>
       ))}
-      {read.coming === true && (
+      {read.coming === true && engine !== "failed" && (
         <Pending lines={2} said="Reading what the tables say of it…" />
       )}
     </>
@@ -261,22 +263,27 @@ export function EntryScreen({
           later({ entry: full.entry ?? named, panels: full.panels ?? [] });
         },
         (error: unknown) => {
-          if (
-            !(error instanceof Error && error.name === "Refusal") &&
-            location.pathname + location.search === here
-          )
-            failed();
+          if (location.pathname + location.search !== here) return;
+          if (error instanceof Error && error.name === "Refusal")
+            later({ entry: named, panels: [] });
+          else failed();
         },
       );
       return { entry: named, panels: [], coming: true };
     },
     ({ entry }) => entry?.name ?? "Not found",
-    engine === "ready",
+    engine,
   );
   if (loaded === undefined) return null;
   if ("wrong" in loaded) return <Wrong said={loaded.wrong} />;
   if ("refused" in loaded) return <NotFound said={loaded.refused} />;
   return (
-    <EntryPage pod={pod} titles={titles} read={loaded.value} held={held.held} />
+    <EntryPage
+      pod={pod}
+      titles={titles}
+      read={loaded.value}
+      held={held.held}
+      engine={engine}
+    />
   );
 }
