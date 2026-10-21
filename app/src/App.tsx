@@ -58,6 +58,7 @@ import {
   isBusy,
   isStepping,
   ready,
+  stayed,
   type Outcome,
 } from "./doing.ts";
 import { EntryScreen } from "./entry.tsx";
@@ -198,10 +199,11 @@ function PodScreen({
   const stepped = byStep(state);
   const [shown, setShown] = useState<Screen>();
   const saidReady = useRef<string>(undefined);
+  const known = pods.includes(pod);
   useEffect(() => {
     let live = true;
     (async () => {
-      if (!pods.includes(pod)) return { at, page: "unknown" as const };
+      if (!known) return { at, page: "unknown" as const };
       const { locked } = await api.pod({ pod });
       if (locked !== undefined)
         return { at, page: "locked" as const, outcome: locked };
@@ -238,7 +240,7 @@ function PodScreen({
     return () => {
       live = false;
     };
-  }, [api, at, pod, pods, generation]);
+  }, [api, at, pod, known, generation]);
   const page = shown?.page;
   const unnamed =
     typeof page === "object" && "pod" in page && page.about === undefined
@@ -489,6 +491,7 @@ export function App() {
               Object.assign(go, {
                 stay: () => {
                   going = true;
+                  stayed();
                 },
               }),
             );
