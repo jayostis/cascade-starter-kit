@@ -10,7 +10,11 @@ import type { Input as In, Operation } from "../../server/inputs.ts";
 
 /** What a route answers with 200: its operation's output, as JSON. */
 type Ok<R> =
-  R extends ClientResponse<infer T, infer S> ? (S extends 200 ? T : never) : never;
+  R extends ClientResponse<infer T, infer S>
+    ? S extends 200
+      ? T
+      : never
+    : never;
 
 /** PodApi's own errors, by the names the runtime's carry: the screens tell them apart by `name`. */
 class Refusal extends Error {

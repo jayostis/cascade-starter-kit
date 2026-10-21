@@ -124,25 +124,23 @@ async function findings(
   };
 }
 
-const ofPod = POD_TOOLS.map(
-  ({ name, description, inputSchema }): Tool => ({
-    name,
-    description,
-    inputSchema,
-    tier: "free",
-    ofPod: true,
-    ...(name === "find_changes"
-      ? {
-          findings,
-          run: async (api, input, door) =>
-            (await findings(api, input, door)).value,
-        }
-      : {
-          run: async (api, { pod, ...input }) =>
-            (await api.tool({ pod: pod as string, tool: name, input })).value,
-        }),
-  }),
-);
+const ofPod = POD_TOOLS.map(({ name, description, inputSchema }): Tool => ({
+  name,
+  description,
+  inputSchema,
+  tier: "free",
+  ofPod: true,
+  ...(name === "find_changes"
+    ? {
+        findings,
+        run: async (api, input, door) =>
+          (await findings(api, input, door)).value,
+      }
+    : {
+        run: async (api, { pod, ...input }) =>
+          (await api.tool({ pod: pod as string, tool: name, input })).value,
+      }),
+}));
 
 /** A tool of `PAGE_TOOLS`, which refuses by an error's name, refusing with the runtime's `Refusal` as every door here tells one. */
 const refusing = (tool: PageTool): Tool => ({

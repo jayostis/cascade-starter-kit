@@ -246,7 +246,10 @@ export interface PodHost {
       options?: { title?: string; secret?: string },
     ): Promise<Pod>;
     /** Removes the pods and their answers, with `all` every answer kept; never the reference tables. */
-    remove(names: readonly string[], options?: { all?: boolean }): Promise<void>;
+    remove(
+      names: readonly string[],
+      options?: { all?: boolean },
+    ): Promise<void>;
   };
   /** The sample pods, by name, that a pod of that name is copied from; none on a host that has none. */
   readonly samples?: readonly string[];
@@ -386,8 +389,7 @@ export function podApi(host: PodHost) {
 
   /** The pod named, which must be one there is: its name. */
   async function known(name: string | undefined): Promise<string> {
-    if (name !== undefined && (seen.has(name) || opened.has(name)))
-      return name;
+    if (name !== undefined && (seen.has(name) || opened.has(name))) return name;
     const names = await host.pods.names();
     seen.clear();
     for (const each of names) seen.add(each);

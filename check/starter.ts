@@ -32,9 +32,18 @@ import {
 } from "../dist/test-browser/shown.js";
 
 /** What the tables the app holds now name each code, set once the app is installed. */
-let heldNames: (codes: readonly string[]) => Promise<Map<string, any>> =
-  async () => new Map();
-let heldSeries: () => Promise<any[]> = async () => [];
+let heldNames: (
+  codes: readonly string[],
+) => Promise<
+  Map<string, { name?: { label: string; origin: string } } | undefined>
+> = async () => new Map();
+/** The series of the tables the app holds, each with its versions. */
+let heldSeries: () => Promise<
+  {
+    label: string;
+    versions: { iri: string; label?: string }[];
+  }[]
+> = async () => [];
 
 /** A Turtle file's triples, each as its subject, predicate and object. */
 const turtle = (bytes, base) =>
@@ -236,21 +245,20 @@ async function started(settings = {}, script = "start") {
     app: string;
     demo?: string;
   }>((done, failed) => {
-      child.stdout.on("data", (chunk) => {
-        out += chunk;
-        const app = /^(http:\/\/127\.0\.0\.1:\d+\/)$/m.exec(out);
-        const demo =
-          /^The demo hospitals are listening at (http:\/\/127\.0\.0\.1:\d+\/)$/m.exec(
-            out,
-          );
-        if (app !== null && (demo !== null || script !== "start"))
-          done({ app: app[1], demo: demo?.[1] });
-      });
-      child.on("close", (code) =>
-        failed(new Error(`npm ${args.join(" ")} exited ${code}: ${out}`)),
-      );
-    },
-  );
+    child.stdout.on("data", (chunk) => {
+      out += chunk;
+      const app = /^(http:\/\/127\.0\.0\.1:\d+\/)$/m.exec(out);
+      const demo =
+        /^The demo hospitals are listening at (http:\/\/127\.0\.0\.1:\d+\/)$/m.exec(
+          out,
+        );
+      if (app !== null && (demo !== null || script !== "start"))
+        done({ app: app[1], demo: demo?.[1] });
+    });
+    child.on("close", (code) =>
+      failed(new Error(`npm ${args.join(" ")} exited ${code}: ${out}`)),
+    );
+  });
   stdout.write(`serving at ${address}\n`);
   const closed = new Promise((done) => child.on("close", done));
   return {
@@ -600,20 +608,20 @@ console.log(JSON.stringify({ row, patient, patients: Object.keys(north.patients)
   return JSON.parse(out.trim().split(/\r?\n/).at(-1));
 }
 
-/**
- * Checks the behaviour `name`. With `--only`, a behaviour whose name does not hold its text is skipped, unless the
- * behaviours after it need what it `sets up`.
- */
-async function behaviour(
-  name: string,
-  check: () => Promise<void>,
-  { setsUp = false } = {},
-) {
+/** Checks the behaviour `name`; with `--only`, only when its name holds `--only`'s text. */
+async function behaviour(name: string, check: () => Promise<void>) {
   stdout.write(`\n# ${name}\n`);
-  if (only !== undefined && !setsUp && !name.includes(only)) {
+  if (only !== undefined && !name.includes(only)) {
     stdout.write(`skip - not ${only}\n`);
     return;
   }
+  await check();
+  stdout.write(`ok - ${name}\n`);
+}
+
+/** Checks the behaviour `name`, which sets up what the behaviours after it need: with `--only` too. */
+async function setUp(name: string, check: () => Promise<void>) {
+  stdout.write(`\n# ${name}\n`);
   await check();
   stdout.write(`ok - ${name}\n`);
 }
@@ -622,7 +630,7 @@ let story;
 let alex;
 let fresh;
 
-await behaviour("the command makes the app", async () => {
+await setUp("the command makes the app", async () => {
   const { code, out } =
     release === undefined
       ? await run(
@@ -700,7 +708,7 @@ await behaviour("the command makes the app", async () => {
       .map(([, , o]) => o.value)
       .sort(),
   };
-}, { setsUp: true });
+});
 
 await behaviour(
   "the app runs on the pinned runtime, or the one given, and installs with no git: each package is the runtime or bundled in it, the demo hospital beside the app, or from npm's registry",
@@ -775,7 +783,7 @@ await behaviour("help lists every command", async () => {
 
 const server = await (async () => {
   let server: Awaited<ReturnType<typeof started>>;
-  await behaviour("a loaded pod is shown", async () => {
+  await setUp("a loaded pod is shown", async () => {
     server = await started();
     const page = await tab();
     await page.goto(new URL("/", server.address).href);
@@ -923,7 +931,7 @@ const server = await (async () => {
     );
     assert.ok((await readable(missing)).includes("no longer in this pod"));
     await page.close();
-  }, { setsUp: true });
+  });
   return server;
 })();
 
