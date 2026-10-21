@@ -283,6 +283,16 @@ export const host: Host = {
     runtime: dataset.runtime ?? "",
     ...(dataset.code && { code: dataset.code }),
   },
+  openSignIn() {
+    popup = window.open("", "cascade-sign-in", "popup,width=520,height=720");
+  },
+  failures: {
+    "sign-in-unavailable": {
+      said: (name) =>
+        `The sign-in window for ${name} could not be opened. Allow this page to open pop-ups, then sign in again.`,
+      again: true,
+    },
+  },
   people: () => beside<Person[]>("demo-people.json", []),
   samples,
   firstVisit,

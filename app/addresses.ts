@@ -38,6 +38,8 @@ export function addresses(base = "/") {
       `${pod(name)}panel${query({ panel })}`,
     hospitals: (name: string, q?: string) =>
       `${pod(name)}hospitals${query({ q })}`,
+    connection: (name: string, connection: number) =>
+      `${pod(name)}${query({ connection })}#connection`,
     table: (id?: string, asked: TableQuery = {}) =>
       `${base}tables/${id === undefined ? "" : `${encodeURIComponent(id)}/`}${query({ ...asked })}`,
     words: (name: string) =>

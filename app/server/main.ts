@@ -18,7 +18,7 @@ import { modelFrom } from "../models.ts";
 import { nodeHospitals, nodeHost } from "../node-host.mjs";
 import { podApi } from "../pod-api.mjs";
 import { PODS } from "../pods.mjs";
-import { worldInstant } from "../said.ts";
+import { demoPeople, worldInstant } from "../said.ts";
 import type { Operations } from "./api.ts";
 import { appServer, type Served } from "./app.ts";
 import { chatRoutes, type PodApi } from "./chat.ts";
@@ -88,6 +88,7 @@ function modelSet() {
 const host = nodeHost({ folder: PODS, unsaid });
 const api = podApi(host);
 const demo = await hospitalsHeld();
+const people = demoPeople(demo);
 const startedAsOf = startingDate();
 const model = modelSet();
 let own: Own = { hosts: new Set(), origins: new Set() };
@@ -109,6 +110,7 @@ const app = appServer({
   own: () => own,
   chat: chatRoutes({ api: api as unknown as PodApi, model }),
   back: (url) => back(url),
+  people: () => people,
   pages:
     vite === undefined
       ? fileURLToPath(new URL("../dist/", import.meta.url))

@@ -1,7 +1,14 @@
 // What the screens read and write through: PodApi, over HTTP on the Node target and in the page in the browser one,
 // and what only the host knows. A screen never knows which host it runs on.
 import { createContext, useContext } from "react";
-import type { Answers, Checked, Finding, Person, Series } from "../said.ts";
+import type {
+  Answers,
+  Checked,
+  Failure,
+  Finding,
+  Person,
+  Series,
+} from "../said.ts";
 import type { TableRead } from "./tables.tsx";
 
 /** A pod there is, by name, with the name it was made under. */
@@ -21,7 +28,7 @@ export interface Answered {
 export type SaidSent = Record<string, unknown>;
 
 /** The operations the screens call so far; the rest come with the screens that call them. */
-export interface PodApi extends WritesApi {
+export interface PodApi extends WritesApi, HospitalsApi {
   pods(input?: object): Promise<{ pods: PodListed[] }>;
   held(input?: object): Promise<{ held: Series[]; failed?: boolean }>;
   pod(input: { pod: string }): Promise<{
@@ -44,6 +51,61 @@ export interface PodApi extends WritesApi {
     person: string;
     encrypt?: boolean;
   }): Promise<{ pod: string; waiting?: boolean }>;
+}
+
+/** A hospital of the directory, as PodApi's `hospitals` lists it. */
+export interface Hospital {
+  readonly name: string;
+  readonly vendor: string;
+  readonly fhirBase: string;
+  readonly places?: readonly string[];
+}
+
+/** Where a connection to a hospital has got to, as PodApi's `connection` says it. */
+export interface ConnectionNow {
+  readonly n: number;
+  readonly row: Hospital;
+  /** `signing in`, `pulling`, `pulled`, `bringing in` or `failed`. */
+  readonly step: string;
+  readonly settled: boolean;
+  readonly requests: number;
+  /** The world's date the pull was made under. */
+  readonly asOf?: string;
+  readonly bringing?: { part: string; done?: number; of?: number };
+  /** The developer's sentence of why it stopped, and its `ConnectionFailure` kind when it has one. */
+  readonly failed?: string;
+  readonly failure?: string;
+  readonly retry?: boolean;
+  readonly sources?: readonly {
+    records: Readonly<Record<string, number>>;
+    claimed: boolean;
+  }[];
+  readonly pulled?: {
+    readonly denied: readonly { type: string; category?: string }[];
+    readonly missing: readonly string[];
+  };
+  readonly patient?: string;
+  readonly patientNames?: readonly { name?: string; family?: string }[];
+  readonly broughtIn?: boolean;
+}
+
+/** The operations of the hospitals, a connection's box and the world's date. */
+export interface HospitalsApi {
+  hospitals(input: { q?: string }): Promise<{
+    rows: Hospital[];
+    asOf?: string;
+  }>;
+  connect(input: {
+    pod: string;
+    fhirBase: string;
+  }): Promise<{ connection: number; authorize?: string }>;
+  connection(input: {
+    pod: string;
+    connection: number;
+    wait?: true | "change";
+  }): Promise<ConnectionNow>;
+  bring(input: { pod: string; connection: number }): Promise<{ step: string }>;
+  setWorldDate(input: { date: string }): Promise<{ asOf?: string }>;
 }
 
 /** The operations of the tables screens, the new-pod box, the six words, the unlock screen and the File menu. */
@@ -103,6 +165,13 @@ export interface Host {
    * them away. A host with no model context offers none.
    */
   offer?(pod: string, open: (address: string) => Promise<void>): () => void;
+  /**
+   * Opens the window a sign-in at a hospital goes on, in the click that asks for it, where the host signs in in one;
+   * a host without it signs in on the hospital's own page in place of the app, which `connect`'s `authorize` names.
+   */
+  openSignIn?(): void;
+  /** What this host says of a failed sign-in where its cause differs from the app's: a sentence by failure kind. */
+  readonly failures?: Readonly<Record<string, Failure>>;
 }
 
 const HostContext = createContext<Host | undefined>(undefined);
