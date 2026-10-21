@@ -15,12 +15,67 @@ import {
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { after, before, test } from "node:test";
+import { dirname, join } from "node:path";
+import { after, before, test as nodeTest, type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
 import { type Browser, chromium } from "playwright";
 
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
+
+/**
+ * The app the suite runs: `npm start`'s, or with `STARTER=next` `npm run next`'s, the React pages built and served by
+ * `server/main.ts`. The build runs to its end before the server starts, so that stopping the server stops the app.
+ */
+const NEXT = process.env.STARTER === "next";
+/** The chat's tests, which run on `npm start`'s strip until the new app's chat window replaces it. */
+const CHAT_TESTS = [
+  "asking to open another pod moves the app there, and the question and the chat stay in the strip",
+  "Stop ends the call to the model, not just the spinner",
+  "with no model set the strip says to run npm run model and has no form; with one, no page and no event holds its key or address",
+  "a finding the model's tool found is drawn as a card with the app's sentence, its numbers and row links, and Open the trend goes to the trend",
+  "the question box stays in view with the page at its top, in a short window and a phone-sized one",
+  "on a phone the About line is clamped to one line, the page scrolls its end above the open strip, and a long answer opens at its question",
+  "an open chat leaves the page's own content in view, and the strip folds to its bar and stays folded in the tab",
+  "an encrypted pod's chat is not saved in the strip's recent chats",
+];
+function test(name: string, run: (t: TestContext) => Promise<void>): void {
+  nodeTest(
+    name,
+    {
+      skip:
+        NEXT && CHAT_TESTS.includes(name)
+          ? "the new app's chat window is not here yet"
+          : false,
+    },
+    run,
+  );
+}
+/** npm's own script, run by this Node, as a person's `npm` runs it. */
+const NPM = [
+  join(dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js"),
+  join(
+    dirname(process.execPath),
+    "..",
+    "lib",
+    "node_modules",
+    "npm",
+    "bin",
+    "npm-cli.js",
+  ),
+].find((path) => existsSync(path));
+
+/** Builds the React pages of the copy in `folder`, as `npm run next` does before it serves them. */
+async function built(folder: string): Promise<void> {
+  assert.ok(NPM, `no npm beside ${process.execPath}`);
+  const child = spawn(process.execPath, [NPM, "run", "build"], {
+    cwd: folder,
+    stdio: ["ignore", "ignore", "pipe"],
+  });
+  let said = "";
+  child.stderr!.on("data", (chunk: Buffer) => (said += chunk));
+  const code = await new Promise((done) => child.on("exit", done));
+  assert.equal(code, 0, `the build failed: ${said}`);
+}
 const KEY = "sk-test-key-that-must-not-leave";
 const ASKS = "open Ines Calloway's pod";
 
@@ -102,13 +157,14 @@ async function startStarter(
   if (again === undefined) {
     await cp(join(ROOT, "app"), folder, {
       recursive: true,
-      filter: (from) => !/[\\/](node_modules|pods|\.env)$/.test(from),
+      filter: (from) => !/[\\/](node_modules|pods|dist|\.env)$/.test(from),
     });
     await symlink(
       join(ROOT, "node_modules"),
       join(folder, "node_modules"),
       "junction",
     );
+    if (NEXT) await built(folder);
   }
   const settings: Record<string, string | undefined> = {
     ...process.env,
@@ -119,11 +175,15 @@ async function startStarter(
     CASCADE_MODEL_KEY: undefined,
     ...env,
   };
-  const child: ChildProcess = spawn("node", ["server.mjs"], {
-    cwd: folder,
-    env: settings,
-    stdio: ["ignore", "pipe", "pipe"],
-  });
+  const child: ChildProcess = spawn(
+    "node",
+    [NEXT ? join("server", "main.ts") : "server.mjs"],
+    {
+      cwd: folder,
+      env: settings,
+      stdio: ["ignore", "pipe", "pipe"],
+    },
+  );
   let said = "";
   child.stderr!.on("data", (chunk: Buffer) => (said += chunk));
   const origin = await new Promise<string>((found, failed) => {
@@ -535,13 +595,44 @@ async function filesUnder(folder: string): Promise<string[]> {
   return found;
 }
 
-test("an encrypted pod: six words checked, nothing plaintext on disk, no chat saved, and after a restart only the words open it", async () => {
-  let sealed = await startStarter({
-    CASCADE_MODEL_PROVIDER: "other",
-    CASCADE_MODEL_URL: stub.url,
-    CASCADE_MODEL_NAME: "stub-1",
-    CASCADE_MODEL_KEY: KEY,
+test("an encrypted pod's chat is not saved in the strip's recent chats", async () => {
+  const pod = "hedy-lamarr";
+  const made = await post(modelled.origin, "/api/makePod", {
+    person: "Hedy Lamarr",
+    encrypt: true,
   });
+  assert.equal(made.status, 200);
+  const { words } = (await (
+    await post(modelled.origin, "/api/waitingWords", { pod })
+  ).json()) as { words: string };
+  const [, word2 = "", , , word5 = ""] = words.split(" ");
+  const confirmed = await post(modelled.origin, "/api/confirmWords", {
+    pod,
+    word2,
+    word5,
+    password: words,
+    username: pod,
+  });
+  assert.equal(confirmed.status, 200);
+  const page = await browser.newPage();
+  await page.goto(`${modelled.origin}/pods/${pod}/`);
+
+  await page.getByLabel("Ask a question").fill("tell me a long story");
+  await page.getByRole("button", { name: "Send" }).click();
+  await page.locator(".chat-log .model", { hasText: "Once upon" }).waitFor();
+  await page.getByRole("button", { name: "Stop" }).click();
+  const kept = await page.evaluate(() =>
+    JSON.parse(localStorage.getItem("cascade.chats") ?? "[]"),
+  );
+  assert.deepEqual(
+    kept.filter((chat: { pod: string }) => chat.pod === pod),
+    [],
+  );
+  await page.close();
+});
+
+test("an encrypted pod: six words checked, nothing plaintext on disk, and after a restart only the words open it", async () => {
+  let sealed = await startStarter({});
   const folder = sealed.folder;
   try {
     const page = await browser.newPage();
@@ -657,18 +748,6 @@ test("an encrypted pod: six words checked, nothing plaintext on disk, no chat sa
     await page.getByLabel("Word 5").fill(words[4]!);
     await page.getByRole("button", { name: "Make the encrypted pod" }).click();
     await page.waitForURL(`${sealed.origin}/pods/grace-hopper/`);
-
-    await page.getByLabel("Ask a question").fill("tell me a long story");
-    await page.getByRole("button", { name: "Send" }).click();
-    await page.locator(".chat-log .model", { hasText: "Once upon" }).waitFor();
-    await page.getByRole("button", { name: "Stop" }).click();
-    const kept = await page.evaluate(() =>
-      JSON.parse(localStorage.getItem("cascade.chats") ?? "[]"),
-    );
-    assert.deepEqual(
-      kept.filter((chat: { pod: string }) => chat.pod === "grace-hopper"),
-      [],
-    );
     await page.close();
 
     const racing = await browser.newPage();

@@ -1131,3 +1131,32 @@ test("the server answers its page to an address a person opens, even with a dot 
   assert.equal((await get("/nope.json"))[0], 404);
   assert.equal((await get("/pods/a/entries/x.1"))[0], 404);
 });
+
+test("the world's date's old address goes back to the page of this app it came from, with the date's form open, and to no other place", async () => {
+  const app = appServer({
+    api: apis.get("in-process")!,
+    own: () => ({ hosts: new Set(["localhost"]), origins: new Set() }),
+    chat: new Hono(),
+    back: () => undefined,
+    pages: tmpdir(),
+  });
+  for (const [back, to] of [
+    ["/pods/a/", "/pods/a/#world-date"],
+    ["/pods/a/hospitals?q=north", "/pods/a/hospitals?q=north#world-date"],
+    [undefined, "/"],
+    ["//evil.test/", "/"],
+    ["https://evil.test/", "/"],
+    ["/\\evil.test/", "/"],
+    ["pods/a/", "/"],
+  ] as const) {
+    const response = await app.request(
+      `http://localhost/world-date${back === undefined ? "" : `?back=${encodeURIComponent(back)}`}`,
+      { redirect: "manual" },
+    );
+    assert.ok(
+      response.status >= 300 && response.status < 400,
+      `${back}: ${response.status}`,
+    );
+    assert.equal(response.headers.get("location"), to, back);
+  }
+});
