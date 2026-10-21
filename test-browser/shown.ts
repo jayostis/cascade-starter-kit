@@ -17,9 +17,15 @@ export function watched(page: Page): Page {
   return page;
 }
 
+/** The page's last changes of state, as `doing.ts` keeps them, with when they were read, for a failure's message. */
+async function traceOf(page: Page): Promise<string> {
+  const now = await page.evaluate(() => Math.round(performance.now()));
+  return `its last changes of state, read at ${now}:\n${(await page.getAttribute("body", "data-trace")) ?? "none"}`;
+}
+
 /**
  * Waits for try/ to finish its step, `timeout` ms at most; a page that reports an error, or never finishes, fails with
- * what it said.
+ * what it said and how it came to its state.
  */
 export async function settled(page: Page, timeout = 120_000): Promise<void> {
   try {
@@ -29,14 +35,14 @@ export async function settled(page: Page, timeout = 120_000): Promise<void> {
     );
   } catch (error) {
     throw new Error(
-      `try/ never finished: ${(pageErrors.get(page) ?? []).join("; ") || String(error)}`,
+      `try/ never finished: ${(pageErrors.get(page) ?? []).join("; ") || String(error)}\n${await traceOf(page).catch(() => "")}`,
       { cause: error },
     );
   }
   const state = await page.getAttribute("body", "data-state");
   if (state !== "ready")
     throw new Error(
-      `try/ is ${state ?? "in no state"} and says: ${(await page.textContent("main")) ?? ""} (because ${(await page.getAttribute("body", "data-error")) ?? "it gave no reason"}) ${(pageErrors.get(page) ?? []).join("; ")}`,
+      `try/ is ${state ?? "in no state"} and says: ${(await page.textContent("main")) ?? ""} (because ${(await page.getAttribute("body", "data-error")) ?? "it gave no reason"}) ${(pageErrors.get(page) ?? []).join("; ")}\n${await traceOf(page)}`,
     );
 }
 
@@ -69,7 +75,10 @@ export async function newPod(page: Page, label: string): Promise<void> {
   await inPlace(page, () =>
     page.click(`#new-pod button:has-text(${JSON.stringify(label)})`),
   );
-  assert.notEqual(at(), from, "the page said it was ready before it moved");
+  if (at() === from)
+    assert.fail(
+      `the page said it was ready before it moved\n${await traceOf(page)}`,
+    );
 }
 
 /**

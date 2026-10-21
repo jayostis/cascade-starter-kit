@@ -473,16 +473,14 @@ export function App() {
           try {
             const go = (to: string, text?: string) => {
               going = true;
-              moved();
+              const state = goState();
               const [path = to, hash] = to.split("#");
+              moved(state.go, path);
               if (hash === undefined || location.hash !== `#${hash}`)
                 closeBox();
               setLocked(undefined);
               setNote(text === undefined ? undefined : { text, at: path });
-              navigate(to, {
-                state: goState(),
-                replace: path === hereRef.current,
-              });
+              navigate(to, { state, replace: path === hereRef.current });
             };
             await step(
               Object.assign(go, {
