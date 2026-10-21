@@ -735,7 +735,7 @@ function worldDateBack(back) {
     return "/";
   if (/[\\\s]/.test(back)) return "/";
   const url = new URL(back, "http://app.invalid");
-  return url.origin === "http://app.invalid"
+  return url.origin === "http://app.invalid" && !url.pathname.startsWith("//")
     ? `${url.pathname}${url.search}`
     : "/";
 }
