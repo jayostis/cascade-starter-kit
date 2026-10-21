@@ -6,6 +6,7 @@ import { useLocation, useParams } from "react-router";
 import {
   capitalised,
   day,
+  entryId,
   entryOf,
   localDay,
   maps,
@@ -20,6 +21,7 @@ import {
   versionName,
 } from "../said.ts";
 import { useAddress } from "./address.tsx";
+import { AskButton } from "./ask.tsx";
 import { failed } from "./doing.ts";
 import { Tag } from "./parts.tsx";
 import { Back, NotFound, sourceOf, useLoaded, Wrong } from "./screen.tsx";
@@ -71,7 +73,13 @@ export function EntryPage({
           <Tag key={tag} tag={tag} />
         ))}
       </h1>
-      <p className="lead">{capitalised(kind)}</p>
+      <p className="lead">
+        {capitalised(kind)}
+        <AskButton
+          about={{ kind: "entry", id: entryId(entry.entry) }}
+          label={name}
+        />
+      </p>
       {(facts.length > 0 || codes.length > 0) && (
         <div className="card entry">
           <h2>What it is</h2>

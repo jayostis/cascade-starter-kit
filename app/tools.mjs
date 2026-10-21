@@ -3,7 +3,7 @@
 // reads or moves the app, `ask` writes once the person has said yes. What no tool ever calls is `NEVER`.
 import { Refusal } from "cascade-runtime";
 import { POD_TOOLS, trendOf } from "./pod-api.mjs";
-import { entryId, SOURCES, TREND_VIEW } from "./said.ts";
+import { NO_INPUT, PAGE_TOOLS } from "./said.ts";
 
 /** The questions `ask` offers: the person's own records, who they are and where an entry came from. Never free SPARQL. */
 export const QUESTIONS = [
@@ -46,12 +46,6 @@ export const NEVER = [
   { op: "deleteAll", why: "it removes every pod" },
   { op: "resetAll", why: "it removes every pod" },
 ];
-
-const NO_INPUT = {
-  type: "object",
-  properties: {},
-  additionalProperties: false,
-};
 
 /** `schema` with the pod's name beside its own properties: a tool of one pod as MCP and the chat take its input. */
 export function withPod(schema) {
@@ -105,11 +99,23 @@ const ofPod = POD_TOOLS.map(({ name, description, inputSchema }) => ({
       }),
 }));
 
-/** Goes to `address` by the door's `open`, and gives it. */
-async function opening(address, { open }) {
-  await open(address);
-  return { opened: address };
-}
+/** A tool of `PAGE_TOOLS`, which refuses by an error's name, refusing with the runtime's `Refusal` as every door here tells one. */
+const refusing = (tool) => ({
+  ...tool,
+  async run(api, input, door) {
+    try {
+      return await tool.run(api, input, door);
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.name === "Refusal" &&
+        !(error instanceof Refusal)
+      )
+        throw new Refusal(error.message);
+      throw error;
+    }
+  },
+});
 
 /**
  * Every tool, each `{ name, description, inputSchema, tier, run(api, input, door) }`. `run` calls only `api`, PodApi's
@@ -154,125 +160,5 @@ export const TOOLS = [
     run: (api, { pod, question, limit }) =>
       api.ask({ pod, question, limit: limit ?? DEFAULT_ROWS }),
   },
-  {
-    name: "open_pod",
-    description: "Opens a pod's page in the app.",
-    inputSchema: NO_INPUT,
-    tier: "free",
-    ofPod: true,
-    opens: true,
-    async run(api, { pod }, door) {
-      await api.pod({ pod });
-      return opening(door.address.pod(pod), door);
-    },
-  },
-  {
-    name: TREND_VIEW.name,
-    description: TREND_VIEW.description,
-    inputSchema: TREND_VIEW.inputSchema,
-    tier: "free",
-    ofPod: true,
-    opens: true,
-    async run(api, { pod, test, medication }, door) {
-      const drug = medication === "" ? undefined : medication;
-      const { series, timeline } = await api.trend({
-        pod,
-        test,
-        medication: drug,
-        named: false,
-      });
-      const wanted = drug?.toLowerCase();
-      const found =
-        drug === undefined
-          ? undefined
-          : timeline.find(
-              (each) =>
-                each.notation === drug ||
-                each.code === drug ||
-                each.name.toLowerCase() === wanted,
-            );
-      return opening(
-        door.address.trend(pod, {
-          test: series.test.notation ?? series.test.code,
-          ...(found === undefined
-            ? {}
-            : { medication: found.notation ?? found.name }),
-        }),
-        door,
-      );
-    },
-  },
-  {
-    name: "open_entry",
-    description:
-      "Opens the page of one entry of a pod: what it is and where it came from.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        entry: {
-          type: "string",
-          description:
-            "The entry's IRI or ID, as the entry column of the rows of ask gives it.",
-        },
-      },
-      required: ["entry"],
-      additionalProperties: false,
-    },
-    tier: "free",
-    ofPod: true,
-    opens: true,
-    async run(api, { pod, entry }, door) {
-      const { rows } = await api.ask({ pod, question: SOURCES });
-      if (!rows.some((row) => entryId(row.entry) === entryId(entry)))
-        throw new Refusal(
-          `the pod ${pod} holds no entry ${entry}; ask's rows give each entry's ID in their entry column`,
-        );
-      return opening(door.address.entry(pod, entry), door);
-    },
-  },
-  {
-    name: "make_pod",
-    description:
-      "Makes a pod for a person, named after them: empty, or the sample of that name; a pod of that name already there is left as it is. It is never encrypted.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        person: {
-          type: "string",
-          description: "The person's name, as they write it.",
-        },
-      },
-      required: ["person"],
-      additionalProperties: false,
-    },
-    tier: "ask",
-    run: (api, { person }) => api.makePod({ person }),
-  },
-  {
-    name: "check_tables",
-    description:
-      "Checks each source of the reference tables for a newer version and keeps any there is.",
-    inputSchema: NO_INPUT,
-    tier: "ask",
-    run: (api) => api.checkTables({}),
-  },
-  {
-    name: "set_world_date",
-    description:
-      "Sets the date the demo hospitals answer as of: their records as they stood at the end of that day. An empty date takes it back to everything they hold.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        date: {
-          type: "string",
-          description:
-            "A day as YYYY-MM-DD, or an instant with its timezone; empty for none.",
-        },
-      },
-      required: ["date"],
-      additionalProperties: false,
-    },
-    tier: "ask",
-    run: (api, { date }) => api.setWorldDate({ date }),
-  },
+  ...PAGE_TOOLS.map(refusing),
 ];

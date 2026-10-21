@@ -6,7 +6,7 @@ import { after, before, test } from "node:test";
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { loadHospital, loadStories } from "@the-cascade-protocol/sandbox/node";
-import { openPod, type Pod, pullFiles } from "cascade-runtime";
+import { openPod, type Pod, pullFiles, Refusal } from "cascade-runtime";
 import { pulled } from "./hospitals.js";
 import { removed } from "./settled.js";
 
@@ -109,7 +109,7 @@ after(async () => {
   await api.close();
 });
 
-test("every tool is free or ask, and its run calls only the PodApi operations it is about, never one the never list holds", async () => {
+test("every tool is free or ask, and its run calls only the PodApi operations it is about, never one the never list holds; open_entry refuses an entry the pod lacks, saying where the IDs are", async () => {
   const pod = "p";
   const runs: Record<string, [Input, string[], string]> = {
     list_pods: [{}, ["pods"], "free"],
@@ -186,6 +186,22 @@ test("every tool is free or ask, and its run calls only the PodApi operations it
         `${tool.name} calls ${op} ${JSON.stringify(given)}`,
       );
   }
+  const opening = TOOLS.find(({ name }) => name === "open_entry")!;
+  await assert.rejects(
+    opening.run(
+      { ask: async () => answers.ask },
+      { pod, entry: "x" },
+      {
+        open: async () => {},
+        address: { pod: () => "/", trend: () => "/", entry: () => "/" },
+      },
+    ),
+    (error) =>
+      error instanceof Refusal &&
+      /holds no entry x; ask's rows give each entry's ID in their entry column/.test(
+        error.message,
+      ),
+  );
 });
 
 test("a client lists the pods and the free reads of the one tool list, each but the list taking the pod's name, and is warned that a hosted client sends the answers to its provider", async () => {

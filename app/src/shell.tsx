@@ -211,7 +211,8 @@ function Doing() {
 /**
  * The page around a screen: `pods` by name, the one shown `current`, with the titles they were made under; `table`,
  * when the screen shown is a reference table's, its id in the address (empty for the first source); `note` above the
- * screen when a step left one; `people` and `samples` for the new-pod box.
+ * screen when a step left one; `people` and `samples` for the new-pod box; `chat` at the foot of the page, on a host
+ * that has one.
  */
 export function Layout({
   pods,
@@ -223,8 +224,10 @@ export function Layout({
   people,
   samples,
   note,
+  chat,
   children,
 }: {
+  chat?: ReactNode;
   pods: readonly string[];
   titles: ReadonlyMap<string, string>;
   current?: string;
@@ -291,6 +294,7 @@ export function Layout({
           {children}
         </main>
       </div>
+      {chat}
       <NewPod people={people} pods={pods} samples={samples} />
       <MenuBoxes about={about} />
       <Doing />

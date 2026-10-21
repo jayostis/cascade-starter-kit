@@ -2,6 +2,7 @@
 // drawn, warms the engine in the background; `data-engine` on the body says when it is ready, and the screen then
 // fills in what the tables say.
 import {
+  Suspense,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -40,12 +41,15 @@ import {
   HostProvider,
   isRefusal,
   useHost,
+  type ChatModel,
   type ConnectionNow,
   type Host,
   type PodApi,
   type PodListed,
 } from "./api.tsx";
+import { AskProvider } from "./ask.tsx";
 import { ClassesScreen } from "./classes.tsx";
+import { ConfirmProvider } from "./confirm.tsx";
 import {
   busy,
   failed,
@@ -554,103 +558,136 @@ export function App() {
         },
       );
   }, [api, host]);
+  const [model, setModel] = useState<{ named?: ChatModel }>();
+  useEffect(() => {
+    void host.chat?.model().then(
+      (named) => setModel(named === undefined ? {} : { named }),
+      () => setModel({}),
+    );
+  }, [host]);
   const names = useMemo(() => (pods ?? []).map(({ name }) => name), [pods]);
   const shown = current === undefined ? undefined : decodeURIComponent(current);
-  usePodTools(shown !== undefined && names.includes(shown) ? shown : undefined);
+  const known =
+    shown !== undefined && names.includes(shown) ? shown : undefined;
+  usePodTools(known);
   if (pods === undefined) return null;
+  const Chat = host.chat?.Window;
   return (
     <HostProvider value={guarded}>
       <ActionsProvider value={actions}>
-        <Layout
-          pods={names}
-          titles={titles}
-          current={
-            current === undefined ? undefined : decodeURIComponent(current)
-          }
-          table={onTable ? decodeURIComponent(table ?? "") : undefined}
-          tables={tables}
-          about={host.about}
-          people={people}
-          samples={host.samples}
-          note={note?.at === here ? note.text : undefined}
-        >
-          {outcome?.at === here ? (
-            <Notice
-              heading={outcome.refused ? "Not done" : "Something went wrong"}
-              wrong={!outcome.refused}
-              drawn={outcome.n}
-            >
-              {outcome.said}
-            </Notice>
-          ) : locked?.at === here ? (
-            <Unlock
-              key={locked.pod}
-              pod={locked.pod}
+        <ConfirmProvider>
+          <AskProvider value={model?.named !== undefined}>
+            <Layout
+              pods={names}
               titles={titles}
-              outcome={locked.outcome}
-            />
-          ) : (
-            <Routes>
-              <Route
-                path="/"
-                element={
-                  names[0] === undefined ? (
-                    <NoPods />
-                  ) : (
-                    <Navigate
-                      to={`/pods/${encodeURIComponent(names[0])}/${hash}`}
-                      replace
-                    />
-                  )
-                }
-              />
-              <Route
-                path="/pods/:pod"
-                element={
-                  <PodScreen
-                    pods={names}
-                    titles={titles}
-                    people={people}
-                    held={tables}
-                    engine={engine}
+              current={
+                current === undefined ? undefined : decodeURIComponent(current)
+              }
+              table={onTable ? decodeURIComponent(table ?? "") : undefined}
+              tables={tables}
+              about={host.about}
+              people={people}
+              samples={host.samples}
+              note={note?.at === here ? note.text : undefined}
+              chat={
+                Chat !== undefined &&
+                model !== undefined && (
+                  <Suspense fallback={null}>
+                    <Chat model={model.named} pod={known ?? ""} />
+                  </Suspense>
+                )
+              }
+            >
+              {outcome?.at === here ? (
+                <Notice
+                  heading={
+                    outcome.refused ? "Not done" : "Something went wrong"
+                  }
+                  wrong={!outcome.refused}
+                  drawn={outcome.n}
+                >
+                  {outcome.said}
+                </Notice>
+              ) : locked?.at === here ? (
+                <Unlock
+                  key={locked.pod}
+                  pod={locked.pod}
+                  titles={titles}
+                  outcome={locked.outcome}
+                />
+              ) : (
+                <Routes>
+                  <Route
+                    path="/"
+                    element={
+                      names[0] === undefined ? (
+                        <NoPods />
+                      ) : (
+                        <Navigate
+                          to={`/pods/${encodeURIComponent(names[0])}/${hash}`}
+                          replace
+                        />
+                      )
+                    }
                   />
-                }
-              />
-              <Route
-                path="/pods/:pod/entries/:id"
-                element={
-                  <EntryScreen titles={titles} held={tables} engine={engine} />
-                }
-              />
-              <Route
-                path="/pods/:pod/trend"
-                element={<TrendScreen titles={titles} engine={engine} />}
-              />
-              <Route
-                path="/pods/:pod/classes"
-                element={<ClassesScreen titles={titles} />}
-              />
-              <Route
-                path="/pods/:pod/panel"
-                element={<PanelScreen titles={titles} />}
-              />
-              <Route
-                path="/pods/:pod/hospitals"
-                element={<HospitalsScreen titles={titles} people={people} />}
-              />
-              <Route
-                path="/pods/:pod/connections/:n"
-                element={<ConnectionAddress />}
-              />
-              <Route
-                path="/tables/:id?"
-                element={<TableScreen pods={names} titles={titles} />}
-              />
-              <Route path="/encrypted-pods/:pod" element={<WordsScreen />} />
-              <Route path="*" element={<NotPorted />} />
-            </Routes>
-          )}
-        </Layout>
+                  <Route
+                    path="/pods/:pod"
+                    element={
+                      <PodScreen
+                        pods={names}
+                        titles={titles}
+                        people={people}
+                        held={tables}
+                        engine={engine}
+                      />
+                    }
+                  />
+                  <Route
+                    path="/pods/:pod/entries/:id"
+                    element={
+                      <EntryScreen
+                        titles={titles}
+                        held={tables}
+                        engine={engine}
+                      />
+                    }
+                  />
+                  <Route
+                    path="/pods/:pod/trend"
+                    element={<TrendScreen titles={titles} engine={engine} />}
+                  />
+                  <Route
+                    path="/pods/:pod/classes"
+                    element={<ClassesScreen titles={titles} />}
+                  />
+                  <Route
+                    path="/pods/:pod/panel"
+                    element={<PanelScreen titles={titles} />}
+                  />
+                  <Route
+                    path="/pods/:pod/hospitals"
+                    element={
+                      <HospitalsScreen titles={titles} people={people} />
+                    }
+                  />
+                  <Route
+                    path="/pods/:pod/connections/:n"
+                    element={<ConnectionAddress />}
+                  />
+                  <Route
+                    path="/tables/:id?"
+                    element={<TableScreen pods={names} titles={titles} />}
+                  />
+                  <Route
+                    path="/encrypted-pods/:pod"
+                    element={<WordsScreen />}
+                  />
+                  <Route path="*" element={<NotPorted />} />
+                </Routes>
+              )}
+            </Layout>
+          </AskProvider>
+        </ConfirmProvider>
       </ActionsProvider>
     </HostProvider>
   );

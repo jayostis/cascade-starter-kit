@@ -2748,70 +2748,83 @@ test("suggested questions: Ines Calloway's find a change and ask about it named 
   assert.deepEqual(view.suggestedQuestions({}, { changes: [] }), []);
 });
 
-test("Ask about this: with a model set, each What changed card and each Worth a look line draw a button naming the finding's key or the line's entry ID, and with none set they draw none", async () => {
+test("Ask about this: once the chat names a model, each What changed card, each Worth a look line, the trend and the entry draw a button naming the finding's key, the line's entry ID, the trend's test and medication or the entry's ID, and before it they draw none", async () => {
   const story = (await storyPods()).get("story-statin")!;
   const [finding] = story.changes;
-  const draw = (ask?: boolean) =>
-    render(
-      view.podPage(story.answers, {
-        pod: "ines-calloway",
-        signIn: () => null,
-        entryHref: entryLink,
-        about: new Map(),
-        changes: story.changes,
-        trendHref: (trend: object) => trendPath("ines-calloway", trend),
-        ...(ask ? { ask } : {}),
-      }),
-    );
-  assert.deepEqual(asksOf(draw()), []);
-  assert.doesNotMatch(draw(), /Ask about this/);
-  const asked = asksOf(draw(true));
-  const buttons = [
-    ...draw(true).matchAll(/<button [^>]*data-ask="[^>]*>(.*?)<\/button>/g),
-  ];
-  assert.equal(buttons.length, asked.length);
-  for (const [button, inside] of buttons) {
-    assert.match(button, /title="Ask about this"/);
-    assert.match(button, /aria-label="Ask about this: [^"]+"/);
-    assert.equal(inside!.replace(/<svg.*<\/svg>/, ""), "");
-  }
-  assert.deepEqual(
-    asked.filter(({ kind }) => kind === "finding"),
-    [{ kind: "finding", key: finding!.key }],
-  );
-  assert.deepEqual(
-    asked.filter(({ kind }) => kind === "entry"),
-    [],
-  );
-
+  const pod =
+    (answers: object, changes: readonly object[] = []) =>
+    (ask: boolean) =>
+      draw(
+        "PodPage",
+        {
+          shown: { pod: "ines-calloway", answers, about: new Map(), changes },
+          titles: new Map(),
+          person: undefined,
+          held: [],
+        },
+        ask,
+      );
   const lines = {
     [REVIEW]: [
       { entry: "urn:uuid:e1", needs: "judged different, still joined" },
     ],
   };
-  const worth = (ask?: boolean) =>
-    render(
-      view.podPage(lines, {
-        pod: "ines-calloway",
-        signIn: () => null,
-        entryHref: entryLink,
-        ...(ask ? { ask } : {}),
-      }),
+  const trend = (ask: boolean) =>
+    draw(
+      "TrendPage",
+      {
+        pod: "a-pod",
+        titles: new Map(),
+        read: {
+          labs: [],
+          series: {
+            test: { code: "http://loinc.org/18262-6", notation: "18262-6" },
+            results: [{ date: "2024-03-10", value: 98, unit: "mg/dL" }],
+            left: { unparsed: 0, undated: 0 },
+          },
+          timeline: [
+            { name: "Atorvastatin", notation: "617310", started: "2024-01-05" },
+          ],
+          medication: "617310",
+        },
+      },
+      ask,
     );
-  assert.deepEqual(asksOf(worth()), []);
-  assert.deepEqual(asksOf(worth(true)), [{ kind: "worth", entry: "e1" }]);
-});
-
-test("an encrypted pod's chat strip says so", () => {
-  const model = { provider: "other", name: "m", local: true };
-  assert.match(
-    render(view.Chat({ model, pod: "grace-hopper", encrypted: true })),
-    /data-encrypted="true"/,
-  );
-  assert.doesNotMatch(
-    render(view.Chat({ model, pod: "alex-rivera" })),
-    /data-encrypted/,
-  );
+  const entry = (ask: boolean) =>
+    draw(
+      "EntryPage",
+      {
+        pod: "alex-rivera",
+        titles: new Map(),
+        read: { entry: view.entryOf(ENTRY_ANSWERS, "bb22"), panels: [] },
+        held: [],
+      },
+      ask,
+    );
+  for (const [page, asked] of [
+    [
+      pod(story.answers, story.changes),
+      [{ kind: "finding", key: finding!.key }],
+    ],
+    [pod(lines), [{ kind: "worth", entry: "e1" }]],
+    [trend, [{ kind: "trend", test: "18262-6", medication: "617310" }]],
+    [entry, [{ kind: "entry", id: "bb22" }]],
+  ] as const) {
+    assert.deepEqual(asksOf(page(false)), []);
+    assert.doesNotMatch(page(false), /Ask about this/);
+    const markup = page(true);
+    assert.deepEqual(
+      asksOf(markup).filter(({ kind }) => kind === asked[0].kind),
+      asked,
+    );
+    for (const [button, inside] of markup.matchAll(
+      /<button [^>]*data-ask="[^>]*>(.*?)<\/button>/g,
+    )) {
+      assert.match(button, /title="Ask about this"/);
+      assert.match(button, /aria-label="Ask about this: [^"]+"/);
+      assert.equal(inside!.replace(/<svg.*<\/svg>/, ""), "");
+    }
+  }
 });
 
 test("the world's date: a calendar day is the end of that day in UTC, an instant stays as given, and anything else is none; it is said as the day the hospitals answer as of, and a pull's as the day it was pulled as of", () => {

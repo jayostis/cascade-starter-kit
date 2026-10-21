@@ -1,12 +1,13 @@
 // What the screens read and write through: PodApi, over HTTP on the Node target and in the page in the browser one,
 // and what only the host knows. A screen never knows which host it runs on.
-import { createContext, useContext } from "react";
+import { createContext, useContext, type ComponentType } from "react";
 import type {
   Answers,
   Checked,
   Failure,
   Finding,
   Person,
+  Row,
   Series,
 } from "../said.ts";
 import type { TableRead } from "./tables.tsx";
@@ -51,6 +52,12 @@ export interface PodApi extends WritesApi, HospitalsApi {
     person: string;
     encrypt?: boolean;
   }): Promise<{ pod: string; waiting?: boolean }>;
+  ask(input: {
+    pod: string;
+    question: string;
+    limit?: number;
+  }): Promise<{ question: string; total: number; rows: Row[] }>;
+  setWorldDate(input: { date: string }): Promise<{ asOf?: string }>;
 }
 
 /** A hospital of the directory, as PodApi's `hospitals` lists it. */
@@ -89,7 +96,7 @@ export interface ConnectionNow {
   readonly broughtIn?: boolean;
 }
 
-/** The operations of the hospitals, a connection's box and the world's date. */
+/** The operations of the hospitals and a connection's box. */
 export interface HospitalsApi {
   hospitals(input: { q?: string }): Promise<{
     rows: Hospital[];
@@ -105,7 +112,6 @@ export interface HospitalsApi {
     wait?: true | "change";
   }): Promise<ConnectionNow>;
   bring(input: { pod: string; connection: number }): Promise<{ step: string }>;
-  setWorldDate(input: { date: string }): Promise<{ asOf?: string }>;
 }
 
 /** The operations of the tables screens, the new-pod box, the six words, the unlock screen and the File menu. */
@@ -172,6 +178,24 @@ export interface Host {
   openSignIn?(): void;
   /** What this host says of a failed sign-in where its cause differs from the app's: a sentence by failure kind. */
   readonly failures?: Readonly<Record<string, Failure>>;
+  /** The chat with a model, on a host that has one: the Node target's. */
+  readonly chat?: HostChat;
+}
+
+/** The model a chat talks to, as the host names it: never its address or key. */
+export interface ChatModel {
+  readonly provider: string;
+  readonly name: string;
+  readonly local: boolean;
+}
+
+/** A host's chat: the model it was set up with, none when none is, and the window, loaded when it is first drawn. */
+export interface HostChat {
+  model(): Promise<ChatModel | undefined>;
+  readonly Window: ComponentType<{
+    model: ChatModel | undefined;
+    pod: string;
+  }>;
 }
 
 const HostContext = createContext<Host | undefined>(undefined);
