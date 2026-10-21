@@ -174,7 +174,7 @@ type Screen = (
   | { readonly at: string; readonly page: { readonly wrong: string } }
 ) & {
   /** The step's move it was read for, when it was read for one. */
-  readonly generation?: number;
+  readonly generation?: string;
 };
 
 /** The pod the address names, drawn from its answers, then filled in once the engine can say what the tables say. */

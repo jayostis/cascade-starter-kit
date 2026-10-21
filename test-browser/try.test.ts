@@ -2532,7 +2532,7 @@ test("in try/, Ines Calloway's new pod signed in at North says what changed afte
   }
 });
 
-test("in try/, the world's date set before a sign-in shows on the hospital's sign-in page and in the box as the date the pull was made under, survives the worker being stopped, and Today takes it away; a typed date that is no date and a pod named Con are each Not done, saying why", async () => {
+test("in try/, the world's date set before a sign-in shows on the hospital's sign-in page and in the box as the date the pull was made under, survives the worker being stopped, and Today takes it away; a typed date that is no date and a pod named Con are each Not done, saying why; Today as the first step after a reload, at the address a Set left, takes the date away too", async () => {
   const demo = await loadHospitals();
   const ines = view
     .demoPeople(demo)
@@ -2651,6 +2651,19 @@ test("in try/, the world's date set before a sign-in shows on the hospital's sig
     );
     await page.click('#new-pod button:has-text("Make the pod")');
     await notDone(/Windows keeps for itself/);
+
+    await page.goto(`${served.url}${AT.pod("ines-calloway")}`);
+    await settled(page);
+    await setDate("2024-02-01");
+    await worldSays("Hospitals answer as of 1 February 2024.");
+    await page.reload();
+    await settled(page);
+    await setDate(undefined);
+    await settled(page);
+    assert.match(
+      (await world.textContent()) ?? "",
+      /Hospitals answer with everything they hold\./,
+    );
   } finally {
     await context.close();
   }
