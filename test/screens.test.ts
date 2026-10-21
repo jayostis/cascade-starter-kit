@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import type { FailureKind } from "cascade-runtime";
 import { linksOf, screens, textOf } from "./render.js";
 
 /** What the test reads of what the pages say, `said.ts`, which the screens draw with. */
@@ -678,7 +679,7 @@ test("a record's person against the pod's: the box's words and button by grade",
 test("a failed connection's box speaks to a person by the failure's kind, naming the hospital, and offers to sign in again, with the developer's detail in a smaller line", () => {
   const detail =
     "https://cascade-north.demo.invalid refused Patient with 401: invalid_client.";
-  const kinds: Record<string, [said: RegExp, button: boolean]> = {
+  const kinds: Record<FailureKind, [said: RegExp, button: boolean]> = {
     cancelled: [/cancelled.*Sign in again/, true],
     "state-mismatch": [/did not come back.*Sign in again/, true],
     "host-not-allowed": [/address is not one the app will talk to/, false],
@@ -701,7 +702,10 @@ test("a failed connection's box speaks to a person by the failure's kind, naming
       now: at("failed", { failed: detail, failure }),
       ...more,
     });
-  for (const [kind, [action, button]] of Object.entries(kinds)) {
+  for (const [kind, [action, button]] of Object.entries(kinds) as [
+    FailureKind,
+    [RegExp, boolean],
+  ][]) {
     const markup = box(kind);
     const first = textOf(/<p role="alert">(.*?)<\/p>/.exec(markup)?.[1] ?? "");
     assert.match(first, /Cascade North/, kind);
