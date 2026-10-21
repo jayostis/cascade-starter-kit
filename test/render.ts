@@ -90,6 +90,8 @@ export const currentIn = (page: string): string[] =>
 const PAGES = `
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { ActionsProvider } from "./actions.tsx";
+import { HostProvider } from "./api.tsx";
 import { AskProvider } from "./ask.tsx";
 import { ClassesPage } from "./classes.tsx";
 import { EntryPage } from "./entry.tsx";
@@ -97,9 +99,19 @@ import { PanelPage } from "./panel.tsx";
 import { PodPage } from "./pod.tsx";
 import { TrendPage } from "./trend.tsx";
 const pages = { ClassesPage, EntryPage, PanelPage, PodPage, TrendPage };
+const host = { api: {}, about: {}, samples: [] };
+const actions = { act() {}, refreshPods: async () => [], heldNow() {} };
 export const markup = (page, props, ask = false) =>
   renderToStaticMarkup(
-    createElement(AskProvider, { value: ask }, createElement(pages[page], props)),
+    createElement(
+      HostProvider,
+      { value: host },
+      createElement(
+        ActionsProvider,
+        { value: actions },
+        createElement(AskProvider, { value: ask }, createElement(pages[page], props)),
+      ),
+    ),
   );
 `;
 
