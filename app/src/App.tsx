@@ -236,8 +236,8 @@ export function App() {
         },
       );
   }, [api, host]);
+  const names = useMemo(() => (pods ?? []).map(({ name }) => name), [pods]);
   if (pods === undefined) return null;
-  const names = pods.map(({ name }) => name);
   return (
     <Layout
       pods={names}
