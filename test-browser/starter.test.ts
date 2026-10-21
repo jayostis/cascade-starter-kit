@@ -318,14 +318,19 @@ test("on the Node target the pod shown offers the one list to the model context,
       names.length,
     );
     assert.deepEqual(await offered(page), names);
-    assert.deepEqual(await inputOf(page, "open_trend"), {
+    assert.deepEqual(await inputOf(page, "open_trend", false), {
       properties: ["test", "medication"],
       required: ["test"],
     });
     const pods = await called(page, "list_pods");
     assert.ok("result" in pods, JSON.stringify(pods));
     assert.ok((pods.result as string[]).includes("ines-calloway"));
-    const rows = await called(page, "ask", { question: "pod/My lab results" });
+    const rows = await called(
+      page,
+      "ask",
+      { question: "pod/My lab results" },
+      false,
+    );
     assert.ok("result" in rows, JSON.stringify(rows));
   } finally {
     await context.close();

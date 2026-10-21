@@ -399,8 +399,12 @@ test("the tools that move the app are offered to the model with their schemas as
       "open_table",
     ],
   );
-  for (const { name, inputSchema } of opening)
-    assert.deepEqual(offered.get(name), withPod(inputSchema), name);
+  for (const { name, inputSchema, ofPod } of opening)
+    assert.deepEqual(
+      offered.get(name),
+      ofPod ? withPod(inputSchema) : inputSchema,
+      name,
+    );
   assert.deepEqual(kinds(chunks), ["start", "tool-input-available", "finish"]);
   const [asked] = ofType(chunks, "tool-input-available");
   assert.equal(asked!.toolName, "open_pod");

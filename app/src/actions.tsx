@@ -19,9 +19,10 @@ export type Go = ((to: string, note?: string) => void) & { stay(): void };
 export interface Actions {
   /**
    * Does `step` with the page busy, saying `doing`; while it is busy, another step does not start. What the rules
-   * refuse, the page draws as not done with the sentence; anything else, as gone wrong.
+   * refuse, the page draws as not done with the sentence; anything else, as gone wrong. The promise settles once the
+   * step has ended, whether it ran or not: a caller that must know sets a flag in the step.
    */
-  act(step: (go: Go) => Promise<void>, doing?: string): void;
+  act(step: (go: Go) => Promise<void>, doing?: string): Promise<void>;
   /** Reads the pods again for the sidebar; their names. */
   refreshPods(): Promise<readonly string[]>;
   /** Makes the sidebar list the reference tables `held`, which a read of them found. */

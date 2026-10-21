@@ -140,6 +140,9 @@ export const CLIENT_OUTPUTS = {
   open_pod: opened,
   open_trend: opened,
   open_entry: opened,
+  open_classes: opened,
+  open_panel: opened,
+  open_table: opened,
   make_pod: z.object({
     pod: z.string(),
     made: z.boolean().optional(),

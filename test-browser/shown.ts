@@ -173,7 +173,10 @@ export function recordTools(): void {
 
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
 
-/** The tools of the one list (`tools.mjs`), which every screen offers the model context, and the ops no tool is named for. */
+/**
+ * The tools of the one list (`tools.mjs`), which every screen offers the model context, and the names of the ops that
+ * no tool at all calls (`makePod` is not one: only a call with `encrypt` is).
+ */
 export async function listed(): Promise<{
   names: string[];
   never: string[];
@@ -182,14 +185,16 @@ export async function listed(): Promise<{
     pathToFileURL(join(ROOT, "app", "tools.mjs")).href
   )) as {
     TOOLS: { name: string }[];
-    NEVER: { op: string }[];
+    NEVER: { op: string; with?: string }[];
   };
   return {
     names: TOOLS.map(({ name }) => name).sort(),
-    never: NEVER.flatMap(({ op }) => [
-      op,
-      op.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`),
-    ]),
+    never: NEVER.filter(({ with: given }) => given === undefined).flatMap(
+      ({ op }) => [
+        op,
+        op.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`),
+      ],
+    ),
   };
 }
 
@@ -203,11 +208,36 @@ export function offered(page: Page): Promise<string[]> {
   );
 }
 
-/** The properties and the required ones of the input of the tool `name`, as the page offers it now. */
-export function inputOf(
+/** Waits until the page offers the tool `name`, and with `pod` given, until its input does or does not take the pod. */
+async function offering(
   page: Page,
   name: string,
+  pod?: boolean,
+): Promise<void> {
+  await page.waitForFunction(
+    ([wanted, takesPod]) =>
+      (globalThis as unknown as Registered).registered.some(
+        ({ name, signal, tool }) =>
+          name === wanted &&
+          !signal.aborted &&
+          (takesPod === undefined ||
+            Object.hasOwn(tool.inputSchema.properties ?? {}, "pod") ===
+              takesPod),
+      ),
+    [name, pod] as const,
+  );
+}
+
+/**
+ * The properties and the required ones of the input of the tool `name`, as the page offers it once its input does
+ * (`takesPod`) or does not take the pod's name.
+ */
+export async function inputOf(
+  page: Page,
+  name: string,
+  takesPod: boolean,
 ): Promise<{ properties: string[]; required: string[] }> {
+  await offering(page, name, takesPod);
   return page.evaluate((wanted) => {
     const { inputSchema } = (globalThis as unknown as Registered).registered
       .filter(({ signal }) => !signal.aborted)
@@ -219,12 +249,14 @@ export function inputOf(
   }, name);
 }
 
-/** Calls the tool `name` the page offers now with `input`: what it resolved with, or the message of what it threw. */
-export function called(
+/** Calls the tool `name` the page offers with `input`: what it resolved with, or the message of what it threw. */
+export async function called(
   page: Page,
   name: string,
   input: object = {},
+  takesPod?: boolean,
 ): Promise<{ result: unknown } | { error: string }> {
+  await offering(page, name, takesPod);
   return page.evaluate(
     async ([wanted, given]) => {
       const { tool } = (globalThis as unknown as Registered).registered

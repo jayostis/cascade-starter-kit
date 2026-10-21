@@ -1,4 +1,4 @@
-// The Node target's server: the guard, PodApi at `/api/`, the chat at `/chat`, a hospital's redirect back at
+// The Node target's server: the guard, PodApi at `/api/`, the reads of the tool list at `/tools`, the chat at `/chat`, a hospital's redirect back at
 // `/callback`, and the built app: its files as they are, and its page for any other address a person opens.
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -8,6 +8,7 @@ import { Hono, type MiddlewareHandler } from "hono";
 import { addresses } from "../addresses.ts";
 import { apiRoutes, type Operations } from "./api.ts";
 import { guard, type Own } from "./guard.ts";
+import { toolRoutes } from "./tools.ts";
 
 export interface Served {
   readonly api: Operations;
@@ -65,6 +66,7 @@ export function appServer(served: Served) {
   const app = new Hono<{ Bindings: HttpBindings }>()
     .use(guard(served.own))
     .route("/", apiRoutes(served.api))
+    .route("/", toolRoutes(served.api))
     .route("/", served.chat)
     .get("/callback", (c) => {
       const at = served.back(new URL(c.req.url));

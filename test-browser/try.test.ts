@@ -2275,9 +2275,14 @@ test("in try/, the model context is offered the one list on the entry, classes, 
       properties: ["pod", "test", "medication"],
       required: ["pod", "test"],
     };
-    const opens = async (name: string, input: object, path: string) => {
+    const opens = async (
+      name: string,
+      input: object,
+      path: string,
+      takesPod?: boolean,
+    ) => {
       await inPlace(page, async () => {
-        const answer = await called(page, name, input);
+        const answer = await called(page, name, input, takesPod);
         assert.ok("result" in answer, JSON.stringify(answer));
       });
       const { pathname, search } = new URL(page.url());
@@ -2285,8 +2290,8 @@ test("in try/, the model context is offered the one list on the entry, classes, 
       assert.deepEqual(await offered(page), TOOLS.names, name);
     };
 
-    await opens("open_classes", {}, "/try/pods/alex-rivera/classes");
-    assert.deepEqual(await inputOf(page, "open_trend"), podFilled);
+    await opens("open_classes", {}, "/try/pods/alex-rivera/classes", false);
+    assert.deepEqual(await inputOf(page, "open_trend", false), podFilled);
 
     await opens(
       "open_pod",
@@ -2297,12 +2302,13 @@ test("in try/, the model context is offered the one list on the entry, classes, 
       "open_panel",
       { panel: "24326-1" },
       "/try/pods/priya-natarajan/panel?panel=24326-1",
+      false,
     );
     assert.match((await page.textContent("main h1")) ?? "", /^Your results in/);
 
     await opens("open_table", {}, "/try/tables/");
-    assert.deepEqual(await inputOf(page, "open_trend"), named);
-    assert.deepEqual(await inputOf(page, "open_pod"), {
+    assert.deepEqual(await inputOf(page, "open_trend", true), named);
+    assert.deepEqual(await inputOf(page, "open_pod", true), {
       properties: ["pod"],
       required: ["pod"],
     });
@@ -2312,18 +2318,20 @@ test("in try/, the model context is offered the one list on the entry, classes, 
       { pod: "priya-natarajan" },
       "/try/pods/priya-natarajan/",
     );
-    const labs = await called(page, "ask", {
-      question: "pod/My lab results",
-      limit: 1,
-    });
+    const labs = await called(
+      page,
+      "ask",
+      { question: "pod/My lab results", limit: 1 },
+      false,
+    );
     assert.ok("result" in labs, JSON.stringify(labs));
     const [lab] = (labs.result as { rows: { entry: string }[] }).rows;
     await inPlace(page, async () => {
-      await called(page, "open_entry", { entry: lab!.entry });
+      await called(page, "open_entry", { entry: lab!.entry }, false);
     });
     assert.equal(AT.entryOf(page.url()), view.entryId(lab!.entry));
     assert.deepEqual(await offered(page), TOOLS.names);
-    assert.deepEqual(await inputOf(page, "open_entry"), {
+    assert.deepEqual(await inputOf(page, "open_entry", false), {
       properties: ["entry"],
       required: ["entry"],
     });
