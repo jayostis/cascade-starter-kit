@@ -9,7 +9,7 @@ test("Alex Rivera's pod draws its first tiles", async ({ page }) => {
     await expect(page.locator(".tiles .tile").first()).toBeVisible();
   } catch (error) {
     console.log(
-      `The page's last changes of state: ${await body.getAttribute("data-trace")}`,
+      `The page says (because ${(await body.getAttribute("data-error")) ?? "it gave no reason"}). The page's last changes of state: ${await body.getAttribute("data-trace")}`,
     );
     throw error;
   }

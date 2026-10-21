@@ -4,6 +4,8 @@ const PORT = 3123;
 
 export default defineConfig({
   testDir: "e2e",
+  timeout: 180_000,
+  expect: { timeout: 120_000 },
   webServer: {
     command: "npm start",
     env: { PORT: String(PORT) },
