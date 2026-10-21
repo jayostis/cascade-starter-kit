@@ -284,7 +284,16 @@ export const host: Host = {
     ...(dataset.code && { code: dataset.code }),
   },
   openSignIn() {
-    popup = window.open("", "cascade-sign-in", "popup,width=520,height=720");
+    const opened = window.open(
+      "",
+      "cascade-sign-in",
+      "popup,width=520,height=720",
+    );
+    popup = opened;
+    return () => {
+      opened?.close();
+      if (popup === opened) popup = undefined;
+    };
   },
   failures: {
     "sign-in-unavailable": {

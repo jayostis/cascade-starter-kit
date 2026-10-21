@@ -43,12 +43,14 @@ export function useSignIn(pod: string): (fhirBase: string) => void {
   return (fhirBase) => {
     if (isBusy()) return;
     const inWindow = host.openSignIn !== undefined;
-    host.openSignIn?.();
+    const close = host.openSignIn?.();
     act(async (go) => {
-      const { connection, authorize } = await host.api.connect({
-        pod,
-        fhirBase,
-      });
+      const { connection, authorize } = await host.api
+        .connect({ pod, fhirBase })
+        .catch((error: unknown) => {
+          close?.();
+          throw error;
+        });
       if (inWindow || authorize === undefined)
         return go(ROUTED.connection(pod, connection));
       ready();

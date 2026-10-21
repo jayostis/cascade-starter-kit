@@ -174,8 +174,9 @@ export interface Host {
   /**
    * Opens the window a sign-in at a hospital goes on, in the click that asks for it, where the host signs in in one;
    * a host without it signs in on the hospital's own page in place of the app, which `connect`'s `authorize` names.
+   * It returns what closes the window, for a `connect` the pod or the directory refuses before it signs in.
    */
-  openSignIn?(): void;
+  openSignIn?(): () => void;
   /** What this host says of a failed sign-in where its cause differs from the app's: a sentence by failure kind. */
   readonly failures?: Readonly<Record<string, Failure>>;
   /** The chat with a model, on a host that has one: the Node target's. */
