@@ -37,14 +37,52 @@ jobs:
             build/release-notes.md
           if-no-files-found: error
 
-  # An app made by the command from the tarball, on the template's pinned runtime, and used as a person would.
-  create:
-    name: create (${{ matrix.os }})
+  # What a person receives, for the base and each add-on: the command into a temp folder, then `npm install && npm test`.
+  made:
+    name: made (${{ matrix.os }}, ${{ matrix.with || 'base' }})
     needs: pack
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
+        with: ["", chat, mcp]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+      - uses: actions/download-artifact@v7
+        with:
+          name: create
+          path: ${{ runner.temp }}/create
+      - name: create, then npm install && npm test
+        working-directory: ${{ runner.temp }}
+        env:
+          WITH: ${{ matrix.with }}
+        run: |
+          set -euo pipefail
+          tarball=$(node -p "require('node:path').resolve(process.argv[1])" create/create-cascade-app-*.tgz)
+          npx --yes --package="$tarball" create-cascade-app my-app ${WITH:+--with "$WITH"}
+          cd my-app
+          npm install
+          npm test
+
+  # An app made by the command from the tarball, on the template's pinned runtime, and used as a person would: the base
+  # on each system, and with every add-on on ubuntu.
+  create:
+    name: create (${{ matrix.os }}${{ matrix.with && format(', --with {0}', matrix.with) || '' }})
+    needs: pack
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        with: [""]
+        include:
+          - os: ubuntu-latest
+            with: chat,mcp
     runs-on: ${{ matrix.os }}
     env:
       GIT_CONFIG_COUNT: 1
@@ -94,7 +132,9 @@ jobs:
           path: ${{ runner.temp }}/create
       - name: The starter's check, against the tarball
         working-directory: ${{ runner.temp }}
-        run: node "$GITHUB_WORKSPACE/check/starter.ts" create/create-cascade-app-*.tgz
+        env:
+          WITH: ${{ matrix.with }}
+        run: node "$GITHUB_WORKSPACE/check/starter.ts" create/create-cascade-app-*.tgz ${WITH:+--with "$WITH"}
 
   # Nothing needs macOS, so a release does not wait for it, and a failure still fails the run.
   other-systems:
@@ -152,7 +192,7 @@ jobs:
   release:
     name: release
     if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-    needs: create
+    needs: [create, made]
     runs-on: ubuntu-latest
     permissions:
       contents: write

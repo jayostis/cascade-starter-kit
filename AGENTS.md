@@ -76,6 +76,17 @@ jayostis/cascade-runtime-js`) rewrites it and `package-lock.json`; it refuses
 - **No runtime dependency.** It loads a made app's tables and kits through
   that app's own `cascade-runtime/fixtures`, resolved from the app's folder
   once it is installed.
+- **Add-ons are applied by `create`, not kept in `app/`.** The chat and the
+  MCP server are `add-ons/chat/` and `add-ons/mcp/`, each with a shadcn
+  `registry-item.json` that `create --with` applies (`addOn()`); the base never
+  imports an add-on's module by name, it finds one by its files. A change to
+  the chat or the MCP server is made in its add-on folder; the repository's
+  suites see it through `build/app/` (`scripts/with-add-ons.mjs`), which
+  `npm test`, `npm run typecheck` and `npm run test:browser` rebuild. An
+  add-on's dependency is pinned in its manifest and at the same version in
+  the root's devDependencies (`create.test.ts` checks it). An npm script it
+  adds needs its line in `meta.help` and its item in its `AGENTS.part.md`
+  under "The starter".
 
 ## Conventions
 

@@ -4,7 +4,8 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { build, type Rolldown } from "vite";
 
-const APP = fileURLToPath(new URL("../../app/", import.meta.url));
+/** The template with every add-on added, so the chat's chunk is there to be kept out of the browser's bundle. */
+const APP = fileURLToPath(new URL("../../build/app/", import.meta.url));
 
 /** The chunks of the app's bundle for `mode`'s target, as Vite builds it, and the modules in them. */
 async function bundled(mode?: string) {

@@ -31,7 +31,7 @@ type Offered = Record<
 >;
 
 const { chatRoutes, chatTools, EXPLAIN_THE_THING, MAX_ROUNDS } = (await import(
-  new URL("../../app/server/chat.ts", import.meta.url).href
+  new URL("../../build/app/server/chat.ts", import.meta.url).href
 )) as {
   chatRoutes: (options: { api: unknown; model: Model | undefined }) => Routes;
   chatTools: (api: unknown) => Offered;
@@ -39,7 +39,7 @@ const { chatRoutes, chatTools, EXPLAIN_THE_THING, MAX_ROUNDS } = (await import(
   MAX_ROUNDS: number;
 };
 const { modelOf } = (await import(
-  new URL("../../app/models.ts", import.meta.url).href
+  new URL("../../build/app/models.ts", import.meta.url).href
 )) as {
   modelOf: (settings: {
     provider: string;
@@ -50,7 +50,7 @@ const { modelOf } = (await import(
 };
 type Sent = { id: string; role: string; parts: Chunk[] };
 const { sent } = (await import(
-  new URL("../../app/src/chat/chats.ts", import.meta.url).href
+  new URL("../../build/app/src/chat/chats.ts", import.meta.url).href
 )) as { sent: (messages: Sent[], budget: number) => Sent[] };
 type Api = {
   said(input: object): Promise<Record<string, unknown>>;
@@ -58,14 +58,14 @@ type Api = {
   close(): Promise<void>;
 };
 const { maps, podApi } = (await import(
-  new URL("../../app/pod-api.ts", import.meta.url).href
+  new URL("../../build/app/pod-api.ts", import.meta.url).href
 )) as {
   maps: (output: object) => { about: Map<string, unknown> };
   podApi: (host: object) => Api;
 };
 type Schema = { properties?: Record<string, unknown> };
 const { NEVER, TOOLS, withPod } = (await import(
-  new URL("../../app/tools.ts", import.meta.url).href
+  new URL("../../build/app/tools.ts", import.meta.url).href
 )) as {
   NEVER: { op: string; with?: string }[];
   TOOLS: {
@@ -78,7 +78,7 @@ const { NEVER, TOOLS, withPod } = (await import(
   withPod: (schema: Schema) => Schema;
 };
 const { changeSaid, entryId, HISTORY } = (await import(
-  new URL("../../app/said.ts", import.meta.url).href
+  new URL("../../build/app/said.ts", import.meta.url).href
 )) as {
   changeSaid: (finding: unknown, about: Map<string, unknown>) => string;
   entryId: (entry: string) => string;

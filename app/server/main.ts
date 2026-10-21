@@ -1,7 +1,8 @@
 // `npm start`: the app built into `dist/` (again when a file it is built from is newer), served at
 // http://127.0.0.1:3000/ (`PORT` to change it), with PodApi over the pods in `pods/` at `/api/`, the chat at `/chat`
-// and the demo hospitals on a loopback port of their own. `npm run dev` (`--dev`) serves the app's sources through Vite
+// when the chat add-on put `server/chat.ts` here, and the demo hospitals on a loopback port of their own. `npm run dev` (`--dev`) serves the app's sources through Vite
 // instead, in the same process, rebuilt on every save.
+import { existsSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import process, { argv, env, exit, stderr, stdout } from "node:process";
@@ -15,19 +16,18 @@ import {
   loadHospitals,
   serveDemo,
 } from "@the-cascade-protocol/sandbox/node";
-import { Refusal } from "cascade-runtime";
-import { modelFrom } from "../models.ts";
 import { nodeHospitals, nodeHost } from "../node-host.ts";
 import { podApi } from "../pod-api.ts";
 import { PODS } from "../pods.ts";
 import { demoPeople, worldInstant } from "../said.ts";
-import { appServer, type Served } from "./app.ts";
+import { appServer, type ChatServed, type Served } from "./app.ts";
 import { builtPages } from "./built.ts";
-import { chatRoutes } from "./chat.ts";
 import type { Own } from "./guard.ts";
 
 const APP = fileURLToPath(new URL("../", import.meta.url));
 const DIST = join(APP, "dist");
+/** The chat add-on's server, which is the add-on's being here: the base names no module of the chat's. */
+const CHAT = new URL("./chat.ts", import.meta.url);
 const told = new Set<string>();
 
 /** The pages built into `dist/` when it has none, or what they are built from or with has changed since. */
@@ -90,23 +90,14 @@ function startingDate(): string | undefined {
   return asOf;
 }
 
-/** The model the app was set up with (`npm run model`), or none, a setting the client refuses said on the console. */
-function modelSet() {
-  try {
-    return modelFrom();
-  } catch (error) {
-    if (!(error instanceof Refusal)) throw error;
-    stderr.write(`No model is used: ${error.message}\n`);
-    return undefined;
-  }
-}
-
 const host = nodeHost({ folder: PODS, unsaid });
 const api = podApi(host);
 const demo = await hospitalsHeld();
 const people = demoPeople(demo);
 const startedAsOf = startingDate();
-const model = modelSet();
+const chat = existsSync(CHAT)
+  ? ((await import(CHAT.href)) as { chatServed: ChatServed }).chatServed(api)
+  : undefined;
 let own: Own = { hosts: new Set(), origins: new Set() };
 let back: Served["back"] = () => undefined;
 
@@ -125,7 +116,7 @@ const vite = dev
 const app = appServer({
   api,
   own: () => own,
-  chat: chatRoutes({ api, model }),
+  ...(chat === undefined ? {} : { chat }),
   back: (url) => back(url),
   people: () => people,
   pages:

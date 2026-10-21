@@ -8,9 +8,10 @@ itself.
 
 It is written in TypeScript, on [React](https://react.dev) with
 [React Router](https://reactrouter.com), built by [Vite](https://vite.dev);
-its server is [Hono](https://hono.dev), and its chat runs on the
-[Vercel AI SDK](https://ai-sdk.dev) with [assistant-ui](https://www.assistant-ui.com).
-Node 22.18 or later runs its `.ts` files as they are.
+its server is [Hono](https://hono.dev). Node 22.18 or later runs its `.ts`
+files as they are. It is the starter's base: `create-cascade-app --with chat`
+adds a chat with a model, and `--with mcp` an MCP server, each with its section
+at the end of this file.
 
 The app is made with four pods, `alex-rivera`, `priya-natarajan`,
 `martin-okafor` and `tamsin-vale`, loaded from the kits the package carries.
@@ -50,8 +51,8 @@ each kind of record, which opens a table you can sort by a heading and filter.
 made-up patients in one click. Tick "Encrypt this pod with six words" there and the app
 shows six words, asks for the second and the fifth, and only then makes the pod with
 every file sealed; after a restart the pod's page asks for the words. The words
-are the only way in and cannot be recovered. `npm run ask`, `npm run console` and
-`npm run mcp` do not open an encrypted pod: they say so in one line.
+are the only way in and cannot be recovered. `npm run ask` and `npm run console`
+do not open an encrypted pod: they say so in one line.
 
 Under what is worth a look, a pod with medication history and lab results has
 "What changed": for each test whose results differ before and after a
@@ -107,28 +108,11 @@ North or South, with `npm run patient:add -- <hospital id> <file>`, which
 writes them under `people/`. The guide says what the file may hold, a stop's
 dates in short included.
 
-## Chat with the pods in the app
-
-Run `npm run model` once, then `npm start`: every page has a chat window, made
-with [assistant-ui](https://www.assistant-ui.com) over the
-[Vercel AI SDK](https://ai-sdk.dev). Ask "find anything interesting" and it answers from the pod's records,
-with the numbers of each change and the lab results behind it as a card under
-the answer, and "Open the trend" draws it. Ask it to "open Ines Calloway's pod"
-and the app goes there, with your chat open. Stop ends the model's answer. Chats are
-kept by your browser, under the pod they are about, and an encrypted pod's are
-kept nowhere. Each question goes to the
-model you chose with the newest part of the chat (its last 24,000 characters)
-and what its tools read from the pod. Without a model the
-window only says to run `npm run model`. The chat reads, and moves the app; when
-the model asks to make a pod, check the tables or move the world's date, the
-page asks you first, and Cancel tells the model no. The chat is the Node
-app's only: `npm run browser` has none.
-
 ## The tools a model reaches
 
-`tools.ts` is the one list of tools a model reaches the app by, the chat, an
-MCP client and the browser target's WebMCP alike. Each calls the app's PodApi only, and each
-has a consent tier:
+`tools.ts` is the one list of tools a model reaches the app by, the browser
+target's WebMCP, and the chat and an MCP client when they are added, alike.
+Each calls the app's PodApi only, and each has a consent tier:
 
 - **free**, reads: `list_pods`, `find_changes`, `finding_rows`, `lab_series`,
   `timeline`, `worth_a_look` and `ask`; and moving the app: `open_pod`,
@@ -140,84 +124,8 @@ has a consent tier:
   (`connect`), bringing a record in (`bring`: the person does it from its box),
   and Delete all and Reset all.
 
-The MCP server offers the free reads. WebMCP, where the browser has
-`document.modelContext`, offers every tool on every screen of both targets, an
-`ask` write only after the page's own Allow. `npm start`'s chat runs on the AI SDK: its server runs
-the free reads, and offers the moves and the `ask` writes as tools the page
-runs, so a write waits for the person.
-
-An empty chat offers up to four questions worked out from the pod's own records
-(not by a model), such as "Did LDL cholesterol change after atorvastatin 20 MG Oral Tablet
-started?", and each What changed card, each trend and each entry has an "Ask
-about this" button that opens a new chat about that one thing, named at the top
-of the chat. The model is told to explain the thing, never the person.
-
-## Ask the pods from Claude Desktop, VS Code or any MCP client
-
-`npm run mcp` is an [MCP](https://modelcontextprotocol.io) server on stdio over
-the app's pods. A client starts it; it prints nothing itself. It offers:
-
-- `list_pods`: the pods' names.
-- `find_changes`: what changed in a pod's lab results after a medication
-  started or stopped, strongest first, with the numbers; `finding_rows` gives
-  the lab rows behind one, `lab_series` one test's results over time and
-  `timeline` each medication's start and end. They state what changed, never
-  why. Each finding of `find_changes` carries `view`, the address of the trend
-  that draws its results; it opens while `npm start` runs, on `PORT` if the
-  client has it too, else 3000.
-- `worth_a_look`: what the pod's page lists under Worth a look, in its order:
-  each line's sentence, its entry's ID and its tag. It states what is flagged
-  (an entry that needs review, a report that differs from ClinVar today,
-  medications that share an ingredient), never why.
-- `ask`: a pod's records by the name of a question (allergies, conditions,
-  medications, medication history, lab results, immunizations, procedures,
-  genetic variants, the person, where an entry came from), a few rows of the
-  many; it never takes a query of your own.
-
-Every tool but `list_pods` takes the pod's name. Ask "find anything interesting
-in this pod" or "did anything change after I stopped metformin?" and the client
-calls the tools. Restart the client's server after `npm run pod:reset` of a pod
-it has shown.
-
-**A hosted client sends what the tools return to its provider.** The pods this
-app is made with, and the demo hospitals' patients, are made up. A pod you made
-from your own records is yours to decide about: use a model that runs on your
-machine, or leave that pod out.
-
-**Claude Desktop.** Open Settings, Developer, Edit Config, and add the server
-to `claude_desktop_config.json` (on Windows `%APPDATA%\Claude\`, on macOS
-`~/Library/Application Support/Claude/`), with this app's folder in the path
-(`args` must use an absolute path, as Claude Desktop starts the server from
-another folder; forward slashes work on Windows too), then quit Claude Desktop
-and start it again:
-
-```json
-{
-  "mcpServers": {
-    "cascade": {
-      "command": "node",
-      "args": ["C:/path/to/my-app/mcp.ts"]
-    }
-  }
-}
-```
-
-If Claude Desktop cannot find `node`, give the full path to it as `command`.
-
-**VS Code.** In this app's folder, make `.vscode/mcp.json`, then start the
-server from the file's Start link or from Chat in Agent mode:
-
-```json
-{
-  "servers": {
-    "cascade": {
-      "type": "stdio",
-      "command": "node",
-      "args": ["${workspaceFolder}/mcp.ts"]
-    }
-  }
-}
-```
+WebMCP, where the browser has `document.modelContext`, offers every tool on
+every screen of both targets, an `ask` write only after the page's own Allow.
 
 ## The commands
 
@@ -240,14 +148,6 @@ script goes after `--`, or npm keeps it for itself.
   folder as a person puts it there: `alex-rivera x-e12` as
   `apple_health_export`, `priya-natarajan kestrel-harbor-health-summary.xml` as
   that file.
-- `npm run model` asks which model a chat will use: Google Gemini, Groq or
-  OpenRouter (each gives a free key from a sign-up page), Ollama or LM Studio
-  on this computer, Anthropic, or another OpenAI-compatible address. It says
-  what that provider does with what it is sent, makes one real request to
-  check that the model calls a tool, and keeps the choice and the key in
-  `.env` in this folder, which git ignores. A free hosted tier is for the
-  example and story pods, not a person's own. Run it again to change the
-  choice; `npm run model -- --off` removes it.
 - `ask` and `console` need `--pod <name>` whenever the app has more than one
   pod, as a made app does; it may be left out only when there is exactly one.
 - `npm run typecheck` checks the TypeScript of every file of the app.
@@ -272,8 +172,7 @@ which Node runs as it is.
   PodApi, `usePodApi()` of `src/api.tsx`, from the host the build chose: on
   Node `src/hosts/http.ts`, which calls the server's `/api/` through Hono's
   typed client, and in a browser `src/hosts/browser.ts`, which runs
-  `pod-api.ts` in the page.
-  `src/chat/` is the chat window, Node only. Under the pods, the sidebar lists
+  `pod-api.ts` in the page. Under the pods, the sidebar lists
   the reference tables the pods are matched with; `/tables/<id>/` shows one
   with a search, and Check now reads their feeds again.
 - `said.ts`: what the pages say, as plain functions with no imports, from a
@@ -282,20 +181,19 @@ which Node runs as it is.
 - `server/`: `npm start`'s server, on [Hono](https://hono.dev): `main.ts`
   starts it, `app.ts` answers, `api.ts` serves every operation of
   `pod-api.ts` as `POST /api/<operation>`, JSON in and out, with each input
-  checked by `inputs.ts`, `guard.ts` refuses another site's requests, and
-  `chat.ts` is the chat's `/chat`, on the AI SDK: `POST` answers with its UI
-  message stream, and `GET` names the model. `browser.ts` is
+  checked by `inputs.ts`, `tools.ts` runs the tool list's reads for the
+  page, and `guard.ts` refuses another site's requests. `browser.ts` is
   `npm run browser`, and `samples.ts` what its samples carry for a first
   visit.
 - `pod-api.ts`: `podApi(host)`, every read and write the app makes of its
   pods and its reference tables, plain JSON in and out, refusing bad input
   with a `Refusal`; each operation's input is its route's schema and its
-  output what it gives (`PodApi`, `Output`). The server, the chat, the MCP
-  server and `npm run ask` all call it, and the browser target loads the same
+  output what it gives (`PodApi`, `Output`). The server, `npm run ask` and
+  every add-on call it, and the browser target loads the same
   file: it imports only `cascade-runtime` and `said.ts`.
 - `node-host.ts`: the host `podApi` reads on Node: the pods are folders in
   `pods/`, with the reference tables beside them; `opensEncrypted: false`
-  refuses an encrypted pod, as the MCP server and `npm run ask` do. Also the
+  refuses an encrypted pod, as `npm run ask` does. Also the
   hospitals and the world's date the server gives it.
 - `hospitals.ts`: the sign-in at a hospital, which waits for the redirect
   back to `/callback`, and the world's date the demo hospitals answer as of.
@@ -304,18 +202,9 @@ which Node runs as it is.
   they are called, which one a command works on, deleting them and loading the
   kits again, and the addresses of a pod's page and its trend.
 - `pod.ts`, `kit.ts`, `ask.ts`, `console.ts`, `patient.ts`: the commands, and
-  `help.ts`, which lists them.
-- `mcp.ts`, `mcp-server.ts`: the MCP server on stdio, and the tools it
-  offers.
-- `model.ts`, `models.ts`: `npm run model`, and the providers and the four
-  settings, each provider through the AI SDK's own package for it:
-  `@ai-sdk/anthropic`, `@ai-sdk/groq`, `@openrouter/ai-sdk-provider`, and
-  `@ai-sdk/openai-compatible` for Gemini, Ollama, LM Studio and any other
-  OpenAI-compatible address.
+  `help.ts`, which lists them with what `help.json` says of each.
 - `tools.ts`: the one list of tools a model reaches, with their tiers and
-  what no tool calls, which the MCP server, the chat and the browser's WebMCP
-  share. Each calls the operations of `pod-api.ts`.
-- `AGENTS.md`: for a coding agent building on this app.
-
-The full guide to `cascade-runtime` is in
-`node_modules/cascade-runtime/guide/AGENTS.md`.
+  what no tool calls, which every door shares. Each calls the operations of
+  `pod-api.ts`.
+- `AGENTS.md`: for a coding agent building on this app. The full guide to
+  `cascade-runtime` is in `node_modules/cascade-runtime/guide/AGENTS.md`.

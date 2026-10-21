@@ -1,12 +1,16 @@
-// The Node target's host: PodApi at the server's `/api/`, beside the app, and the chat at its `/chat`. The bundle
-// carries the typed client only: no server code and no runtime.
+// The Node target's host: PodApi at the server's `/api/`, beside the app, and the chat at its `/chat` when the chat
+// add-on is here. The bundle carries the typed client only: no server code and no runtime.
 import { lazy } from "react";
 import { type Person, refusal } from "../../said.ts";
-import type { ChatModel, Host, PodApi, ReadTool } from "../api.tsx";
+import type { ChatModel, Host, HostChat, PodApi, ReadTool } from "../api.tsx";
 import { remoteApi } from "./remote.ts";
 
 const BASE = new URL(import.meta.env.BASE_URL, location.href);
 const api: PodApi = remoteApi(BASE.href);
+/** The chat add-on's window, found by Vite when it builds the app: none without the add-on, which then has no chat. */
+const [chatWindow] = Object.values(
+  import.meta.glob<{ ChatWindow: HostChat["Window"] }>("../chat/window.tsx"),
+);
 
 /** The model `GET /chat` names, or none when the server has none set. */
 async function model(): Promise<ChatModel | undefined> {
@@ -71,12 +75,12 @@ export const host: Host = {
   firstVisit: async () => undefined,
   engine: async () => undefined,
   tables: async () => undefined,
-  chat: {
-    model,
-    Window: lazy(() =>
-      import("../chat/window.tsx").then(({ ChatWindow }) => ({
-        default: ChatWindow,
-      })),
-    ),
-  },
+  ...(chatWindow && {
+    chat: {
+      model,
+      Window: lazy(() =>
+        chatWindow().then(({ ChatWindow }) => ({ default: ChatWindow })),
+      ),
+    },
+  }),
 };

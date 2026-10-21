@@ -1,0 +1,64 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "chat",
+  "type": "registry:block",
+  "title": "Chat",
+  "description": "a chat with a model on every page of the Node target, on the Vercel AI SDK and assistant-ui, and npm run model to choose the model",
+  "dependencies": [
+    "@ai-sdk/anthropic@4.0.73",
+    "@ai-sdk/groq@4.0.56",
+    "@ai-sdk/openai-compatible@3.0.64",
+    "@ai-sdk/react@4.0.132",
+    "@assistant-ui/react@0.15.25",
+    "@assistant-ui/react-ai-sdk@1.4.16",
+    "@openrouter/ai-sdk-provider@3.1.0",
+    "ai@7.0.129"
+  ],
+  "devDependencies": ["@ai-sdk/provider@4.0.23"],
+  "files": [
+    {
+      "path": "chat/server/chat.ts",
+      "type": "registry:file",
+      "target": "server/chat.ts"
+    },
+    {
+      "path": "chat/models.ts",
+      "type": "registry:file",
+      "target": "models.ts"
+    },
+    { "path": "chat/model.ts", "type": "registry:file", "target": "model.ts" },
+    {
+      "path": "chat/src/chat/chats.ts",
+      "type": "registry:file",
+      "target": "src/chat/chats.ts"
+    },
+    {
+      "path": "chat/src/chat/tools.ts",
+      "type": "registry:file",
+      "target": "src/chat/tools.ts"
+    },
+    {
+      "path": "chat/src/chat/window.tsx",
+      "type": "registry:file",
+      "target": "src/chat/window.tsx"
+    },
+    {
+      "path": "chat/test/chat.test.ts",
+      "type": "registry:file",
+      "target": "test/chat.test.ts"
+    }
+  ],
+  "meta": {
+    "scripts": { "model": "node model.ts" },
+    "help": {
+      "model": [
+        "npm run model [-- --off]",
+        "choose the model the chat uses and check that it calls tools, keeping the choice in .env; --off removes it"
+      ]
+    },
+    "merge": {
+      "AGENTS.md": "chat/AGENTS.part.md",
+      "README.md": "chat/README.part.md"
+    }
+  }
+}

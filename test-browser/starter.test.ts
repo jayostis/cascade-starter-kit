@@ -30,6 +30,8 @@ import {
 } from "./shown.js";
 
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
+/** The template with every add-on added, the chat among them, as `npm run test:browser` makes it. */
+const APP = join(ROOT, "build", "app");
 const KEY = "sk-test-key-that-must-not-leave";
 const ASKS = "open Ines Calloway's pod";
 
@@ -119,7 +121,7 @@ function builtOnce(): Promise<string> {
         "--logLevel",
         "warn",
       ],
-      { cwd: join(ROOT, "app"), stdio: ["ignore", "inherit", "inherit"] },
+      { cwd: APP, stdio: ["ignore", "inherit", "inherit"] },
     );
     const code = await new Promise((done) => vite.on("exit", done));
     assert.equal(code, 0, "the React app did not build");
@@ -145,7 +147,7 @@ async function startStarter(
 ): Promise<Started> {
   const folder = again ?? (await mkdtemp(join(tmpdir(), "t273-")));
   if (again === undefined) {
-    await cp(join(ROOT, "app"), folder, {
+    await cp(APP, folder, {
       recursive: true,
       filter: (from) =>
         !/[\\/](node_modules|pods|dist|dist-browser|\.env)$/.test(from),

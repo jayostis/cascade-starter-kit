@@ -1,0 +1,35 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "mcp",
+  "type": "registry:block",
+  "title": "MCP server",
+  "description": "npm run mcp, an MCP server on stdio over the pods, for Claude Desktop, VS Code or any MCP client",
+  "dependencies": ["@modelcontextprotocol/server@2.3.1"],
+  "devDependencies": ["@modelcontextprotocol/client@2.3.1"],
+  "files": [
+    { "path": "mcp/mcp.ts", "type": "registry:file", "target": "mcp.ts" },
+    {
+      "path": "mcp/mcp-server.ts",
+      "type": "registry:file",
+      "target": "mcp-server.ts"
+    },
+    {
+      "path": "mcp/test/mcp.test.ts",
+      "type": "registry:file",
+      "target": "test/mcp.test.ts"
+    }
+  ],
+  "meta": {
+    "scripts": { "mcp": "node mcp.ts" },
+    "help": {
+      "mcp": [
+        "npm run mcp",
+        "serve the pods to an MCP client such as Claude Desktop or VS Code, on stdin and stdout"
+      ]
+    },
+    "merge": {
+      "AGENTS.md": "mcp/AGENTS.part.md",
+      "README.md": "mcp/README.part.md"
+    }
+  }
+}

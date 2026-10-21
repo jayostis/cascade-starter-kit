@@ -7,7 +7,9 @@ starts with four, Alex Rivera's, Priya Natarajan's, Martin Okafor's (two
 FHIR reports of one variant, beside what ClinVar says today) and Tamsin Vale's
 (two pulls from Cascade North a year apart), loaded from the
 kits the package carries; `npm run reset` puts them back as they were made, and
-`npm run help` lists every command.
+`npm run help` lists every command. The app is the starter's base; an add-on
+that `create-cascade-app --with` added (the chat, the MCP server) has its own
+section at the end of this file, and its commands are under "The starter".
 `npm run kit:export -- alex-rivera x-e12` copies one of Alex's downloads into
 the app as `apple_health_export`, and
 `npm run kit:export -- priya-natarajan kestrel-harbor-health-summary.xml` one
@@ -28,7 +30,8 @@ app has two targets:
   `POST /api/<operation>` through Hono's typed client (`src/hosts/remote.ts`),
   and `server/api.ts` answers it, each input checked by `server/inputs.ts`.
   `server/app.ts` is the server: the guard (`server/guard.ts`), `/api/`,
-  `/chat`, `/callback`, `/world-date` and the built pages.
+  `/tools`, `/callback`, `/world-date` and the built pages, and `/chat` when
+  the chat is added (without it, `/chat` is a 404).
 - **In a browser alone,** `npm run browser` (`server/browser.ts`) builds it
   with Vite's `browser` mode into `dist-browser/`, with the kits' samples that
   a first visit copies, and serves those files on 127.0.0.1; nothing answers
@@ -91,9 +94,7 @@ select by must not be a utility's name (`grid`, `table`, `hidden`, `block`):
 `.filter` on the pod page's filter box already collides, harmlessly because
 the utility's variables are empty, and stays because the tests select it.
 
-`npm run mcp` runs `mcp.ts`, an MCP server on stdio over the pods, for
-Claude Desktop, VS Code or any MCP client (the README says how to add it);
-the app, the chat, the MCP server and `npm run ask` reach the pods through
+The app, `npm run ask` and every add-on reach the pods through
 `podApi(host)` in `pod-api.ts`, plain JSON in and out, each operation with one
 input type, its route's schema (`Input` of `server/inputs.ts`), and one output
 type (`Output` of `pod-api.ts`), which the server also
@@ -101,7 +102,7 @@ serves as `POST /api/<operation>`; `pod.ts` (`npm run pod:load`, and `npm run re
 through `resetAll` in `pods.ts`) writes pods with `openPod` and `replayKit` directly,
 and `console.ts` opens a raw `Pod` through `openWithoutWords`;
 an encrypted pod is opened only by the app, with its six words (`src/newpod.tsx`,
-at `/encrypted-pods/<name>`), and `mcp.ts` and `npm run ask` refuse it, as their host is
+at `/encrypted-pods/<name>`), and `npm run ask` refuses it, as its host is
 `nodeHost({ opensEncrypted: false })` (`node-host.ts`), and `console.ts` refuses it too;
 `tools.ts` holds the one list of tools a model reaches the app by (`TOOLS`), each
 calling `podApi`'s operations only, with its consent `tier`: `free` reads
@@ -109,32 +110,12 @@ calling `podApi`'s operations only, with its consent `tier`: `free` reads
 (`open_pod`, `open_trend`, `open_entry`, `open_classes`, `open_panel`, `open_table`, through the door's `open` and its own addresses), and `ask` writes,
 which the person confirms first (`make_pod`, never encrypted; `check_tables`; `set_world_date`). `NEVER` is what
 no tool calls: `makePod` with `encrypt`, `waitingWords`, `confirmWords`, `unlock`, `connect`, `bring`,
-`deleteAll` and `resetAll`. The MCP server offers the free reads; WebMCP (`src/tools.ts`), on both
-targets and every screen, every tool by its tier (the last section says how). The chat is the Node target's only. `server/chat.ts`, `npm start`'s
-`/chat`, runs on the Vercel AI SDK (`ai`): `chatTools(api)` offers
-every tool of the list, the free reads with a server `execute` and the navigation and `ask` tools with none, so a
-call to one ends the server's turn and the page runs it. `POST /chat` takes the SDK's
-`messages` beside `pod`, `page` and `context`, answers with the SDK's UI message stream, stops after `MAX_ROUNDS`
-rounds of tool calls, and says the model's refusal as a `data-refused` part; `GET /chat` gives the model's
-`{ provider, name, local }`, or `{}`. The chat window, on the Node target only, is `src/chat/`:
-assistant-ui's components over the SDK's `useChat` at `/chat`. It runs the page's tools, `PAGE_TOOLS` of `said.ts`
-(which `tools.ts` lists too), over the host's PodApi: a navigation moves the app in place with the chat open, and a
-write waits on the page's own ask, `useConfirm()` of `src/confirm.tsx` (Allow, or Cancel, which tells the model "The
-person said no"). It keeps the chats in `localStorage`, each under the pod it is about, and none of an encrypted
-pod's (`src/chat/chats.ts`). The screens draw "Ask about this" (`src/ask.tsx`) once `GET /chat` names a model; any
-element with `data-ask` (a JSON context) starts a new chat with that context, and one with `data-ask-text` sends
-its text as typed. A hosted client sends what the tools return to its provider:
+`deleteAll` and `resetAll`. WebMCP (`src/tools.ts`), on both
+targets and every screen, offers every tool by its tier (the last section says how). A model reached
+by any door sends what the tools return to its provider when it is hosted:
 never point one at a person's own pod without their say. The starter holds only
 made-up records (the kits, the demo hospitals); before connecting real records,
 decide whether a hosted model may see them.
-`npm run model` runs `model.ts`: it asks which model a chat uses, checks on the
-AI SDK that the model calls a tool and writes `CASCADE_MODEL_PROVIDER`, `_URL`, `_NAME` and `_KEY`
-to `.env` (untracked; `--off` removes them). `models.ts` is the door to a model
-for the server: `modelFrom()` reads those settings, loads `.env` itself and gives
-nothing when there are none, and `modelOf()` makes the model through the AI SDK's
-provider packages: `@ai-sdk/anthropic`, `@ai-sdk/groq`, `@openrouter/ai-sdk-provider`, and
-`@ai-sdk/openai-compatible` for Gemini (at its OpenAI-compatible address), a model on this computer and any
-other address. Nothing else may hold a model's key.
 A pod's page also brings in a record from a hospital of the test directory
 (`src/hospitals.tsx`). On Node the person signs in on the hospital's own page
 in the same tab, and `hospitals.ts` receives the redirect on `/callback`,
@@ -217,8 +198,8 @@ keeping the package and the pods, under `pods/<name>/`. It is made with four,
 - `npm run reset` removes every pod and loads those four again.
 - `npm start` builds the app (`index.html`, `src/`, by `vite.config.ts`) into
   `dist/` when it has none or a file it is built from is newer, and serves it
-  from `server/main.ts` on `PORT` (3000 if unset), with PodApi at `/api/` and
-  the chat's `/chat` on the AI SDK; stop it with Ctrl+C or by its process, never
+  from `server/main.ts` on `PORT` (3000 if unset), with PodApi at `/api/`;
+  stop it with Ctrl+C or by its process, never
   by killing every Node process. A pod's page links to bringing in a record from
   a hospital of the test directory: the app's `hospitals.ts` signs in,
   receiving the redirect on `/callback`. An option to an npm script goes after
@@ -272,13 +253,6 @@ keeping the package and the pods, under `pods/<name>/`. It is made with four,
 - `npm run pod:reset <name>` removes a pod.
 - `npm run ask -- [--pod <name>] "<question>"` prints a question's rows.
 - `npm run console -- [--pod <name>]` opens a REPL with the pod as `pod`.
-- `npm run mcp` is an MCP server on stdio over every pod, for a client such as
-  Claude Desktop to start (the starter's README says how). A hosted client
-  sends what the tools return to its provider.
-- `npm run model [-- --off]` asks which model the app's chat uses (a free
-  hosted key, a model on this computer, or a paid one), checks that it calls a
-  tool and keeps the choice, key included, in the app's untracked `.env`.
-  `--off` removes it. Without `.env` the app runs as it did.
 - `npm run kit:export -- <kit> <download>` copies a download into the app, for
   `look`: `alex-rivera x-e12` as `apple_health_export`, and
   `priya-natarajan kestrel-harbor-health-summary.xml` as that file.
@@ -325,8 +299,8 @@ offers nothing). The tools are the whole of `TOOLS`, every tool by its tier:
 
 - **free** tools run at once: the reads, and the `open_*` tools, which move the app in place through a step, as a click
   does.
-- **ask** tools (`make_pod`, `check_tables`, `set_world_date`) show the page's own box, the one the chat's writes use
-  (`useConfirm` in `src/confirm.tsx`), one at a time with the chat's. Allow runs the write; Cancel, or leaving the pod,
+- **ask** tools (`make_pod`, `check_tables`, `set_world_date`) show the page's own box (`useConfirm` in
+  `src/confirm.tsx`), one at a time, which the chat's writes use too when it is added. Allow runs the write; Cancel, or leaving the pod,
   rejects the call with `Refusal` and the sentence "The person said no", and writes nothing.
 - the **never** list (`NEVER` in `tools.ts`) is no tool in any door.
 
@@ -334,8 +308,8 @@ With a pod shown, a tool of one pod takes it as given; on a screen with none (th
 pod's name as `pod`. `open_pod` always takes the name. The tools are offered again only when the pod shown changes, and
 taken away in the commit that draws the next one.
 
-There are three doors, one list: MCP (`mcp-server.ts`) offers the free reads; the chat (`server/chat.ts`) offers every
-tool, the page running the ones with no server `execute`; WebMCP (`src/tools.ts`) offers every tool. The Node bundle
+The list is one, whatever door offers it: WebMCP (`src/tools.ts`) offers every tool, and each add-on that is a door
+(the chat, the MCP server) says below which it offers. The Node bundle
 carries no runtime, so its page gets the reads from the server: `GET /tools` lists them and `POST /tools/<name>` runs
 one (`server/tools.ts`), while the browser target runs them in the page (`reads` of `src/hosts/browser.ts`).
 
@@ -343,9 +317,8 @@ To add a tool:
 
 - one the page runs itself (it moves the app, or writes after the person's Allow): one entry in `PAGE_TOOLS` in
   `said.ts`, with `run(api, input, door)` calling only PodApi's operations and moving through `door.open`. A write
-  also needs an entry in `ACTIONS` in `src/confirm.tsx`, and every move needs an output in `CLIENT_OUTPUTS` in
-  `server/chat.ts`. Every door then offers it.
-- one the server runs (a read): one entry in `TOOLS` in `tools.ts`, with `tier: "free"`. The MCP server, the chat and
-  both targets' WebMCP offer it, the Node page through `/tools`.
+  also needs an entry in `ACTIONS` in `src/confirm.tsx`. Every door then offers it.
+- one the server runs (a read): one entry in `TOOLS` in `tools.ts`, with `tier: "free"`. Both targets' WebMCP offer
+  it, the Node page through `/tools`, and so does every door an add-on adds.
 
-Either way, add its row to the `runs` table in `test/mcp.test.ts`, which fails for a tool with none.
+Either way, add its row to the `RUNS` table in `test/tools.test.ts`, which fails for a tool with none.

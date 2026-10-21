@@ -42,7 +42,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ["app/src/**/*.{ts,tsx}"],
+    files: ["app/src/**/*.{ts,tsx}", "add-ons/*/src/**/*.{ts,tsx}"],
     ignores: ["app/src/hosts/browser.ts"],
     rules: {
       "no-restricted-syntax": [

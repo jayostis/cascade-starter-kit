@@ -22,22 +22,11 @@
     "kit:export": "node kit.ts",
     "patient:add": "node patient.ts",
     "ask": "node ask.ts",
-    "console": "node console.ts",
-    "mcp": "node mcp.ts",
-    "model": "node model.ts"
+    "console": "node console.ts"
   },
   "dependencies": {
-    "@ai-sdk/anthropic": "4.0.73",
-    "@ai-sdk/groq": "4.0.56",
-    "@ai-sdk/openai-compatible": "3.0.64",
-    "@ai-sdk/react": "4.0.132",
-    "@assistant-ui/react": "0.15.25",
-    "@assistant-ui/react-ai-sdk": "1.4.16",
     "@hono/node-server": "2.1.3",
     "@hono/zod-validator": "0.9.1",
-    "@modelcontextprotocol/server": "2.3.1",
-    "@openrouter/ai-sdk-provider": "3.1.0",
-    "ai": "7.0.129",
     "cascade-runtime": "https://github.com/jayostis/cascade-runtime-js/releases/download/build-32e5b8c17abe3070488c12b79367232cfa182eed/cascade-runtime-0.0.0-commit-32e5b8c17abe3070488c12b79367232cfa182eed.tgz",
     "hono": "4.13.13",
     "react": "19.3.0",
