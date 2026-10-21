@@ -36,6 +36,7 @@ export const host: Host = {
     name: dataset.name ?? "",
     version: dataset.version ?? "",
     runtime: dataset.runtime ?? "",
+    ...(dataset.code && { code: dataset.code }),
   },
   people: async () => [],
   samples: [],
