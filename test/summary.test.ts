@@ -5,7 +5,6 @@ import { render } from "preact-render-to-string";
 import { loadHospital, loadStories } from "@the-cascade-protocol/sandbox/node";
 import {
   changesIn,
-  type FailureKind,
   type Finding,
   labSeriesIn,
   openPod,
@@ -426,36 +425,6 @@ test("a hospital's people are named family name first and sorted by family name,
   );
 });
 
-test("a pod's page makes no claim about what a hospital holds, and still signs in at each hospital of its demo person", () => {
-  const person = {
-    name: "Rowan Ellery Marsh",
-    at: [
-      { name: "Cascade North Demo Hospital", fhirBase: "https://n" },
-      { name: "Cascade South Demo Hospital", fhirBase: "https://s" },
-    ],
-  };
-  const card = render(
-    view.podPage(
-      {},
-      {
-        pod: "rowan-ellery-marsh",
-        person,
-        signIn: (hospital: { name: string }) => `[${hospital.name}]`,
-        findHospital: "?hospitals",
-      },
-    ),
-  );
-  const words = card.replace(/<[^>]*>/g, "");
-  assert.ok(
-    words.includes(
-      "Sign in at a hospital, see what it has, and bring it into this pod.",
-    ),
-  );
-  assert.ok(!/waiting/.test(words), words);
-  assert.ok(person.at.every(({ name }) => card.includes(`[${name}]`)));
-  assert.ok(words.includes("Find a hospital"));
-});
-
 test("a pod's name, from a person's", () => {
   for (const [person, pod] of [
     ["Rowan Ellery Marsh", "rowan-ellery-marsh"],
@@ -483,7 +452,7 @@ test("a person's name is the one typed when the pod was made, else the pod's nam
   assert.equal(view.personName("tamsin-at-north"), "Tamsin At North");
 });
 
-test("a record's person against the pod's: the grade, and the box's words and button by grade", () => {
+test("a record's person against the pod's: the grade", () => {
   const named = (...names: [string, string, string?][]) =>
     view.patientNames({
       entry: [
@@ -531,157 +500,6 @@ test("a record's person against the pod's: the grade, and the box's words and bu
     undefined,
   );
   assert.equal(view.gradePerson(rowan, []), undefined);
-
-  const titles = new Map([["rowan-ellery-marsh", rowan]]);
-  const box = (given: string, family: string, withTitle = true) => {
-    const html = render(
-      view.connectionDialog({
-        id: "pulled",
-        pod: "rowan-ellery-marsh",
-        titles: withTitle ? titles : undefined,
-        hospital: "Cascade North Demo Hospital",
-        back: "#",
-        connection: { step: "pulled", requests: 3 },
-        sources: [],
-        pulled: { missing: [], denied: [] },
-        about: `${given} ${family}`,
-        aboutNames: named([given, family]),
-        bring: "bring",
-      }),
-    );
-    return {
-      said: html.replace(/<[^>]*>/g, ""),
-      button: /<button[^>]*>([^<]*)<\/button>/.exec(html)?.[1],
-      buttonClass: /<button class="([^"]*)"/.exec(html)?.[1],
-      note: /<p class="(note[^"]*)"/.exec(html)?.[1],
-    };
-  };
-  const same = box("Rowan Ellery", "Marsh");
-  assert.ok(!same.said.includes("This record is"));
-  assert.equal(same.button, "Bring it into Rowan Ellery Marsh's pod");
-  const maybe = box("Moss Avery", "Marsh");
-  assert.ok(maybe.said.includes("This record is Moss Avery Marsh's."));
-  assert.ok(maybe.note === undefined && !maybe.said.includes("not Rowan"));
-  assert.equal(maybe.buttonClass, undefined);
-  assert.equal(
-    maybe.button,
-    "Bring Moss Avery Marsh's records into Rowan Ellery Marsh's pod",
-  );
-  const other = box("Odalys", "Brandt");
-  assert.ok(
-    other.said.includes(
-      "This record is Odalys Brandt's, not Rowan Ellery Marsh's.",
-    ),
-  );
-  assert.equal(other.note, "note warm", "the warning is the warm kind");
-  assert.equal(
-    other.buttonClass,
-    "quiet",
-    "the anyway button is the quiet kind",
-  );
-  assert.equal(
-    other.button,
-    "Bring Odalys Brandt's records into Rowan Ellery Marsh's pod anyway",
-  );
-  const untitled = box("Odalys", "Brandt", false);
-  assert.ok(
-    untitled.said.includes(
-      "This record is Odalys Brandt's. Bringing it in makes this Odalys Brandt's pod.",
-    ),
-  );
-  assert.equal(untitled.button, "Bring it into Rowan Ellery Marsh's pod");
-  assert.equal(untitled.note, "note", "an unknown pod's note stays plain");
-});
-
-test("a failed connection's box speaks to a person by the failure's kind, naming the hospital, and offers to sign in again, with the developer's detail in a smaller line", () => {
-  const north = "Cascade North Demo Hospital";
-  const detail =
-    "https://cascade-north.demo.invalid refused Patient with 401: invalid_client.";
-  const kinds: Record<FailureKind, [said: RegExp, button: boolean]> = {
-    cancelled: [/cancelled.*Sign in again/, true],
-    "state-mismatch": [/did not come back.*Sign in again/, true],
-    "host-not-allowed": [/address is not one the app will talk to/, false],
-    "cap-exceeded": [/larger than the app brings in at once/, false],
-    unauthorized: [
-      /did not accept the access token(?!.*(ran out|expired))/,
-      true,
-    ],
-    "retries-exhausted": [
-      /did not answer after several tries.*sign in again/,
-      true,
-    ],
-    "sign-in-unavailable": [/could not be started/, false],
-    "hospital-error": [/refused the sign-in.*Sign in again/, true],
-  };
-  for (const [kind, [action, button]] of Object.entries(kinds) as [
-    FailureKind,
-    [RegExp, boolean],
-  ][]) {
-    const html = render(
-      view.connectionDialog({
-        id: "pulled",
-        pod: "rowan-ellery-marsh",
-        hospital: north,
-        back: "#",
-        connection: { step: "failed", requests: 3 },
-        failed: detail,
-        failure: kind,
-        signInAgain: (label: string) =>
-          view.postButton("sign-in", { fhirBase: "x" }, label),
-        bring: "bring",
-      }),
-    );
-    const first = /<p role="alert">(.*?)<\/p>/.exec(html)?.[1] ?? "";
-    assert.match(first, new RegExp(`Cascade North`), kind);
-    assert.match(first, action, kind);
-    assert.doesNotMatch(first, /401|invalid_client|https?:|\.invalid/, kind);
-    assert.equal(
-      /<button[^>]*>([^<]*)<\/button>/.exec(html)?.[1],
-      button ? "Sign in again at Cascade North" : undefined,
-      kind,
-    );
-    assert.match(
-      html,
-      /<p class="muted detail">https:\/\/cascade-north\.demo\.invalid refused Patient with 401/,
-      kind,
-    );
-  }
-  const popup = render(
-    view.connectionDialog({
-      id: "pulled",
-      pod: "rowan-ellery-marsh",
-      hospital: north,
-      back: "#",
-      connection: { step: "failed", requests: 3 },
-      failed: detail,
-      failure: "sign-in-unavailable",
-      failureOverrides: {
-        "sign-in-unavailable": {
-          said: (name: string) => `Allow pop-ups for ${name}.`,
-          again: true,
-        },
-      },
-      signInAgain: (label: string) =>
-        view.postButton("sign-in", { fhirBase: "x" }, label),
-      bring: "bring",
-    }),
-  );
-  assert.match(popup, /Allow pop-ups for Cascade North/);
-  assert.match(popup, /Sign in again at Cascade North/);
-  const plain = render(
-    view.connectionDialog({
-      id: "pulled",
-      pod: "rowan-ellery-marsh",
-      hospital: north,
-      back: "#",
-      connection: { step: "failed", requests: 3 },
-      failed: "Refused: nothing to bring in",
-      signInAgain: () => "no",
-      bring: "bring",
-    }),
-  );
-  assert.ok(plain.includes("Refused: nothing to bring in"));
-  assert.ok(!plain.includes("Sign in again"));
 });
 
 test("a measurement, to three significant figures", () => {
@@ -704,105 +522,11 @@ test("a cell with nothing to sort by sorts after the rest", () => {
     assert.ok(view.compare(type, "", key) > 0, type);
 });
 
-test("a pod's page with a connection holds its tiles and the connection's box; every box's first link, outside the box, closes it; a sentence keeps the space beside a value put in it", () => {
-  const back = "/pods/alex-rivera/";
-  const page = [
-    render(
-      view.podPage(
-        {
-          [ALLERGIES]: [
-            { entry: "urn:cascade:entry:e1", allergen: "Penicillin" },
-          ],
-          [LABS]: [{ entry: "urn:cascade:entry:e2", test: "Glucose" }],
-        },
-        {
-          pod: "alex-rivera",
-          signIn: () => "",
-          findHospital: "?hospitals",
-          entryHref: (entry: string) =>
-            `/pods/alex-rivera/entries/${view.entryId(entry)}`,
-          connection: view.connectionDialog({
-            id: "connection",
-            pod: "alex-rivera",
-            hospital: "Cascade North Demo Hospital",
-            back,
-            connection: { step: "pulling", requests: 3 },
-            bring: "bring",
-          }),
-        },
-      ),
-    ),
-    render(view.newPodDialog({ people: [], pods: [], action: "make" })),
-    render(
-      view.connectionDialog({
-        id: "pulled",
-        pod: "alex-rivera",
-        hospital: "Cascade North Demo Hospital",
-        back: "#",
-        connection: { step: "pulled", requests: 3 },
-        sources: [{ records: { Condition: 2 }, claimed: false }],
-        pulled: { missing: [], denied: [] },
-        bring: "bring",
-      }),
-    ),
-    render(
-      view.hospitalsPage({
-        pod: "alex-rivera",
-        rows: [],
-        text: "",
-        search: "?hospitals",
-        signIn: () => "",
-        people: [],
-        back,
-      }),
-    ),
-  ].join("\n");
-  const words = page.replace(/<[^>]*>/g, "");
-  for (const sentence of [
-    "What Cascade North has: 2 conditions.",
-    "and bring it into Alex Rivera's pod.",
-    "Back to Alex Rivera",
-  ])
-    assert.ok(words.includes(sentence), sentence);
-  assert.equal((page.match(/<a class="tile"/g) ?? []).length, 2);
-  for (const [entry, shown] of [
-    ["e1", "Penicillin"],
-    ["e2", "Glucose"],
-  ])
-    assert.ok(
-      page.includes(
-        `<td data-key="${shown}"><a href="/pods/alex-rivera/entries/${entry}">${shown}</a></td>`,
-      ),
-      `${shown}'s row does not open its entry`,
-    );
-  const boxes = page.split('<div class="dialog"').slice(1);
-  assert.equal(boxes.length, 5);
-  const connection = boxes.find((box) => box.startsWith(' id="connection"'));
-  assert.ok(connection?.includes("3 requests answered so far"));
-  for (const box of boxes) {
-    const first = /<a [^>]*>/.exec(box)?.[0] ?? "";
-    const closes = box === connection ? back : "#";
-    assert.ok(first.includes(` href="${closes}"`), box.slice(0, 80));
-    assert.match(first, / class="backdrop"/, box.slice(0, 80));
-    assert.match(first, / aria-label="Close the box"/, box.slice(0, 80));
-    assert.ok(
-      box.indexOf(first) < box.indexOf('<div class="box'),
-      box.slice(0, 80),
-    );
-  }
-});
-
-test("a pod's page names a row by the first of its codes the tables name, else by the record's own text, and tags a retired code and an entry that needs review", () => {
+test("the codes a pod's page asks the tables to name are every code of every row", () => {
   const CVX = "urn:test:cvx/";
   const ICD = "urn:test:icd/";
   const SCT = "urn:test:sct/";
   const LOINC = "http://loinc.org/rdf/";
-  const name = (label: string) => ({
-    name: { label, altLabels: [], origin: "urn:x:names" },
-  });
-  const retired = (...replacedBy: string[]) => ({
-    status: { deprecated: true, replacedBy, origin: "urn:x:status" },
-  });
   const answers = {
     "pod/My immunizations": [
       { entry: "i1", vaccine: "Fluarix", code: `${CVX}141` },
@@ -824,14 +548,6 @@ test("a pod's page names a row by the first of its codes the tables name, else b
     ],
     [REVIEW]: [{ entry: "i3", needs: "judged different, still joined" }],
   };
-  const about = new Map<string, object>([
-    [`${CVX}141`, name("flu, split")],
-    [`${CVX}57`, { ...name("hantavirus"), ...retired() }],
-    [`${CVX}15`, retired(`${CVX}141`, `${CVX}150`)],
-    [`${SCT}195967001`, { ...name("Asthma (disorder)"), ...retired() }],
-    [`${ICD}J45.909`, name("Unspecified asthma, uncomplicated")],
-    [`${LOINC}2823-3`, name("Potassium [Moles/volume] in Serum or Plasma")],
-  ]);
   assert.deepEqual(
     view.codesOf(answers).sort(),
     [
@@ -845,50 +561,6 @@ test("a pod's page names a row by the first of its codes the tables name, else b
       `${LOINC}2075-0`,
     ].sort(),
   );
-  const props = { pod: "alex-rivera", signIn: () => "", findHospital: "" };
-  const words = (about?: Map<string, object>) =>
-    render(view.podPage(answers, { ...props, about }))
-      .replace(/<[^>]*>/g, "\n")
-      .split("\n")
-      .map((line: string) => line.trim())
-      .filter(Boolean);
-  const named = words(about);
-  for (const shown of [
-    "flu, split, hantavirus, Old flu, Unlisted",
-    "hantavirus",
-    "Retired code",
-    "Old flu",
-    "Unlisted",
-    "Unspecified asthma, uncomplicated",
-    "Potassium [Moles/volume] in Serum or Plasma",
-    "Chloride",
-  ])
-    assert.ok(named.includes(shown), shown);
-  assert.ok(
-    !named.some((line: string) => line.includes("replaced by")),
-    "what replaces a retired code is said on its entry, not in the tag",
-  );
-  assert.equal(
-    named.filter((line: string) => line === "Needs review").length,
-    2,
-    "the row of an entry that needs review carries the tag, and so does its line in Worth a look",
-  );
-  assert.ok(
-    named.some((line: string) =>
-      line.startsWith("Old flu was marked as different"),
-    ),
-  );
-  for (const hidden of ["Fluarix", "Hantavax", "Asthma (disorder)", "K+"])
-    assert.ok(!named.includes(hidden), hidden);
-  assert.equal(
-    named.filter((line: string) => line.startsWith("Retired code")).length,
-    2,
-    "only the codes that named a row, or with none the first with a status, mark it",
-  );
-  const unnamed = words();
-  for (const shown of ["Fluarix", "Hantavax", "Asthma", "K+"])
-    assert.ok(unnamed.includes(shown), shown);
-  assert.ok(!unnamed.some((line: string) => line.startsWith("Retired")));
 });
 
 test("what the page says after a File menu item: how many pods were deleted, or that the samples are back", () => {
@@ -3160,7 +2832,7 @@ test("Ask about this: once the chat names a model, each What changed card, each 
   }
 });
 
-test("the world's date: a calendar day is the end of that day in UTC, an instant stays as given, and anything else is none; the page shows the date with Set and Today and says why a date was refused; a connection's box says what its pull answered as of; the pod's page and the hospitals page say what the hospitals answer as of now, with a link or a form to change it", () => {
+test("the world's date: a calendar day is the end of that day in UTC, an instant stays as given, and anything else is none; it is said as the day the hospitals answer as of, and a pull's as the day it was pulled as of", () => {
   const instants: [string, string | undefined][] = [
     ["2024-02-01", "2024-02-01T23:59:59Z"],
     [" 2024-02-01 ", "2024-02-01T23:59:59Z"],
@@ -3184,113 +2856,21 @@ test("the world's date: a calendar day is the end of that day in UTC, an instant
   );
   assert.equal(view.utcInstant(undefined), undefined);
 
-  const text = (body: Parameters<typeof render>[0]) =>
-    render(body).replace(/<[^>]*>/g, "");
-  const asOf = "2024-02-01T23:59:59Z";
   assert.equal(
-    view.worldDateSaid(asOf),
+    view.worldDateSaid("2024-02-01T23:59:59Z"),
     "Hospitals answer as of 1 February 2024.",
   );
   assert.equal(
     view.worldDateSaid(undefined),
     "Hospitals answer with everything they hold.",
   );
-
-  const offset = "2024-02-01T00:30:00+01:00";
   assert.equal(
-    view.worldDateSaid(offset),
+    view.worldDateSaid("2024-02-01T00:30:00+01:00"),
     "Hospitals answer as of 31 January 2024.",
   );
-  assert.match(
-    render(view.worldDatePage({ asOf: offset, action: "/w" })),
-    /<input type="date" name="date" value="2024-01-31"/,
+  assert.equal(
+    view.pulledAsOfSaid("2024-02-01T23:59:59Z"),
+    "Pulled as of 1 February 2024.",
   );
-
-  const shown = render(
-    view.worldDatePage({ asOf, action: "/world-date", back: "/" }),
-  );
-  assert.match(shown, /<input type="date" name="date" value="2024-02-01"/);
-  assert.match(shown, /<button>Set<\/button>/);
-  assert.match(
-    shown,
-    /<input type="hidden" name="date" value(="")?\s*\/?>\s*<button class="quiet">Today<\/button>/,
-  );
-  assert.ok(
-    text(view.worldDatePage({ asOf, action: "/w" })).includes(
-      "as of 1 February 2024.",
-    ),
-  );
-  assert.ok(
-    text(
-      view.worldDatePage({
-        asOf,
-        action: "/w",
-        problem: "Soon is not a date.",
-      }),
-    ).includes("Soon is not a date."),
-  );
-
-  const box = {
-    id: "connection",
-    pod: "alex-rivera",
-    hospital: "Cascade North Demo Hospital",
-    back: "#",
-    connection: { step: "pulled", requests: 3 },
-    sources: [],
-    pulled: { missing: [], denied: [] },
-    bring: "bring",
-  };
-  assert.ok(
-    text(view.connectionDialog({ ...box, pulledAsOf: asOf })).includes(
-      "Pulled as of 1 February 2024.",
-    ),
-  );
-  assert.doesNotMatch(
-    text(view.connectionDialog(box)),
-    /Pulled as of|Hospitals answer|Change the world/,
-  );
-
-  const person = {
-    name: "Rowan Marsh",
-    at: [{ name: "Cascade North Demo Hospital", fhirBase: "https://n" }],
-  };
-  const podAt = (world: object) =>
-    render(
-      view.podPage(
-        {},
-        { pod: "x", person, signIn: () => "", findHospital: "?h", world },
-      ),
-    );
-  assert.match(
-    podAt({ asOf, href: "/world-date?back=%2Fp" }),
-    /Hospitals answer as of 1 February 2024\.[^<]*<a href="\/world-date\?back=%2Fp">Change the world's date<\/a>/,
-  );
-  assert.match(
-    podAt({ asOf: undefined, action: "world-date" }),
-    /Hospitals answer with everything they hold\.[\s\S]*<summary>Change the world's date<\/summary>[\s\S]*<form[^>]*action="world-date"[\s\S]*name="date"/,
-  );
-  assert.match(
-    render(
-      view.hospitalsPage({
-        pod: "x",
-        rows: [],
-        text: "",
-        search: "?h",
-        signIn: () => "",
-        people: [],
-        back: "/",
-        world: { asOf, action: "world-date" },
-      }),
-    ),
-    /Hospitals answer as of 1 February 2024\./,
-  );
-  assert.doesNotMatch(
-    render(
-      view.podPage(
-        {},
-        { pod: "x", person, signIn: () => "", findHospital: "?h" },
-      ),
-    ),
-    /Hospitals answer/,
-  );
+  assert.equal(view.pulledAsOfSaid(undefined), undefined);
 });

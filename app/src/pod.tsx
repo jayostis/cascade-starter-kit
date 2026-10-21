@@ -48,9 +48,11 @@ import {
   leftSaid,
 } from "../said.ts";
 import { useAddress } from "./address.tsx";
+import type { ConnectionNow } from "./api.tsx";
 import { AskButton } from "./ask.tsx";
 import { Chart } from "./chart.tsx";
-import { Box, Pending, PostButton, Tag, useReopenedBox } from "./parts.tsx";
+import { Connection, SignIn, WorldDate } from "./hospitals.tsx";
+import { Box, Pending, Tag, useReopenedBox } from "./parts.tsx";
 
 /** What a pod's page is drawn from: its answers, and once the tables can say, what they say of them. */
 export interface PodShown {
@@ -63,6 +65,10 @@ export interface PodShown {
   readonly said?: VariantsSaid;
   /** The hospital a record was just brought in from. */
   readonly from?: string;
+  /** The connection whose box is over the page. */
+  readonly connection?: ConnectionNow;
+  /** The world's date the hospitals answer as of; none for everything they hold. */
+  readonly asOf?: string;
 }
 
 /**
@@ -449,30 +455,37 @@ function Changed({
   );
 }
 
-/** The card that brings in more: a sign-in button per hospital holding the demo person, and Find a hospital. */
+/**
+ * The card that brings in more: the world's date the hospitals answer as of, a sign-in button per hospital holding the
+ * demo person, and Find a hospital. It says nothing of what a hospital holds: nothing here asks it.
+ */
 function BringIn({
+  pod,
   empty,
   person,
+  asOf,
   findHospital,
 }: {
+  pod: string;
   empty: boolean;
   person: Person | undefined;
+  asOf: string | undefined;
   findHospital: string;
 }) {
   return (
     <div className="card">
       <h2>{empty ? "Bring in records" : "Bring in more"}</h2>
       <p>Sign in at a hospital, see what it has, and bring it into this pod.</p>
+      <WorldDate asOf={asOf} />
       <div className="row">
         {(person?.at ?? []).map((hospital) => (
-          <PostButton
+          <SignIn
             key={hospital.fhirBase}
-            action="sign-in"
-            fields={{ fhirBase: hospital.fhirBase }}
-            doing="Signing in…"
+            pod={pod}
+            fhirBase={hospital.fhirBase}
           >
             Sign in at {hospitalName(hospital.name)}
-          </PostButton>
+          </SignIn>
         ))}
         <a className="button quiet" href={findHospital}>
           Find a hospital
@@ -482,17 +495,22 @@ function BringIn({
   );
 }
 
-/** A pod's page, as `shown` gives it; `person` is the demo person it is for, `held` the series the app holds. */
+/**
+ * A pod's page, as `shown` gives it; `person` is the demo person it is for, `held` the series the app holds, and
+ * `follow(n)` draws the connection numbered `n` in its box as it changes.
+ */
 export function PodPage({
   shown,
   titles,
   person,
   held,
+  follow = () => undefined,
 }: {
   shown: PodShown;
   titles: ReadonlyMap<string, string>;
   person: Person | undefined;
   held: readonly Series[];
+  follow?: (n: number) => void;
 }) {
   const address = useAddress();
   useReopenedBox(shown.pod);
@@ -607,10 +625,21 @@ export function PodPage({
       )}
       {tiles.map(({ dialog }) => dialog)}
       <BringIn
+        pod={pod}
         empty={records === 0}
         person={person}
+        asOf={shown.asOf}
         findHospital={address.hospitals(pod)}
       />
+      {shown.connection !== undefined && (
+        <Connection
+          key={shown.connection.n}
+          pod={pod}
+          titles={titles}
+          now={shown.connection}
+          follow={follow}
+        />
+      )}
     </>
   );
 }

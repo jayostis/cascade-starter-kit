@@ -1884,23 +1884,35 @@ if (release === undefined) {
           });
           assert.equal(set.asOf, INSTANT);
           assert.equal((await api(server, "hospitals")).asOf, INSTANT);
-          await opened(page, server, "/world-date?back=%2F%2Fevil.test%2F");
           const appOrigin = new URL(server.address).origin;
-          assert.equal(
-            new URL(page.url()).origin,
-            appOrigin,
-            "a back address off this app was followed",
-          );
-          for (const href of await page
-            .getByRole("link", { name: "Back" })
-            .evaluateAll((links) =>
-              links.map((link) => link.getAttribute("href")),
-            ))
-            assert.equal(
-              new URL(href, page.url()).origin,
-              appOrigin,
-              "the Back link goes off this app",
+          for (const back of [
+            "//evil.test/",
+            "/..//evil.test/",
+            "/.//evil.test/",
+            "/%2e%2e//evil.test/",
+            "/a/..//evil.test",
+          ]) {
+            await opened(
+              page,
+              server,
+              `/world-date?back=${encodeURIComponent(back)}`,
             );
+            assert.equal(
+              new URL(page.url()).origin,
+              appOrigin,
+              `${back}: a back address off this app was followed`,
+            );
+            for (const href of await page
+              .getByRole("link", { name: "Back" })
+              .evaluateAll((links) =>
+                links.map((link) => link.getAttribute("href")),
+              ))
+              assert.equal(
+                new URL(href, page.url()).origin,
+                appOrigin,
+                `${back}: the Back link goes off this app`,
+              );
+          }
           await beginsWith(AS_OF_SAID);
           assert.ok((await pickerNow()).includes(AS_OF));
 

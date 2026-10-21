@@ -118,7 +118,9 @@ const AT =
           [...new URL(href, "http://x/try/index.html").searchParams.keys()]
             .sort()
             .join(","),
-        screenOf: (_shape: string): string | undefined => undefined,
+        entry: (pod: string, id: string) =>
+          `try/index.html?pod=${pod}&entry=${encodeURIComponent(id)}`,
+        worker: /\/try\/demo-hospital-worker\.js$/,
       }
     : {
         home: "next/",
@@ -151,8 +153,9 @@ const AT =
               };
         },
         links: 'a[href^="/next/"]',
-        screenOf: (shape: string): string | undefined =>
-          shape.startsWith("pods/*/hospitals") ? "hospitals" : undefined,
+        entry: (pod: string, id: string) =>
+          `next/pods/${pod}/entries/${encodeURIComponent(id)}`,
+        worker: /\/next\/demo-hospital-worker\.js$/,
         shapeOf: (href: string) => {
           const at = new URL(href, "http://x/");
           return [
@@ -397,9 +400,8 @@ async function nodeJoin(family: string): Promise<Joined> {
       worth: view.worthALook(answers).map(worthText),
       worthLinks: view
         .worthALook(answers)
-        .map(
-          ({ entry }) =>
-            `?pod=${view.slug(person.name)}&entry=${encodeURIComponent(view.entryId(entry))}`,
+        .map(({ entry }) =>
+          AT.entryLink(view.slug(person.name), view.entryId(entry)),
         ),
     };
   } finally {
@@ -789,7 +791,7 @@ test("a demo person's new pod signs in at both hospitals in a popup through try/
     return text;
   };
 
-  await page.goto(`${served.url}try/index.html`);
+  await page.goto(`${served.url}${AT.home}`);
   await settled(page);
   await newPod(page, view.familyFirst(person));
   made.push(person.name);
@@ -799,7 +801,7 @@ test("a demo person's new pod signs in at both hospitals in a popup through try/
     (await page.evaluate(
       () => navigator.serviceWorker.controller?.scriptURL,
     )) ?? "",
-    /\/try\/demo-hospital-worker\.js$/,
+    AT.worker,
   );
 
   const [north = "", south = ""] = person.at.map(({ name }) => name);
@@ -979,9 +981,7 @@ test("a demo person's new pod signs in at both hospitals in a popup through try/
   const pod = view.slug(person.name);
   const atBoth = joined.seenAtBoth;
   assert.ok(atBoth, `no entry was seen at both ${both.join(" and ")}`);
-  await page.goto(
-    `${served.url}try/index.html?pod=${pod}&entry=${encodeURIComponent(view.entryId(atBoth))}`,
-  );
+  await page.goto(`${served.url}${AT.entry(pod, view.entryId(atBoth))}`);
   await settled(page);
   const recorded = await page
     .locator("main li", { hasText: "Cascade recorded it at" })
@@ -989,7 +989,7 @@ test("a demo person's new pod signs in at both hospitals in a popup through try/
   for (const name of both)
     assert.ok(recorded.includes(name), `${name} is not in: ${recorded}`);
 
-  await page.goto(`${served.url}try/index.html?pod=${pod}`);
+  await page.goto(`${served.url}${AT.pod(pod)}`);
   await settled(page);
   await page.waitForSelector('body[data-tables="ready"]', {
     timeout: 120_000,
@@ -1014,12 +1014,12 @@ test("a demo person's new pod signs in at both hospitals in a popup through try/
   );
 });
 
-test("in try/, a new pod for Tobias Fenn signed in at North names his hip condition by ICD-10-CM once for the retired code and the one that replaced it, and tags a retired CVX code and a retired LOINC code, the code that replaced it beside it untagged", async () => {
+test("in try/, a new pod for Tobias Fenn signed in at North names his hip condition by ICD-10-CM once for the retired code and the one that replaced it, and tags a retired CVX code and a retired LOINC code, the code that replaced it beside it untagged; on his connected pod, the world's date set while the engine loads draws nothing after the page says it is ready", async (t) => {
   const { person, patients, held, judged } = tobias;
   const context = await browser.newContext();
   try {
     const page = watched(await context.newPage());
-    await page.goto(`${served.url}try/index.html`);
+    await page.goto(`${served.url}${AT.home}`);
     await settled(page);
     await newPod(page, view.familyFirst(person));
     const [north = ""] = person.at.map(({ name }) => name);
@@ -1074,10 +1074,94 @@ test("in try/, a new pod for Tobias Fenn signed in at North names his hip condit
       current?.every((row) => !retired(row)),
       `the current row is untagged: ${hdl}`,
     );
+
+    const engine: Route[] = [];
+    await page.route(ENGINE, (route) => {
+      engine.push(route);
+    });
+    await page.goto(`${served.url}${AT.pod(view.slug(person.name))}`);
+    await settled(page);
+    await page.evaluate(watchLate);
+    const world = page.locator(".world-date");
+    await world.locator("details").evaluate((details: HTMLDetailsElement) => {
+      details.open = true;
+    });
+    await world.locator('input[type="date"]').fill("2024-02-01");
+    await world.getByRole("button", { name: "Set", exact: true }).click();
+    await page.waitForFunction(() =>
+      document
+        .querySelector(".world-date")
+        ?.textContent?.includes("Hospitals answer as of 1 February 2024."),
+    );
+    await page.unroute(ENGINE);
+    for (const route of engine) await route.continue().catch(() => undefined);
+    await settled(page);
+    await page.waitForSelector('body[data-tables="ready"]', {
+      timeout: 120_000,
+    });
+    await page.waitForFunction(
+      () => document.querySelector('main [aria-busy="true"]') === null,
+    );
+    const late = await page.evaluate(
+      () => (globalThis as unknown as Late).late,
+    );
+    if (TARGET === "try")
+      t.diagnostic(
+        `try/ draws the pod's page again after it says it is ready (#11), until next/ replaces it: ${late.length} changes`,
+      );
+    else
+      assert.deepEqual(
+        late,
+        [],
+        "the pod's page was drawn again after it said it was ready",
+      );
   } finally {
     await context.close();
   }
 });
+
+interface Late {
+  late: string[];
+}
+
+/**
+ * Records, in the page, each change to `main` made while the body says `ready`, from the last time it came to say so:
+ * a screen drawn again after it said it was ready shows there. A record of `data-state` holds its old value, so the
+ * state each change was made in is the next record's old value, or the state now.
+ */
+function watchLate(): void {
+  const here = globalThis as unknown as Late;
+  here.late = [];
+  let state = document.body.dataset.state;
+  new MutationObserver((records) => {
+    const states = records.filter(
+      ({ attributeName }) => attributeName === "data-state",
+    );
+    let next = 0;
+    for (const record of records) {
+      if (record.attributeName === "data-state") {
+        next += 1;
+        const was = state;
+        state = states[next]?.oldValue ?? document.body.dataset.state;
+        if (state === "ready" && was !== "ready") here.late = [];
+      } else if (
+        state === "ready" &&
+        record.type !== "attributes" &&
+        document.querySelector("main")?.contains(record.target)
+      )
+        here.late.push(
+          `${record.type} in ${(record.target as Element).nodeName ?? ""}: ${(record.target.textContent ?? "").slice(0, 80)}`,
+        );
+    }
+  }).observe(document.body, {
+    subtree: true,
+    childList: true,
+    characterData: true,
+    attributes: true,
+    attributeOldValue: true,
+    attributeFilter: ["data-state"],
+  });
+}
 
 /** The `data-key` of each row the lab results' table shows, in the column headed `head`. */
 async function column(page: Page, head: string): Promise<string[]> {
@@ -1096,7 +1180,7 @@ async function column(page: Page, head: string): Promise<string[]> {
   );
 }
 
-test("in the lab results' box of Tamsin's pod, a heading sorts by its column one way then the other, numbers as numbers, the filter keeps only the rows holding its text, and a click outside the box or Escape closes it", async (t) => {
+test("in the lab results' box of Tamsin's pod, a heading sorts by its column one way then the other, numbers as numbers, the filter keeps only the rows holding its text, and a click outside the box or Escape closes it", async () => {
   const page = watched(await profile.newPage());
   await page.goto(`${served.url}${AT.pod("tamsin-vale")}`);
   await settled(page);
@@ -1137,12 +1221,11 @@ test("in the lab results' box of Tamsin's pod, a heading sorts by its column one
   assert.ok(!(await open()), "Escape left the box open");
 
   // Tamsin's values (8.3, 7.9, 7.4, 6.7, 6.5, 6.6) sort alike as text and as numbers; Marsh's differ in length.
-  if (!ported(t, "#4's numeric sort", "hospitals")) return;
   const { person, patients } = joined;
   const context = await browser.newContext();
   try {
     const marsh = watched(await context.newPage());
-    await marsh.goto(`${served.url}try/index.html`);
+    await marsh.goto(`${served.url}${AT.home}`);
     await settled(marsh);
     await newPod(marsh, view.familyFirst(person));
     const [north = ""] = person.at.map(({ name }) => name);
@@ -1895,7 +1978,7 @@ ${shots.join("\n")}`);
   }
 });
 
-test("in try/, Martin's pod, copied on a first visit, has a Genetic variants tile whose rows open each variant's entry once the engine is ready: the MLH1 variant's two reports with their labs and what ClinVar says today, a gene the series does not cover, and a variant it holds no row for, then the counsellor sentence and ClinVar's disclaimer; a row opens its entry with no request, each address shape the pod's page and the entry link opens a page, and the pages reach their table-dependent line within twice their budgets", async (t) => {
+test("in try/, Martin's pod, copied on a first visit, has a Genetic variants tile whose rows open each variant's entry once the engine is ready: the MLH1 variant's two reports with their labs and what ClinVar says today, a gene the series does not cover, and a variant it holds no row for, then the counsellor sentence and ClinVar's disclaimer; a row opens its entry with no request, each address shape the pod's page and the entry link opens a page, and the pages reach their table-dependent line within twice their budgets", async () => {
   const context = await browser.newContext();
   await context.addInitScript(recordDraws);
   try {
@@ -2087,9 +2170,6 @@ test("in try/, Martin's pod, copied on a first visit, has a Genetic variants til
       const found = await shapes(fresh);
       assert.ok(found.length > 1, `${address} links one shape of address`);
       for (const { shape, href } of found) {
-        const screen = AT.screenOf(shape);
-        if (screen !== undefined && !ported(t, `the link ${href}`, screen))
-          continue;
         await opened(fresh, address);
         await inPlace(fresh, () =>
           fresh
@@ -2289,8 +2369,7 @@ test("in try/, the pod shown offers the free tools of the one list to the model 
   }
 });
 
-test("in try/, Ines Calloway's new pod signed in at North says what changed after atorvastatin started, opens the trend at its address, and its class page puts her estradiol in estrogen", async (t) => {
-  if (!ported(t, "#13's sign-in at North", "hospitals")) return;
+test("in try/, Ines Calloway's new pod signed in at North says what changed after atorvastatin started, opens the trend at its address, and its class page puts her estradiol in estrogen", async () => {
   const demo = await loadHospitals();
   const ines = view
     .demoPeople(demo)
@@ -2440,7 +2519,7 @@ test("in try/, the world's date set before a sign-in shows on the hospital's sig
       }
     };
 
-    await page.goto(`${served.url}try/index.html`);
+    await page.goto(`${served.url}${AT.home}`);
     await settled(page);
     await newPod(page, view.familyFirst(ines));
     await page.waitForFunction(
@@ -2457,7 +2536,7 @@ test("in try/, the world's date set before a sign-in shows on the hospital's sig
     const cdp = await context.newCDPSession(page);
     await cdp.send("ServiceWorker.enable");
     await cdp.send("ServiceWorker.stopAllWorkers");
-    await page.goto(`${served.url}try/index.html?pod=ines-calloway`);
+    await page.goto(`${served.url}${AT.pod("ines-calloway")}`);
     await settled(page);
     await page.waitForFunction(
       () => navigator.serviceWorker.controller !== null,
@@ -2478,7 +2557,7 @@ test("in try/, the world's date set before a sign-in shows on the hospital's sig
       assert.match((await page.textContent("main")) ?? "", why);
     };
     await settled(page);
-    await box.locator("a.close").click();
+    await inPlace(page, () => box.locator("a.close").click());
     await world.locator("details").evaluate((details: HTMLDetailsElement) => {
       details.open = true;
     });
@@ -2514,7 +2593,7 @@ test("in try/, where the demo hospitals' service worker cannot run, a sign-in at
   const context = await browser.newContext({ serviceWorkers: "block" });
   try {
     const page = watched(await context.newPage());
-    await page.goto(`${served.url}try/index.html`);
+    await page.goto(`${served.url}${AT.home}`);
     await settled(page);
     await newPod(page, view.familyFirst(ines));
     await page.click(
@@ -2548,19 +2627,20 @@ test("in try/, Tamsin Vale signed in at North with the world's date at her story
   const context = await browser.newContext();
   try {
     const page = watched(await context.newPage());
-    /** Sets the date the demo hospitals answer as of, through try/'s own module, before a sign-in. */
-    const world = (asOf: string | undefined) =>
-      page.evaluate(async (at) => {
-        const { setWorldDate } = (await import(
-          new URL("demo-hospitals.js", location.href).href
-        )) as {
-          setWorldDate(script: URL, asOf: string | undefined): Promise<void>;
-        };
-        await setWorldDate(
-          new URL("demo-hospital-worker.js", location.href),
-          at ?? undefined,
-        );
-      }, asOf ?? null);
+    /** Sets the date the demo hospitals answer as of to the day of `asOf`, or with none to today, by the pod's page's own form. */
+    const world = async (asOf: string | undefined) => {
+      const form = page.locator(".world-date");
+      await form.locator("details").evaluate((details: HTMLDetailsElement) => {
+        details.open = true;
+      });
+      if (asOf === undefined)
+        await form.getByRole("button", { name: "Today", exact: true }).click();
+      else {
+        await form.locator('input[type="date"]').fill(asOf.slice(0, 10));
+        await form.getByRole("button", { name: "Set", exact: true }).click();
+      }
+      await settled(page);
+    };
     /** Signs the pod in at North as the story's patient, from Find a hospital, and brings the record in. */
     const bringIn = async () => {
       await page.click('a:has-text("Find a hospital")');
@@ -2583,7 +2663,7 @@ test("in try/, Tamsin Vale signed in at North with the world's date at her story
         /metformin/i.test(row),
       );
 
-    await page.goto(`${served.url}try/index.html`);
+    await page.goto(`${served.url}${AT.home}`);
     await settled(page);
     await page.click('a[href="#new-pod"]');
     await page.fill(
@@ -2841,7 +2921,7 @@ test("in try/, a pod for Rowan Ellery Marsh signed in at North as Odalys Brandt 
   const context = await browser.newContext();
   try {
     const page = watched(await context.newPage());
-    await page.goto(`${served.url}try/index.html`);
+    await page.goto(`${served.url}${AT.home}`);
     await settled(page);
     await newPod(page, view.familyFirst(rowan));
     await page.waitForFunction(

@@ -17,11 +17,24 @@ export interface Served {
   readonly chat: Hono;
   /** The sign-in a hospital's redirect to `/callback` finishes, as `{ pod, connection }`; none when none waits. */
   back(url: URL): { pod: string; connection: number } | undefined;
+  /** The demo people the hospitals hold, as `demoPeople` gives them, at `/demo-people.json`; none when not given. */
+  people?(): readonly object[];
   /** The built app's folder, or in development what serves its pages. */
   readonly pages: string | MiddlewareHandler<{ Bindings: HttpBindings }>;
 }
 
 const ADDRESS = addresses();
+
+/** Where `/world-date?back=` goes: `back` when it is a path of this app, with the world's date's form open; else home. */
+export function worldDateBack(back: string | undefined): string {
+  if (back === undefined || !back.startsWith("/") || back.startsWith("//"))
+    return ADDRESS.home;
+  if (/[\\\s]/.test(back)) return ADDRESS.home;
+  const url = new URL(back, "http://app.invalid");
+  return url.origin === "http://app.invalid" && !url.pathname.startsWith("//")
+    ? `${url.pathname}${url.search}#world-date`
+    : ADDRESS.home;
+}
 /**
  * An address a person opens rather than a file a page reads. An id may hold a dot, so a last part with one is a page
  * only when the request is a navigation or asks for HTML.
@@ -43,11 +56,10 @@ export function appServer(served: Served) {
       const at = served.back(new URL(c.req.url));
       return at === undefined
         ? c.html(notWaiting, 400)
-        : c.redirect(
-            `${ADDRESS.pod(at.pod)}?connection=${at.connection}#connection`,
-            303,
-          );
-    });
+        : c.redirect(ADDRESS.connection(at.pod, at.connection), 303);
+    })
+    .get("/world-date", (c) => c.redirect(worldDateBack(c.req.query("back"))))
+    .get("/demo-people.json", (c) => c.json(served.people?.() ?? []));
   const { pages } = served;
   if (typeof pages !== "string") app.get("*", pages);
   else {

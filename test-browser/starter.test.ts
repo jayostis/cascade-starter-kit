@@ -417,19 +417,32 @@ test("a write the model asked for is withdrawn when its chat is closed: the box 
   await page.close();
 });
 
-test("after Allow at a demo hospital the connection's box moves on by itself, to Bring it in, and from bringing it in to the pod's page", async (t) => {
-  if (skipped(t, "old")) return;
+test("after Allow at a demo hospital the connection's box moves on by itself, to Bring it in, and from bringing it in to the pod's page", async () => {
   const made = await post(bare.origin, "/api/makePod", {
     person: "Ines Calloway",
   });
   assert.equal(made.status, 200);
   const page = await browser.newPage();
   await page.goto(`${bare.origin}/pods/ines-calloway/`);
-  await page
-    .getByRole("button", { name: /^Sign in at / })
-    .first()
-    .click();
-  await page.getByRole("button", { name: "Allow" }).click();
+  const signIn = page.getByRole("button", { name: /^Sign in at / }).first();
+  await signIn.click();
+  const allow = page.getByRole("button", { name: "Allow" });
+  if (NEXT) {
+    await allow.waitFor();
+    await page.goBack();
+    await page.waitForSelector('body[data-state="ready"]');
+    assert.equal(
+      await page.getAttribute("body", "data-state"),
+      "ready",
+      "Back after the sign-in's full page did not restore a ready page",
+    );
+    assert.ok(
+      await signIn.isEnabled(),
+      "Back after the sign-in's full page left its buttons off",
+    );
+    await signIn.click();
+  }
+  await allow.click();
   const bring = page.getByRole("button", { name: /^Bring it into / });
   await bring.waitFor({ timeout: 30_000 });
   assert.equal(new URL(page.url()).origin, bare.origin);
@@ -792,8 +805,7 @@ test("an encrypted pod's chat is kept in neither localStorage nor sessionStorage
   await page.close();
 });
 
-test("an encrypted pod: six words checked, nothing plaintext on disk, and after a restart only the words open it", async (t) => {
-  if (skipped(t, "old")) return;
+test("an encrypted pod: six words checked, nothing plaintext on disk, and after a restart only the words open it", async () => {
   let sealed = await startStarter({
     CASCADE_MODEL_PROVIDER: "other",
     CASCADE_MODEL_URL: stub.url,
