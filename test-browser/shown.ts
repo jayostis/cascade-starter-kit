@@ -35,7 +35,7 @@ export async function settled(page: Page, timeout = 120_000): Promise<void> {
   }
   if ((await page.getAttribute("body", "data-state")) !== "ready")
     throw new Error(
-      `try/ says: ${(await page.textContent("main")) ?? ""} ${(pageErrors.get(page) ?? []).join("; ")}`,
+      `try/ says: ${(await page.textContent("main")) ?? ""} (because ${(await page.getAttribute("body", "data-error")) ?? "it gave no reason"}) ${(pageErrors.get(page) ?? []).join("; ")}`,
     );
 }
 
@@ -90,7 +90,7 @@ export async function drawn(page: Page, timeout = 120_000): Promise<void> {
   }
   if ((await page.getAttribute("body", "data-state")) === "error")
     throw new Error(
-      `${page.url()} says: ${(await page.textContent("main")) ?? ""}`,
+      `${page.url()} says: ${(await page.textContent("main")) ?? ""} (because ${(await page.getAttribute("body", "data-error")) ?? "it gave no reason"})`,
     );
 }
 

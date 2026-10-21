@@ -89,7 +89,7 @@ test("a new pod's person signs in at the SMART launcher in a popup, on its own p
           );
       });
     });
-    await page.goto(`${served.url}try/index.html`);
+    await page.goto(`${served.url}try/`);
     await settled(page);
     await page.click('a[href="#new-pod"]');
     await page.fill('#new-pod input[name="person"]:not([type="hidden"])', POD);
