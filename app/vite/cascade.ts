@@ -1,71 +1,25 @@
 // What a build of the app carries beside its bundle. Both targets: what the About box says, on the body. The browser
-// target (`--mode browser`), which runs PodApi in the page: the installed cascade-runtime's browser build and the
-// components it reads, served as files under the base and imported by the import map, outside the bundle, so it
-// keeps its own `import.meta.url`; the demo hospitals' service worker, unhashed at the base so that its scope is the
-// app's, with one data file per hospital; the demo people and hospitals the page reads; the page a sign-in returns to;
-// and the samples the first visit copies, named on the body.
-import { existsSync, readFileSync } from "node:fs";
-import { cp, readFile } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+// target (`--mode browser`), which runs PodApi in the page: the installed cascade-runtime's browser build, served by
+// `cascade-runtime/vite`; and what stays the app's: the demo hospitals' service worker, unhashed at the base so that
+// its scope is the app's, with one data file per hospital; the demo people and hospitals the page reads; the page a
+// sign-in returns to; and the samples the first visit copies, named on the body.
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { env } from "node:process";
 import { fileURLToPath } from "node:url";
 import { brandsBundle, hospitalId } from "@the-cascade-protocol/sandbox";
 import { loadHospitals } from "@the-cascade-protocol/sandbox/node";
-import { build, type HtmlTagDescriptor, type Plugin } from "vite";
+import runtimePackage from "cascade-runtime/package.json" with { type: "json" };
+import { cascadeRuntime, RUNTIME_FOLDER } from "cascade-runtime/vite";
+import { build, type Plugin } from "vite";
 import { demoPeople } from "../said.ts";
 
-/** Where the runtime's files go under the base, as `configureRuntime({ base })` names them. */
-export const RUNTIME = "cascade-runtime/";
 export const WORKER = "demo-hospital-worker.js";
 const WORKER_DATA = "demo-hospitals/";
 const APP = fileURLToPath(new URL("../", import.meta.url));
 
-/** The folder of the installed `cascade-runtime`, found from where its main entry resolves. */
-function runtimeFolder(): string {
-  let folder = dirname(fileURLToPath(import.meta.resolve("cascade-runtime")));
-  for (;;) {
-    const file = join(folder, "package.json");
-    if (
-      existsSync(file) &&
-      (JSON.parse(readFileSync(file, "utf8")) as { name?: string }).name ===
-        "cascade-runtime"
-    )
-      return folder;
-    const parent = dirname(folder);
-    if (parent === folder)
-      throw new Error(
-        "No package.json named cascade-runtime is above where it resolves; run npm install.",
-      );
-    folder = parent;
-  }
-}
-
 const json = async <T>(path: string): Promise<T> =>
   JSON.parse(await readFile(path, "utf8")) as T;
-
-/** What a page reads of the installed package, by its path under the package: its browser build and components. */
-async function served(folder: string): Promise<string[]> {
-  const packed = await json<{
-    components: { repository: string; commit: string }[];
-  }>(join(folder, "components/packed.json"));
-  const trees = [
-    "components/tables",
-    ...packed.components.map(
-      ({ repository, commit }) =>
-        `components/${repository.split("/").at(-1)}/${commit}`,
-    ),
-  ];
-  const paths = ["components/cascade-runtime.json", "components/packed.json"];
-  for (const tree of trees) {
-    const listed = await json<string[]>(join(folder, tree, "files.json"));
-    paths.push(
-      `${tree}.json`,
-      `${tree}/files.json`,
-      ...listed.map((path) => `${tree}/${path}`),
-    );
-  }
-  return paths;
-}
 
 /** The demo hospitals' service worker, one classic script. */
 async function workerScript(): Promise<string> {
@@ -96,21 +50,6 @@ const escaped = (text: string) =>
     .replaceAll('"', "&quot;")
     .replaceAll("<", "&lt;");
 
-const importMap = (runtime: string): HtmlTagDescriptor => ({
-  tag: "script",
-  attrs: { type: "importmap" },
-  children: JSON.stringify({
-    imports: { "cascade-runtime": `${runtime}index.js` },
-  }),
-  injectTo: "head-prepend",
-});
-
-const preloaded = (runtime: string): HtmlTagDescriptor => ({
-  tag: "link",
-  attrs: { rel: "modulepreload", href: `${runtime}index.js` },
-  injectTo: "head",
-});
-
 const signedIn = (runtime: string) => `<!doctype html>
 <html lang="en">
 <head>
@@ -132,34 +71,24 @@ const signedIn = (runtime: string) => `<!doctype html>
  * names none), and `CASCADE_SAMPLES` the samples a first visit
  * copies, by folder, beside the base.
  */
-export function cascade({ browser }: { browser: boolean }): Plugin {
-  const folder = runtimeFolder();
-  let base = "/";
-  let out = "";
+export function cascade({ browser }: { browser: boolean }): Plugin[] {
+  return [cascadeRuntime({ browser }), appPlugin({ browser })];
+}
+
+function appPlugin({ browser }: { browser: boolean }): Plugin {
   return {
     name: "cascade",
-    config: () =>
-      browser
-        ? { build: { rolldownOptions: { external: ["cascade-runtime"] } } }
-        : {},
-    configResolved(config) {
-      base = config.base;
-      out = resolve(config.root, config.build.outDir);
-    },
     async transformIndexHtml(html) {
-      const [app, runtime] = await Promise.all([
-        json<{
-          name: string;
-          version: string;
-          repository?: string | { url?: string };
-          homepage?: string;
-        }>(join(APP, "package.json")),
-        json<{ version: string }>(join(folder, "package.json")),
-      ]);
+      const app = await json<{
+        name: string;
+        version: string;
+        repository?: string | { url?: string };
+        homepage?: string;
+      }>(join(APP, "package.json"));
       const body: Record<string, string> = {
         "data-name": env.CASCADE_NAME ?? app.name,
         "data-version": env.CASCADE_VERSION ?? app.version,
-        "data-runtime": runtime.version,
+        "data-runtime": runtimePackage.version,
         "data-code":
           env.CASCADE_CODE ??
           (typeof app.repository === "string"
@@ -172,12 +101,7 @@ export function cascade({ browser }: { browser: boolean }): Plugin {
       const attributes = Object.entries(body)
         .map(([name, value]) => ` ${name}="${escaped(value)}"`)
         .join("");
-      return {
-        html: html.replace(/<body([^>]*)>/, `<body$1${attributes}>`),
-        tags: browser
-          ? [importMap(`${base}${RUNTIME}`), preloaded(`${base}${RUNTIME}`)]
-          : [],
-      };
+      return html.replace(/<body([^>]*)>/, `<body$1${attributes}>`);
     },
     async generateBundle() {
       if (!browser) return;
@@ -200,15 +124,7 @@ export function cascade({ browser }: { browser: boolean }): Plugin {
         ),
       );
       emit("demo-people.json", JSON.stringify(demoPeople(hospitals)));
-      emit("signed-in.html", signedIn(`./${RUNTIME}`));
-    },
-    async writeBundle() {
-      if (!browser) return;
-      await cp(join(folder, "dist", "browser"), join(out, RUNTIME), {
-        recursive: true,
-      });
-      for (const path of await served(folder))
-        await cp(join(folder, path), join(out, RUNTIME, path));
+      emit("signed-in.html", signedIn(`./${RUNTIME_FOLDER}`));
     },
   };
 }
