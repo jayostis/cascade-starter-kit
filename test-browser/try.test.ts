@@ -96,6 +96,8 @@ const AT =
           `?pod=${pod}&entry=${encodeURIComponent(id)}`,
         code: (code: string) => `?table=&code=${code}`,
         classes: (pod: string) => `try/index.html?pod=${pod}&classes`,
+        trend: (pod: string, test: string) =>
+          `try/index.html?pod=${pod}&trend&test=${test}`,
         podOf: (url: string) => new URL(url).searchParams.get("pod"),
         entryOf: (url: string) => new URL(url).searchParams.get("entry"),
         trendOf: (url: string) => {
@@ -127,6 +129,8 @@ const AT =
           return id === undefined ? null : decodeURIComponent(id);
         },
         classes: (pod: string) => `next/pods/${pod}/classes`,
+        trend: (pod: string, test: string) =>
+          `next/pods/${pod}/trend?test=${test}`,
         trendOf: (url: string) => {
           const at = new URL(url);
           const pod = /\/pods\/([^/]+)\/trend$/.exec(at.pathname)?.[1];
@@ -2213,10 +2217,7 @@ test("in try/, the pod shown offers the free tools of the one list to the model 
       ([from, count]) => {
         Object.assign(globalThis, { leaving: { from, count } });
       },
-      [
-        await page.textContent("aside nav a[aria-current]"),
-        await total(),
-      ],
+      [await page.textContent("aside nav a[aria-current]"), await total()],
     );
     await inPlace(page, () => page.click('nav a:has-text("Alex Rivera")'));
     assert.equal(await page.textContent("main h1"), "Alex Rivera");
@@ -2228,6 +2229,14 @@ test("in try/, the pod shown offers the free tools of the one list to the model 
       "a tool of the pod left was still on when the page showed another pod",
     );
     assert.deepEqual(await live(), FREE_TOOLS);
+
+    await page.goto(`${served.url}${AT.trend("tamsin-vale", "0000-0")}`);
+    await settled(page);
+    assert.equal(await page.textContent("main h1"), "Not found");
+    assert.match(
+      (await page.textContent("main p")) ?? "",
+      /no test 0000-0 in the pod/,
+    );
   } finally {
     await context.close();
   }
