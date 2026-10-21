@@ -4,6 +4,7 @@
 // person's Allow. They are offered while the screen shown is the one they were offered for, and taken away in the
 // commit that draws the next, never after the next paint.
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { checkInput, type Input, type Schema } from "cascade-runtime/check";
 import { useLocation } from "react-router";
 import {
   PAGE_TOOLS,
@@ -15,7 +16,6 @@ import {
 import { useActions, type Actions } from "./actions.tsx";
 import { routed, useAddress } from "./address.tsx";
 import { isRefusal, useHost, type ReadTool } from "./api.tsx";
-import { checkToolInput, type Input, type Schema } from "./check.ts";
 import { ACTIONS, SAID_NO, useConfirm, type Confirm } from "./confirm.tsx";
 import { settled } from "./doing.ts";
 
@@ -212,7 +212,7 @@ export function useTools(screen: { readonly pod: string | undefined }) {
           inputSchema: schema,
           execute: (input) =>
             answering(async () => {
-              checkToolInput(schema, input);
+              checkInput(schema, input);
               return reads.run(read.name, filled ? { ...input, pod } : input);
             }),
         };
@@ -229,7 +229,7 @@ export function useTools(screen: { readonly pod: string | undefined }) {
           inputSchema: schema,
           execute: (input, options) =>
             answering(async () => {
-              checkToolInput(schema, input);
+              checkInput(schema, input);
               return runPage(
                 tool,
                 tool.ofPod === true && !takes
