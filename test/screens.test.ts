@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { FailureKind } from "cascade-runtime";
-import { linksOf, screens, textOf } from "./render.js";
+import { linksOf, pages, screens, textOf } from "./render.js";
 
 /** What the test reads of what the pages say, `said.ts`, which the screens draw with. */
 interface Said {
@@ -1018,4 +1018,30 @@ test("the world's date: the form shows the day it is set to, with Set and Today,
       }),
     ).includes("Hospitals answer as of 1 February 2024."),
   );
+});
+
+test("an entry's page waits for what the tables say of it while the engine warms or reads, and settles once the engine has failed", async () => {
+  const draw = await pages();
+  const entry = {
+    entry: "urn:cascade:entry:e1",
+    name: "Asthma",
+    kind: "condition",
+    tags: [],
+    what: [],
+    codes: [],
+    where: [],
+    known: [],
+    credits: [],
+  };
+  const shown = (engine: string) =>
+    draw("EntryPage", {
+      pod: "alex-rivera",
+      titles: new Map(),
+      read: { entry, panels: [], coming: true },
+      held: [],
+      engine,
+    });
+  for (const engine of ["waiting", "ready"])
+    assert.equal(shown(engine).split('aria-busy="true"').length - 1, 1, engine);
+  assert.doesNotMatch(shown("failed"), /aria-busy/);
 });
