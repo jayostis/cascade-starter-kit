@@ -3004,3 +3004,195 @@ export function firstQuestion(
     ? questions[context!.kind!]
     : undefined;
 }
+
+/** A tool's input, as its door checked it against the tool's schema; `pod` for a tool with `ofPod`. */
+export type ToolInput = Readonly<Record<string, string | undefined>>;
+
+/** The PodApi operations the tools a page runs call, each as PodApi answers it. */
+export interface PageToolsApi {
+  pod(input: { pod: string }): Promise<unknown>;
+  trend(input: {
+    pod: string;
+    test?: string;
+    medication?: string;
+    named?: boolean;
+  }): Promise<unknown>;
+  ask(input: { pod: string; question: string }): Promise<unknown>;
+  makePod(input: { person: string }): Promise<unknown>;
+  checkTables(input: object): Promise<unknown>;
+  setWorldDate(input: { date: string }): Promise<unknown>;
+}
+
+/** What a door gives the tools that move its app: its own addresses, and `open`, which moves the app to one. */
+export interface PageDoor {
+  readonly address: {
+    pod(name: string): string;
+    trend(
+      name: string,
+      trend: { test: string; medication?: string | undefined },
+    ): string;
+    entry(name: string, entry: string): string;
+  };
+  open(address: string): Promise<void>;
+}
+
+/** A tool a page can run itself, with no runtime: it moves the app, or writes once the person has said yes (`ask`). */
+export interface PageTool {
+  readonly name: string;
+  readonly description: string;
+  readonly inputSchema: object;
+  readonly tier: "free" | "ask";
+  readonly ofPod?: true;
+  readonly opens?: true;
+  run(api: PageToolsApi, input: ToolInput, door: PageDoor): Promise<unknown>;
+}
+
+/** An error its door tells by its name, as PodApi's own refusals: the input was turned down and nothing was done. */
+export const refusal = (message: string): Error =>
+  Object.assign(new Error(message), { name: "Refusal" });
+
+export const NO_INPUT = {
+  type: "object",
+  properties: {},
+  additionalProperties: false,
+};
+
+/** Goes to `address` by the door's `open`, and gives it. */
+async function going(address: string, { open }: PageDoor) {
+  await open(address);
+  return { opened: address };
+}
+
+/**
+ * The tools a page runs itself, the last six of `TOOLS` in `tools.mjs`: the three that move the app, each giving
+ * `{ opened }`, and the three writes the person confirms first, each giving PodApi's answer. They need no runtime, so
+ * the Node target's chat runs them in the page.
+ */
+export const PAGE_TOOLS: readonly PageTool[] = [
+  {
+    name: "open_pod",
+    description: "Opens a pod's page in the app.",
+    inputSchema: NO_INPUT,
+    tier: "free",
+    ofPod: true,
+    opens: true,
+    async run(api, { pod = "" }, door) {
+      await api.pod({ pod });
+      return going(door.address.pod(pod), door);
+    },
+  },
+  {
+    name: TREND_VIEW.name,
+    description: TREND_VIEW.description,
+    inputSchema: TREND_VIEW.inputSchema,
+    tier: "free",
+    ofPod: true,
+    opens: true,
+    async run(api, { pod = "", test, medication }, door) {
+      const drug = medication === "" ? undefined : medication;
+      const { series, timeline } = (await api.trend({
+        pod,
+        ...(test === undefined ? {} : { test }),
+        ...(drug === undefined ? {} : { medication: drug }),
+        named: false,
+      })) as {
+        series: { test: { notation?: string; code: string } };
+        timeline: { notation?: string; code?: string; name: string }[];
+      };
+      const wanted = drug?.toLowerCase();
+      const found =
+        drug === undefined
+          ? undefined
+          : timeline.find(
+              (each) =>
+                each.notation === drug ||
+                each.code === drug ||
+                each.name.toLowerCase() === wanted,
+            );
+      return going(
+        door.address.trend(pod, {
+          test: series.test.notation ?? series.test.code,
+          ...(found === undefined
+            ? {}
+            : { medication: found.notation ?? found.name }),
+        }),
+        door,
+      );
+    },
+  },
+  {
+    name: "open_entry",
+    description:
+      "Opens the page of one entry of a pod: what it is and where it came from.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        entry: {
+          type: "string",
+          description:
+            "The entry's IRI or ID, as the entry column of the rows of ask gives it.",
+        },
+      },
+      required: ["entry"],
+      additionalProperties: false,
+    },
+    tier: "free",
+    ofPod: true,
+    opens: true,
+    async run(api, { pod = "", entry = "" }, door) {
+      const { rows } = (await api.ask({ pod, question: SOURCES })) as {
+        rows: { entry: string }[];
+      };
+      if (!rows.some((row) => entryId(row.entry) === entryId(entry)))
+        throw refusal(
+          `the pod ${pod} holds no entry ${entry}; ask's rows give each entry's ID in their entry column`,
+        );
+      return going(door.address.entry(pod, entry), door);
+    },
+  },
+  {
+    name: "make_pod",
+    description:
+      "Makes a pod for a person, named after them: empty, or the sample of that name; a pod of that name already there is left as it is. It is never encrypted.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        person: {
+          type: "string",
+          description: "The person's name, as they write it.",
+        },
+      },
+      required: ["person"],
+      additionalProperties: false,
+    },
+    tier: "ask",
+    run: (api, { person = "" }) => api.makePod({ person }),
+  },
+  {
+    name: "check_tables",
+    description:
+      "Checks each source of the reference tables for a newer version and keeps any there is.",
+    inputSchema: NO_INPUT,
+    tier: "ask",
+    run: (api) => api.checkTables({}),
+  },
+  {
+    name: "set_world_date",
+    description:
+      "Sets the date the demo hospitals answer as of: their records as they stood at the end of that day. An empty date takes it back to everything they hold.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        date: {
+          type: "string",
+          description:
+            "A day as YYYY-MM-DD, or an instant with its timezone; empty for none.",
+        },
+      },
+      required: ["date"],
+      additionalProperties: false,
+    },
+    tier: "ask",
+    run: (api, { date = "" }) => api.setWorldDate({ date }),
+  },
+];

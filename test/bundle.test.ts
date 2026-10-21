@@ -6,11 +6,13 @@ import { build, type Rolldown } from "vite";
 
 const APP = fileURLToPath(new URL("../../app/", import.meta.url));
 
-test("the Node target's bundle is the app over its typed client: no cascade-runtime, no server code and no wasm", async () => {
+/** The chunks of the app's bundle for `mode`'s target, as Vite builds it, and the modules in them. */
+async function bundled(mode?: string) {
   const built = await build({
     root: APP,
     configFile: join(APP, "vite.config.ts"),
     logLevel: "silent",
+    ...(mode === undefined ? {} : { mode }),
     build: { write: false },
   });
   const chunks = (Array.isArray(built) ? built : [built])
@@ -23,9 +25,24 @@ test("the Node target's bundle is the app over its typed client: no cascade-runt
     modules.some((id) => id.endsWith("/app/src/main.tsx")),
     "the bundle is not the app's",
   );
+  return { chunks, modules };
+}
+
+/** A module of the chat window: the AI SDK, assistant-ui, or the window's own code. */
+const ofChat = (id: string) =>
+  /\/node_modules\/(ai|@ai-sdk|@assistant-ui)\//.test(id) ||
+  id.includes("/app/src/chat/");
+
+test("the Node target's bundle is the app over its typed client, with the chat window in a chunk of its own: no cascade-runtime, no server code and no wasm", async () => {
+  const { chunks, modules } = await bundled();
   assert.ok(
     modules.some((id) => id.includes("/node_modules/hono/dist/client/")),
     "the bundle has no typed client",
+  );
+  assert.ok(
+    modules.some((id) => id.endsWith("/app/src/chat/window.tsx")) &&
+      modules.some((id) => id.includes("/node_modules/@assistant-ui/react/")),
+    "the bundle has no chat window",
   );
   assert.deepEqual(
     modules.filter(
@@ -33,10 +50,22 @@ test("the Node target's bundle is the app over its typed client: no cascade-runt
         id.includes("/node_modules/cascade-runtime/") ||
         id.includes("/app/server/") ||
         id.endsWith("/app/pod-api.mjs") ||
-        /\/node_modules\/(@hono|zod)\//.test(id) ||
+        id.includes("/node_modules/@hono/") ||
         /\/node_modules\/hono\/dist\/(?!client\/|utils\/)/.test(id),
     ),
     [],
+  );
+  assert.deepEqual(
+    chunks
+      .filter(({ isEntry }) => isEntry)
+      .flatMap(({ moduleIds }) => moduleIds)
+      .filter(
+        (id) =>
+          /[\\/]node_modules[\\/]zod[\\/]/.test(id) ||
+          ofChat(id.replaceAll("\\", "/")),
+      ),
+    [],
+    "the screens carry the routes' validation or the chat, which only the chat window loads",
   );
   assert.deepEqual(
     chunks
@@ -44,4 +73,9 @@ test("the Node target's bundle is the app over its typed client: no cascade-runt
       .map(({ fileName }) => fileName),
     [],
   );
+});
+
+test("the browser target's bundle draws no chat: it carries no AI SDK, no assistant-ui and no chat window", async () => {
+  const { modules } = await bundled("browser");
+  assert.deepEqual(modules.filter(ofChat), []);
 });
