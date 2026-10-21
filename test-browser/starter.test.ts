@@ -281,6 +281,19 @@ test("asking to open another pod moves the app there in place, and the question,
   await page.close();
 });
 
+test("a move within the pod shown does not make the chat follow the next click to another pod", async (t) => {
+  if (skipped(t, "chat")) return;
+  const page = await browser.newPage();
+  await page.goto(`${modelled.origin}/pods/ines-calloway/`);
+  await ask(page, ASKS);
+  await page.locator(".chat-log .model", { hasText: "Done." }).waitFor();
+  await page.locator("aside nav a", { hasText: "Ada Lovelace" }).click();
+  await page.locator("h1", { hasText: /^Ada Lovelace$/ }).first().waitFor();
+  assert.equal(await page.locator(".chat-log .you").count(), 0);
+  assert.equal(await page.locator(".chat-recent li button").count(), 0);
+  await page.close();
+});
+
 test("Stop ends the call to the model, not just the spinner", async (t) => {
   if (skipped(t, "chat")) return;
   const page = await browser.newPage();
