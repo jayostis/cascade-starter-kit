@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { flushSync } from "react-dom";
 import {
   Navigate,
   Route,
@@ -28,6 +29,7 @@ import {
 } from "../said.ts";
 import { Notice, ActionsProvider, type Actions } from "./actions.tsx";
 import {
+  byStep,
   goState,
   ROUTED,
   useGeneration,
@@ -187,7 +189,7 @@ function PodScreen({
   const { pathname, search, state } = useLocation();
   const at = pathname + search;
   const generation = useGeneration();
-  const stepped = (state as { go?: number } | null)?.go !== undefined;
+  const stepped = byStep(state);
   const [shown, setShown] = useState<Screen>();
   useEffect(() => {
     let live = true;
@@ -264,35 +266,56 @@ function PodScreen({
     page.connection?.settled === false
       ? page.connection
       : undefined;
-  useEffect(() => {
-    if (following === undefined) return;
-    let live = true;
-    void api.connection({ pod, connection: following.n, wait: "change" }).then(
-      (now) => {
-        if (!live) return;
-        if (now.broughtIn) navigate(at, { replace: true, state: goState() });
-        else
-          setShown((was) =>
-            typeof was?.page === "object" &&
-            "pod" in was.page &&
-            was.page.connection === following
-              ? { ...was, page: { ...was.page, connection: now } }
-              : was,
+  const followed = following?.n;
+  const tracked = useRef<number>(undefined);
+  const follow = useCallback(
+    (n: number) => {
+      if (tracked.current === n) return;
+      tracked.current = n;
+      void (async () => {
+        for (let wait: "change" | undefined; ; wait = "change") {
+          const now = await api.connection({ pod, connection: n, wait });
+          if (tracked.current !== n) return;
+          if (now.broughtIn) {
+            tracked.current = undefined;
+            return navigate(at, { replace: true, state: goState() });
+          }
+          flushSync(() =>
+            setShown((was) =>
+              typeof was?.page === "object" &&
+              "pod" in was.page &&
+              was.page.connection?.n === n
+                ? { ...was, page: { ...was.page, connection: now } }
+                : was,
+            ),
           );
-      },
-      (error: unknown) =>
-        live &&
-        setShown({
-          at,
-          page: {
-            wrong: error instanceof Error ? error.message : String(error),
-          },
-        }),
-    );
-    return () => {
-      live = false;
-    };
-  }, [api, at, navigate, pod, following]);
+          if (now.settled) {
+            tracked.current = undefined;
+            return;
+          }
+        }
+      })().catch(
+        (error: unknown) =>
+          tracked.current === n &&
+          setShown({
+            at,
+            page: {
+              wrong: error instanceof Error ? error.message : String(error),
+            },
+          }),
+      );
+    },
+    [api, at, navigate, pod],
+  );
+  useEffect(() => {
+    if (followed !== undefined) follow(followed);
+  }, [follow, followed]);
+  useEffect(
+    () => () => {
+      tracked.current = undefined;
+    },
+    [at],
+  );
   useEffect(() => {
     if (shown?.at !== at) return;
     if (typeof page === "object" && "wrong" in page) return failed();
@@ -331,6 +354,7 @@ function PodScreen({
       titles={titles}
       person={people.find((each) => slug(each.name) === screen.pod)}
       held={held.held}
+      follow={follow}
     />
   );
 }
@@ -367,9 +391,13 @@ export function locking(
   ) as unknown as PodApi;
 }
 
-/** Closes the box open by the address's hash, as its close link does, so that what a step shows is not hidden behind it. */
+/**
+ * Closes the box open by the address's hash, as its close link does, so that what a step shows is not hidden behind it.
+ * A box the browser opened stays open after a move that drops the hash from the address, so it is closed too.
+ */
 function closeBox() {
-  if (location.hash === "") return;
+  if (location.hash === "" && document.querySelector(":target") === null)
+    return;
   location.replace("#");
   history.replaceState(null, "", location.pathname + location.search);
 }
@@ -392,7 +420,7 @@ export function App() {
   const [locked, setLocked] = useState<
     Left & { pod: string; outcome: string }
   >();
-  const { pathname, search } = useLocation();
+  const { pathname, search, hash } = useLocation();
   const here = pathname + search;
   const hereRef = useRef(here);
   useLayoutEffect(() => {
@@ -427,7 +455,7 @@ export function App() {
         async () => {
           let going = false;
           try {
-            await step((to, text) => {
+            const go = (to: string, text?: string) => {
               going = true;
               const [path = to, hash] = to.split("#");
               if (hash === undefined || location.hash !== `#${hash}`)
@@ -438,7 +466,14 @@ export function App() {
                 state: goState(),
                 replace: path === hereRef.current,
               });
-            });
+            };
+            await step(
+              Object.assign(go, {
+                stay: () => {
+                  going = true;
+                },
+              }),
+            );
           } catch (error) {
             unopened = error instanceof Error && error.name === "Unopened";
             throw error;
@@ -563,7 +598,7 @@ export function App() {
                     <NoPods />
                   ) : (
                     <Navigate
-                      to={`/pods/${encodeURIComponent(names[0])}/`}
+                      to={`/pods/${encodeURIComponent(names[0])}/${hash}`}
                       replace
                     />
                   )

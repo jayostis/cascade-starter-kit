@@ -4,8 +4,11 @@ import { createContext, useContext, useEffect, type ReactNode } from "react";
 import type { Series } from "../said.ts";
 import { failed, ready } from "./doing.ts";
 
-/** Moves the app to the router path `to`, drawing it again even if it is the address shown, with `note` above it. */
-export type Go = (to: string, note?: string) => void;
+/**
+ * Moves the app to the router path `to`, drawing it again even if it is the address shown, with `note` above it. With
+ * `stay()`, the app stays where it is, and the screen shown says when it is ready, as one moved to does.
+ */
+export type Go = ((to: string, note?: string) => void) & { stay(): void };
 
 export interface Actions {
   /**

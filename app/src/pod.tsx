@@ -488,17 +488,22 @@ function BringIn({
   );
 }
 
-/** A pod's page, as `shown` gives it; `person` is the demo person it is for, `held` the series the app holds. */
+/**
+ * A pod's page, as `shown` gives it; `person` is the demo person it is for, `held` the series the app holds, and
+ * `follow(n)` draws the connection numbered `n` in its box as it changes.
+ */
 export function PodPage({
   shown,
   titles,
   person,
   held,
+  follow = () => undefined,
 }: {
   shown: PodShown;
   titles: ReadonlyMap<string, string>;
   person: Person | undefined;
   held: readonly Series[];
+  follow?: (n: number) => void;
 }) {
   const address = useAddress();
   useReopenedBox(shown.pod);
@@ -625,6 +630,7 @@ export function PodPage({
           pod={pod}
           titles={titles}
           now={shown.connection}
+          follow={follow}
         />
       )}
     </>

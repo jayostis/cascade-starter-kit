@@ -293,15 +293,20 @@ export function ConnectionBox({
   );
 }
 
-/** The box of the pod's connection `now`, its buttons signing in again and bringing the record in; it closes to the pod. */
+/**
+ * The box of the pod's connection `now`, its buttons signing in again and bringing the record in, which `follow` then
+ * draws as it comes in; it closes to the pod.
+ */
 export function Connection({
   pod,
   titles,
   now,
+  follow,
 }: {
   pod: string;
   titles: ReadonlyMap<string, string>;
   now: ConnectionNow;
+  follow: (n: number) => void;
 }) {
   const host = useHost();
   const address = useAddress();
@@ -321,7 +326,8 @@ export function Connection({
       onBring={() =>
         act(async (go) => {
           await host.api.bring({ pod, connection: now.n });
-          go(ROUTED.connection(pod, now.n));
+          go.stay();
+          follow(now.n);
         }, BRINGING)
       }
     />

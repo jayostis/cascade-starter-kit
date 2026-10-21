@@ -18,8 +18,18 @@ export const routed = (url: URL) =>
 
 let goes = 0;
 
-/** The state a step's own move to an address carries, so that the screen there is drawn again even at the same address. */
-export const goState = () => ({ go: (goes += 1) });
+/**
+ * The state a step's own move to an address carries, so that the screen there is drawn again even at the same address;
+ * `page` is this page's load, since the history keeps the state over a reload.
+ */
+export const goState = () => ({
+  go: (goes += 1),
+  page: performance.timeOrigin,
+});
+
+/** Whether a step of this page's load moved the app to the address whose history state is `state`. */
+export const byStep = (state: unknown): boolean =>
+  (state as { page?: number } | null)?.page === performance.timeOrigin;
 
 /**
  * How many times a step has moved the app: it changes with the location a step moves to, never with a `#…` link, so a
