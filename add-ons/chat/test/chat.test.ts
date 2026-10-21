@@ -72,7 +72,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await api?.close();
-  await rm(folder, { recursive: true, force: true });
+  await rm(folder, { recursive: true, force: true, maxRetries: 5 });
 });
 
 test("GET /chat names the model the app was set up with, never its address or key", async () => {

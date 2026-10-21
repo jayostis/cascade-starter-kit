@@ -30,7 +30,7 @@ beforeAll(async () => {
 afterAll(async () => {
   await client?.close();
   await api?.close();
-  await rm(folder, { recursive: true, force: true });
+  await rm(folder, { recursive: true, force: true, maxRetries: 5 });
 });
 
 test("the server offers the free reads of the tool list, and nothing that moves the app or writes", async () => {

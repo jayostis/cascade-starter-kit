@@ -36,7 +36,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await api?.close();
-  await rm(folder, { recursive: true, force: true });
+  await rm(folder, { recursive: true, force: true, maxRetries: 5 });
 });
 
 test("the pods are listed", async () => {
