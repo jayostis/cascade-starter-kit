@@ -1,14 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import {
-  mkdir,
-  mkdtemp,
-  readdir,
-  readFile,
-  rm,
-  writeFile,
-} from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -20,6 +13,7 @@ import {
   KITS,
   type Terminal,
 } from "../create/src/create.js";
+import { gone } from "./settled.js";
 
 const ADDRESS =
   "https://example.org/releases/download/build-0/cascade-runtime-0.0.0.tgz";
@@ -89,7 +83,7 @@ before(async () => {
 });
 
 after(async () => {
-  await rm(parent, { recursive: true, force: true });
+  await gone(parent);
 });
 
 /**

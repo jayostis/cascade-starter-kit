@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { loadHospital, serveDemo } from "@the-cascade-protocol/sandbox/node";
 import { openPod } from "cascade-runtime";
 import { rowOf } from "./hospitals.js";
+import { gone } from "./settled.js";
 
 const { nodeHost, nodeHospitals } = (await import(
   new URL("../../app/node-host.ts", import.meta.url).href
@@ -36,7 +37,7 @@ before(async () => {
 });
 
 after(async () => {
-  await rm(folder, { recursive: true, force: true });
+  await gone(folder);
 });
 
 test("the starter's hospitals reach the listener", async () => {
