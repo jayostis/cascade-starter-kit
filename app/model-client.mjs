@@ -1,101 +1,12 @@
-// The one door to a model: `modelFrom` reads the settings `npm run model` saved, `modelClient` makes a `Model` of any
-// provider, and a `Model` streams one turn as events (`text`, `call`, `done`, `refused`, `error`). Nothing else in the
-// app knows a provider's wire format, and no property of a `Model` exposes its key.
+// The frozen `server.mjs`'s door to a model, on two wires of its own: `modelFrom` reads the settings `npm run model`
+// saved, `modelClient` makes a `Model` of any provider, and a `Model` streams one turn as events (`text`, `call`,
+// `done`, `refused`, `error`). The providers and settings are `models.ts`'s; no property of a `Model` exposes its key.
 import { existsSync } from "node:fs";
 import process from "node:process";
 import { Refusal } from "cascade-runtime";
-import { fileURLToPath, URL } from "node:url";
+import { ENV_FILE, isLoopback, PROVIDERS, redact, SETTINGS } from "./models.ts";
 
-/** Where `npm run model` keeps its settings, beside this module. */
-export const ENV_FILE = fileURLToPath(new URL(".env", import.meta.url));
-/** The four settings, in the order they are written. */
-export const SETTINGS = [
-  "CASCADE_MODEL_PROVIDER",
-  "CASCADE_MODEL_URL",
-  "CASCADE_MODEL_NAME",
-  "CASCADE_MODEL_KEY",
-];
-
-const FREE_ONLY_FOR_STORIES =
-  "Use it for the example and story pods, not a person's own.";
-
-/**
- * The providers a person can choose, in the order they are offered. `data` says what happens to what is sent; `url` and
- * `name` are the defaults; `key` is the page where a key is made (none: the provider needs no key).
- */
-export const PROVIDERS = {
-  gemini: {
-    label: "Google Gemini",
-    summary: "free key, no card",
-    name: "gemini-3.5-flash-lite",
-    url: "https://generativelanguage.googleapis.com/v1beta/openai/",
-    key: "https://aistudio.google.com/apikey",
-    data: `Google uses the free tier to improve its products, and people may read what is sent. ${FREE_ONLY_FOR_STORIES} Google's terms allow only the paid tier for people in the EEA, Switzerland and the UK: there, choose Groq or a model on this computer.`,
-  },
-  groq: {
-    label: "Groq",
-    summary: "free key, no card",
-    name: "openai/gpt-oss-120b",
-    url: "https://api.groq.com/openai/v1",
-    key: "https://console.groq.com/keys",
-    data: `Groq does not train on what is sent (Groq Services Agreement, section 4.2) and may log it for up to 30 days. ${FREE_ONLY_FOR_STORIES}`,
-  },
-  openrouter: {
-    label: "OpenRouter",
-    summary: "free models, about 50 questions a day",
-    name: "google/gemma-4-31b-it:free",
-    url: "https://openrouter.ai/api/v1",
-    key: "https://openrouter.ai/keys",
-    data: `What happens to what is sent depends on the model's provider, and a free model may log and train on it. ${FREE_ONLY_FOR_STORIES}`,
-  },
-  local: {
-    label: "On this computer",
-    summary: "Ollama or LM Studio",
-    name: "qwen3.5:4b",
-    url: "http://localhost:11434/v1",
-    key: undefined,
-    data: "Nothing leaves this machine.",
-  },
-  anthropic: {
-    label: "Anthropic",
-    summary: "paid, best at calling tools",
-    name: "claude-haiku-5-5",
-    url: "https://api.anthropic.com",
-    key: "https://platform.claude.com/settings/keys",
-    data: "A paid API: Anthropic's terms for the API apply to what is sent.",
-  },
-  other: {
-    label: "Another OpenAI-compatible address",
-    summary: "you give the address",
-    name: undefined,
-    url: undefined,
-    key: undefined,
-    data: "Not known: treated as a hosted provider unless the address is on this computer.",
-  },
-};
-
-/** A model server on this computer, whatever its port: 127.0.0.0/8, ::1 or localhost. */
-export function isLoopback(address) {
-  let host;
-  try {
-    host = new URL(address).hostname.toLowerCase();
-  } catch {
-    return false;
-  }
-  host = host.replace(/^\[|\]$/g, "");
-  return (
-    host === "localhost" ||
-    host.endsWith(".localhost") ||
-    host === "::1" ||
-    /^127(\.\d{1,3}){3}$/.test(host)
-  );
-}
-
-/** The text with every occurrence of the key replaced, so a provider echoing it back shows nothing. */
-export function redact(text, key) {
-  const said = String(text);
-  return key ? said.replaceAll(key, "[key]") : said;
-}
+export { ENV_FILE, isLoopback, PROVIDERS, redact, SETTINGS };
 
 /** What a person can do about a refused key or a busy model, in place of the provider's own reply; nothing for any other failure. */
 function advice(status, message, { provider, name }) {

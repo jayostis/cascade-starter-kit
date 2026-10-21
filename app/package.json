@@ -24,7 +24,7 @@
     "ask": "node ask.mjs",
     "console": "node console.mjs",
     "mcp": "node mcp.mjs",
-    "model": "node model.mjs"
+    "model": "node model.ts"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "4.0.73",

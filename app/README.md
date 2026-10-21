@@ -115,8 +115,10 @@ has a consent tier:
   (`connect`), bringing a record in (`bring`: the person does it from its box),
   and Delete all and Reset all.
 
-The MCP server offers the free reads. The chat offers the free tools, and
-try/'s WebMCP the free tools of the pod shown. No door offers an `ask` tool yet.
+The MCP server offers the free reads. `npm start`'s chat offers the free tools, and
+try/'s WebMCP the free tools of the pod shown. The chat of `npm run next` runs on the
+[Vercel AI SDK](https://ai-sdk.dev): its server runs the free reads, and offers the
+moves and the `ask` writes as tools the page runs, so a write waits for the person.
 
 An empty chat offers up to four questions worked out from the pod's own records
 (not by a model), such as "Did LDL cholesterol change after atorvastatin 20 MG Oral Tablet
@@ -257,13 +259,19 @@ script goes after `--`, or npm keeps it for itself.
   `help.mjs`, which lists them.
 - `mcp.mjs`, `mcp-server.mjs`: the MCP server on stdio, and the tools it
   offers.
-- `model.mjs`, `model-client.mjs`: `npm run model`, and the one door to a
-  model, whichever provider.
+- `model.ts`, `models.ts`: `npm run model`, and the providers and the four
+  settings, each provider through the AI SDK's own package for it:
+  `@ai-sdk/anthropic`, `@ai-sdk/groq`, `@openrouter/ai-sdk-provider`, and
+  `@ai-sdk/openai-compatible` for Gemini, Ollama, LM Studio and any other
+  OpenAI-compatible address. `model-client.mjs` is `npm start`'s door to the
+  same model.
 - `tools.mjs`: the one list of tools a model reaches, with their tiers and
   what no tool calls, which the MCP server, the chat and try/ share. Each calls
   the operations of `pod-api.mjs`.
-- `chat.mjs`: `POST /chat`, the chat's loop: the model's tool calls run over
-  the pods, with tools that open the app's own pages.
+- `chat.mjs`: `npm start`'s `POST /chat`, the chat's loop: the model's tool
+  calls run over the pods, with tools that open the app's own pages.
+- `server/chat.ts`: `npm run next`'s `/chat`, on the AI SDK: `POST` answers
+  with its UI message stream, and `GET` names the model.
 - `AGENTS.md`: for a coding agent building on this app.
 
 The full guide to `cascade-runtime` is in

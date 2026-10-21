@@ -302,13 +302,13 @@ test("a question that calls find_changes runs it: the model sees the compact fin
   const [first, second] = calls;
   assert.ok(systemOf(first!).includes(STATIN));
   assert.deepEqual(
-    first!.prompt.filter(({ role }) => role !== "system"),
-    [
-      {
-        role: "user",
-        content: [{ type: "text", text: "find anything interesting" }],
-      },
-    ],
+    first!.prompt
+      .filter(({ role }) => role !== "system")
+      .map((message) => [
+        message.role,
+        JSON.stringify(message.content).includes("find anything interesting"),
+      ]),
+    [["user", true]],
   );
   const toolMessage = second!.prompt.at(-1)!;
   assert.equal(toolMessage.role, "tool");
@@ -411,17 +411,11 @@ test("a tool call that cannot be run is reported to the model as a tool error, a
     reply("Sorry."),
   ]);
   const chunks = await chat(model, said("break"));
-  const errors = [
-    ...ofType(chunks, "tool-input-error"),
-    ...ofType(chunks, "tool-output-error"),
-  ];
+  const errors = ofType(chunks, "tool-output-error");
   table.forEach(([name, , reason], at) => {
     const failed = errors.filter(({ toolCallId }) => toolCallId === `c${at}`);
-    assert.ok(failed.length > 0, name);
-    assert.ok(
-      failed.some(({ errorText }) => reason.test(String(errorText))),
-      `${name}: ${JSON.stringify(failed)}`,
-    );
+    assert.equal(failed.length, 1, name);
+    assert.match(String(failed[0]!.errorText), reason, name);
   });
   assert.equal(ofType(chunks, "tool-output-available").length, 0);
   assert.equal(kinds(chunks).at(-1), "finish");
