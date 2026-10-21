@@ -1046,7 +1046,7 @@ async function column(page: Page, head: string): Promise<string[]> {
   );
 }
 
-test("in the lab results' box of Tamsin's pod, a heading sorts by its column one way then the other, numbers as numbers, the filter keeps only the rows holding its text, and a click outside the box or Escape closes it", async () => {
+test("in the lab results' box of Tamsin's pod, a heading sorts by its column one way then the other, numbers as numbers, the filter keeps only the rows holding its text, and a click outside the box or Escape closes it", async (t) => {
   const page = watched(await profile.newPage());
   await page.goto(`${served.url}${AT.pod("tamsin-vale")}`);
   await settled(page);
@@ -1065,17 +1065,6 @@ test("in the lab results' box of Tamsin's pod, a heading sorts by its column one
   assert.deepEqual(await column(page, "Date"), opened);
 
   await sort("Value");
-  const values = await column(page, "Value");
-  const isNumber = (value: string): boolean =>
-    value.trim() !== "" && Number.isFinite(Number(value));
-  const numbers = values.filter(isNumber).map(Number);
-  assert.ok(numbers.length > 1);
-  assert.deepEqual(
-    numbers,
-    [...numbers].sort((a, b) => a - b),
-  );
-  assert.ok(values.slice(0, numbers.length).every(isNumber));
-
   const [first = ""] = await column(page, "Value");
   const rows = await texts(page, "#see-lab-results tbody tr");
   await page.fill("#see-lab-results .filter", first);
@@ -1084,6 +1073,7 @@ test("in the lab results' box of Tamsin's pod, a heading sorts by its column one
     kept,
     rows.filter((row) => row.toLowerCase().includes(first.toLowerCase())),
   );
+  assert.ok(kept.length > 0, "the filter kept nothing");
   assert.ok(kept.length < rows.length, "the filter hid nothing");
 
   const open = (): Promise<boolean> => page.isVisible("#see-lab-results");
@@ -1095,6 +1085,46 @@ test("in the lab results' box of Tamsin's pod, a heading sorts by its column one
   assert.ok(await open());
   await page.keyboard.press("Escape");
   assert.ok(!(await open()), "Escape left the box open");
+
+  // Tamsin's values (8.3, 7.9, 7.4, 6.7, 6.5, 6.6) sort alike as text and as numbers; Marsh's differ in length.
+  if (!ported(t, "#4's numeric sort", "hospitals")) return;
+  const { person, patients } = joined;
+  const context = await browser.newContext();
+  try {
+    const marsh = watched(await context.newPage());
+    await marsh.goto(`${served.url}try/index.html`);
+    await settled(marsh);
+    await newPod(marsh, view.familyFirst(person));
+    const [north = ""] = person.at.map(({ name }) => name);
+    const [popup] = await Promise.all([
+      marsh.waitForEvent("popup"),
+      marsh.click(`button:has-text("Sign in at ${view.hospitalName(north)}")`),
+    ]);
+    await popup.waitForSelector('button[value="allow"]');
+    await popup.check(`input[name="patient"][value="${patients.get(north)}"]`);
+    await popup.click('button[value="allow"]');
+    await settled(marsh);
+    await marsh.click("#connection button:has-text('Bring it into')");
+    await settled(marsh, 300_000);
+    await marsh.click('a.tile[href="#see-lab-results"]');
+    await marsh.click('#see-lab-results th button:has-text("Value")');
+    const values = await column(marsh, "Value");
+    const isNumber = (value: string): boolean =>
+      value.trim() !== "" && Number.isFinite(Number(value));
+    const numbers = values.filter(isNumber).map(Number);
+    assert.ok(numbers.length > 1);
+    assert.ok(
+      new Set(numbers.map((each) => String(Math.trunc(each)).length)).size > 1,
+      "the values are all of one length, so a sort as text would pass",
+    );
+    assert.deepEqual(
+      numbers,
+      [...numbers].sort((a, b) => a - b),
+    );
+    assert.ok(values.slice(0, numbers.length).every(isNumber));
+  } finally {
+    await context.close();
+  }
 });
 
 test("after a reload, the pods made in this browser are still on the left", async () => {
@@ -1160,10 +1190,11 @@ test("File, Delete all data empties the pods column, leaves no pod nor answers i
       await page.textContent("main .note"),
       "Reset: Alex Rivera, Martin Okafor, Priya Natarajan and Tamsin Vale are back.",
     );
-    await page.goto(`${served.url}${AT.pod(ALEX)}#about`);
-    await settled(page);
+    const loaded = watched(await context.newPage());
+    await loaded.goto(`${served.url}${AT.pod(ALEX)}#about`);
+    await settled(loaded);
     assert.equal(
-      await page.isVisible("#about"),
+      await loaded.isVisible("#about"),
       true,
       "a page loaded at a box's address shows the box",
     );

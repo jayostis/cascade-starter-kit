@@ -311,25 +311,31 @@ export function App() {
   );
   const act = useCallback<Actions["act"]>(
     (step, doing = "Working…") => {
+      let unopened = false;
       void flight(
         async () => {
           let going = false;
-          await step((to, text) => {
-            going = true;
-            closeBox();
-            setLocked(undefined);
-            setNote(text === undefined ? undefined : { text, at: to });
-            navigate(to, {
-              state: goState(),
-              replace: to === hereRef.current,
+          try {
+            await step((to, text) => {
+              going = true;
+              closeBox();
+              setLocked(undefined);
+              setNote(text === undefined ? undefined : { text, at: to });
+              navigate(to, {
+                state: goState(),
+                replace: to === hereRef.current,
+              });
             });
-          });
+          } catch (error) {
+            unopened = error instanceof Error && error.name === "Unopened";
+            throw error;
+          }
           return going;
         },
         doing,
         isRefusal,
       ).then((left) => {
-        if (left === undefined) return;
+        if (left === undefined || unopened) return;
         closeBox();
         setOutcome((now) => ({
           ...left,
@@ -366,6 +372,12 @@ export function App() {
       [titles],
     ),
   );
+  const opened = pods !== undefined;
+  useLayoutEffect(() => {
+    // The shell is drawn once the pods are read, after the browser matched `:target`, so a load at `#about` is told again.
+    if (opened && /^#[^/]+$/.test(location.hash))
+      location.replace(location.hash);
+  }, [opened]);
   useEffect(() => {
     void (async () => {
       setPeople(await host.people());
