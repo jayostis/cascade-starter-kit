@@ -1101,3 +1101,32 @@ test("over HTTP, a request the route cannot take gets its status, and a broken r
   );
   assert.ok(!text.includes("/secret/path"));
 });
+
+test("the server answers its page to an address a person opens, even with a dot in it, and a missing file with a 404", async () => {
+  const pages = await mkdtemp(join(tmpdir(), "pages-"));
+  await writeFile(join(pages, "index.html"), "<h1>the app</h1>");
+  await writeFile(join(pages, "app.js"), "1");
+  const app = appServer({
+    api: apis.get("in-process")!,
+    own: () => ({ hosts: new Set(["localhost"]), origins: new Set() }),
+    chat: async () => undefined,
+    back: () => undefined,
+    pages,
+  });
+  const get = async (path: string, headers: Record<string, string> = {}) => {
+    const response = await app.request(`http://localhost${path}`, { headers });
+    return [response.status, await response.text()] as const;
+  };
+  const navigate = { "sec-fetch-mode": "navigate" };
+  assert.deepEqual(await get("/pods/a/entries/x.1", navigate), [
+    200,
+    "<h1>the app</h1>",
+  ]);
+  assert.deepEqual(await get("/pods/a/entries/x.1", { accept: "text/html" }), [
+    200,
+    "<h1>the app</h1>",
+  ]);
+  assert.deepEqual(await get("/app.js"), [200, "1"]);
+  assert.equal((await get("/nope.json"))[0], 404);
+  assert.equal((await get("/pods/a/entries/x.1"))[0], 404);
+});
