@@ -40,6 +40,8 @@ export interface Fixtures {
 }
 
 export interface Terminal {
+  /** The version of the Node.js the made app will run on, as `process.version` gives it; this one's when absent. */
+  readonly node?: string;
   readonly out: (text: string) => void;
   readonly err: (text: string) => void;
   /** Asks the person for the folder's name; absent when no person is at a terminal. */

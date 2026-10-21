@@ -16,7 +16,7 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { after, before, test, type TestContext } from "node:test";
+import { after, before, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { type Browser, chromium, type Page } from "playwright";
 import { inPlace } from "./shown.js";
@@ -24,23 +24,6 @@ import { inPlace } from "./shown.js";
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const KEY = "sk-test-key-that-must-not-leave";
 const ASKS = "open Ines Calloway's pod";
-
-/** `STARTER=next` runs the app ported to React (`server/main.ts`), else `npm start`'s (`server.mjs`). */
-const NEXT = process.env.STARTER === "next";
-/**
- * Skips the test unless the app it is of runs: the chat window's tests run on the React app only, as the old strip is
- * frozen until it goes; the old app's own, on it until the React app runs them.
- */
-const skipped = (t: TestContext, of: "chat" | "old") => {
-  const skip = (of === "chat") !== NEXT;
-  if (skip)
-    t.skip(
-      of === "chat"
-        ? "the chat window is the React app's"
-        : "not yet run on the React app",
-    );
-  return skip;
-};
 
 type Stub = {
   url: string;
@@ -113,7 +96,7 @@ async function stubModel(): Promise<Stub> {
 
 let built: Promise<string> | undefined;
 
-/** The React app built once, as `npm run next` builds it, into a folder of its own that each copy is given. */
+/** The app built once, as `npm start` builds it, into a folder of its own that each copy is given, newer than its sources, so `npm start` serves it as it is. */
 function builtOnce(): Promise<string> {
   built ??= (async () => {
     const out = await mkdtemp(join(tmpdir(), "t273-dist-"));
@@ -144,7 +127,8 @@ type Started = {
 };
 
 /**
- * A copy of the starter in a folder of its own, listening on a port the system picks; `env` is the model's settings.
+ * A copy of the starter in a folder of its own, running what its `npm start` runs, without npm between, so that a
+ * stop stops the server, on a port the system picks; `env` is the model's settings.
  * Given the `folder` of an earlier copy that `stop(true)` kept, it starts again in it, with its pods.
  */
 async function startStarter(
@@ -155,15 +139,15 @@ async function startStarter(
   if (again === undefined) {
     await cp(join(ROOT, "app"), folder, {
       recursive: true,
-      filter: (from) => !/[\\/](node_modules|pods|dist|\.env)$/.test(from),
+      filter: (from) =>
+        !/[\\/](node_modules|pods|dist|dist-browser|\.env)$/.test(from),
     });
     await symlink(
       join(ROOT, "node_modules"),
       join(folder, "node_modules"),
       "junction",
     );
-    if (NEXT)
-      await cp(await builtOnce(), join(folder, "dist"), { recursive: true });
+    await cp(await builtOnce(), join(folder, "dist"), { recursive: true });
   }
   const settings: Record<string, string | undefined> = {
     ...process.env,
@@ -174,11 +158,16 @@ async function startStarter(
     CASCADE_MODEL_KEY: undefined,
     ...env,
   };
-  const child: ChildProcess = spawn(
-    "node",
-    [NEXT ? "server/main.ts" : "server.mjs"],
-    { cwd: folder, env: settings, stdio: ["ignore", "pipe", "pipe"] },
-  );
+  const { scripts } = JSON.parse(
+    await readFile(join(folder, "package.json"), "utf8"),
+  ) as { scripts: { start: string } };
+  const [command, ...args] = scripts.start.split(" ");
+  assert.equal(command, "node", `npm start runs ${scripts.start}`);
+  const child: ChildProcess = spawn(process.execPath, args, {
+    cwd: folder,
+    env: settings,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
   let said = "";
   child.stderr!.on("data", (chunk: Buffer) => (said += chunk));
   const origin = await new Promise<string>((found, failed) => {
@@ -257,8 +246,7 @@ const storage = (page: Page) =>
     all: JSON.stringify([{ ...localStorage }, { ...sessionStorage }]),
   }));
 
-test("asking to open another pod moves the app there in place, and the question, the answer and Recent chats stay, the chat open", async (t) => {
-  if (skipped(t, "chat")) return;
+test("asking to open another pod moves the app there in place, and the question, the answer and Recent chats stay, the chat open", async () => {
   const page = await browser.newPage();
   await page.goto(`${modelled.origin}/pods/ada-lovelace/`);
   await inPlace(page, async () => {
@@ -294,8 +282,7 @@ test("asking to open another pod moves the app there in place, and the question,
   await page.close();
 });
 
-test("a move within the pod shown does not make the chat follow the next click to another pod", async (t) => {
-  if (skipped(t, "chat")) return;
+test("a move within the pod shown does not make the chat follow the next click to another pod", async () => {
   const page = await browser.newPage();
   await page.goto(`${modelled.origin}/pods/ines-calloway/`);
   await ask(page, ASKS);
@@ -310,8 +297,7 @@ test("a move within the pod shown does not make the chat follow the next click t
   await page.close();
 });
 
-test("Stop ends the call to the model, not just the spinner", async (t) => {
-  if (skipped(t, "chat")) return;
+test("Stop ends the call to the model, not just the spinner", async () => {
   const page = await browser.newPage();
   await page.goto(`${modelled.origin}/pods/ada-lovelace/`);
   await ask(page, "tell me a long story");
@@ -324,8 +310,7 @@ test("Stop ends the call to the model, not just the spinner", async (t) => {
   await page.close();
 });
 
-test("with no model set the window says to run npm run model and has no form; with one, its bar names the model and where it runs, and no page, request, stream or storage holds its key or address", async (t) => {
-  if (skipped(t, "chat")) return;
+test("with no model set the window says to run npm run model and has no form; with one, its bar names the model and where it runs, and no page, request, stream or storage holds its key or address", async () => {
   const page = await browser.newPage();
   await page.goto(`${bare.origin}/`);
   await page.locator(".chat-off").waitFor();
@@ -361,8 +346,7 @@ test("with no model set the window says to run npm run model and has no form; wi
   assert.equal(shown.includes(stub.url), false);
 });
 
-test("a write the model asks for waits on the page's confirm: Cancel makes no pod and tells the model no, and Allow makes it", async (t) => {
-  if (skipped(t, "chat")) return;
+test("a write the model asks for waits on the page's confirm: Cancel makes no pod and tells the model no, and Allow makes it", async () => {
   const page = await browser.newPage();
   await page.goto(`${modelled.origin}/pods/ada-lovelace/`);
   const asking = page.getByRole("alertdialog");
@@ -389,8 +373,7 @@ test("a write the model asks for waits on the page's confirm: Cancel makes no po
   await page.close();
 });
 
-test("a write the model asked for is withdrawn when its chat is closed: the box goes, nothing is made, and the model is not asked again", async (t) => {
-  if (skipped(t, "chat")) return;
+test("a write the model asked for is withdrawn when its chat is closed: the box goes, nothing is made, and the model is not asked again", async () => {
   const page = await browser.newPage();
   await page.goto(`${modelled.origin}/pods/ada-lovelace/`);
   const posts: string[] = [];
@@ -427,21 +410,19 @@ test("after Allow at a demo hospital the connection's box moves on by itself, to
   const signIn = page.getByRole("button", { name: /^Sign in at / }).first();
   await signIn.click();
   const allow = page.getByRole("button", { name: "Allow" });
-  if (NEXT) {
-    await allow.waitFor();
-    await page.goBack();
-    await page.waitForSelector('body[data-state="ready"]');
-    assert.equal(
-      await page.getAttribute("body", "data-state"),
-      "ready",
-      "Back after the sign-in's full page did not restore a ready page",
-    );
-    assert.ok(
-      await signIn.isEnabled(),
-      "Back after the sign-in's full page left its buttons off",
-    );
-    await signIn.click();
-  }
+  await allow.waitFor();
+  await page.goBack();
+  await page.waitForSelector('body[data-state="ready"]');
+  assert.equal(
+    await page.getAttribute("body", "data-state"),
+    "ready",
+    "Back after the sign-in's full page did not restore a ready page",
+  );
+  assert.ok(
+    await signIn.isEnabled(),
+    "Back after the sign-in's full page left its buttons off",
+  );
+  await signIn.click();
   await allow.click();
   const bring = page.getByRole("button", { name: /^Bring it into / });
   await bring.waitFor({ timeout: 30_000 });
@@ -497,8 +478,7 @@ const saying = (text: string) => [
 const isPost = (request: { url(): string; method(): string }) =>
   request.url().endsWith("/chat") && request.method() === "POST";
 
-test("a finding the model's tool found is drawn as a card with the app's sentence, its numbers and row links, and Open the trend goes to the trend", async (t) => {
-  if (skipped(t, "chat")) return;
+test("a finding the model's tool found is drawn as a card with the app's sentence, its numbers and row links, and Open the trend goes to the trend", async () => {
   const view = "/pods/ines-calloway/trend?test=18262-6&medication=617310";
   const finding = {
     key: "start:617310:18262-6",
@@ -642,8 +622,7 @@ const openOnLongAnswer = async (width: number, height: number) => {
   return { page, label };
 };
 
-test("the question box stays in view with the page at its top, in a short window and a phone-sized one", async (t) => {
-  if (skipped(t, "chat")) return;
+test("the question box stays in view with the page at its top, in a short window and a phone-sized one", async () => {
   for (const [width, height] of [
     [375, 667],
     [844, 390],
@@ -659,8 +638,7 @@ test("the question box stays in view with the page at its top, in a short window
   }
 });
 
-test("on a phone the About line is clamped to one line, the page scrolls its end above the open window, and a long answer opens at its question", async (t) => {
-  if (skipped(t, "chat")) return;
+test("on a phone the About line is clamped to one line, the page scrolls its end above the open window, and a long answer opens at its question", async () => {
   const { page, label } = await openOnLongAnswer(390, 600);
 
   const box = async (selector: string) =>
@@ -706,8 +684,7 @@ test("on a phone the About line is clamped to one line, the page scrolls its end
   await page.close();
 });
 
-test("an open chat leaves the page's own content in view, and the window folds to its bar and stays folded in the tab", async (t) => {
-  if (skipped(t, "chat")) return;
+test("an open chat leaves the page's own content in view, and the window folds to its bar and stays folded in the tab", async () => {
   const page = await browser.newPage({
     viewport: { width: 1100, height: 850 },
   });
@@ -754,8 +731,7 @@ async function filesUnder(folder: string): Promise<string[]> {
   return found;
 }
 
-test("an encrypted pod's chat is kept in neither localStorage nor sessionStorage", async (t) => {
-  if (skipped(t, "chat")) return;
+test("an encrypted pod's chat is kept in neither localStorage nor sessionStorage", async () => {
   const made = (await (
     await post(modelled.origin, "/api/makePod", {
       person: "Grace Hopper",

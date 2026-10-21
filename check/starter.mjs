@@ -195,10 +195,14 @@ async function stoppedAtStart(settings) {
   return { code, wrote };
 }
 
-/** `npm start` on a port the system gives, with `settings` added to its environment, and its address once it serves. */
-async function started(settings = {}) {
-  stdout.write("\n$ npm start (PORT=0)\n");
-  const child = spawn(execPath, [NPM, "start"], {
+/**
+ * `npm start`, or with `script` `npm run <script>`, on a port the system gives, with `settings` added to its
+ * environment, and its address once it serves; `npm start`'s once its demo hospitals listen too.
+ */
+async function started(settings = {}, script = "start") {
+  const args = script === "start" ? ["start"] : ["run", script];
+  stdout.write(`\n$ npm ${args.join(" ")} (PORT=0)\n`);
+  const child = spawn(execPath, [NPM, ...args], {
     cwd: app,
     env: { ...env, ...settings, PORT: "0" },
     detached: platform !== "win32",
@@ -214,10 +218,11 @@ async function started(settings = {}) {
           /^The demo hospitals are listening at (http:\/\/127\.0\.0\.1:\d+\/)$/m.exec(
             out,
           );
-        if (app !== null && demo !== null) done({ app: app[1], demo: demo[1] });
+        if (app !== null && (demo !== null || script !== "start"))
+          done({ app: app[1], demo: demo?.[1] });
       });
       child.on("close", (code) =>
-        failed(new Error(`npm start exited ${code}: ${out}`)),
+        failed(new Error(`npm ${args.join(" ")} exited ${code}: ${out}`)),
       );
     },
   );
@@ -725,6 +730,57 @@ await behaviour("help lists every command", async () => {
   for (const [script, what] of listed)
     assert.ok(what !== undefined, `help says nothing of ${script}`);
 });
+
+await behaviour(
+  "npm run browser builds the app to run in a browser alone, the demo hospitals' worker with it, and a first visit copies Alex's pod from its sample and draws it from its kept answers, the engine held back, with no request to /api",
+  async () => {
+    const served = await started({}, "browser");
+    try {
+      const worker = await fetch(
+        new URL("demo-hospital-worker.js", served.address),
+      );
+      assert.equal(worker.status, 200, "the demo hospitals' worker is not served");
+      const page = await tab();
+      const held = [];
+      await page.route(/\/web_bg\.wasm$/, (route) => {
+        held.push(route);
+      });
+      const apiCalls = [];
+      page.on("request", (sent) => {
+        if (new URL(sent.url()).pathname.startsWith("/api/"))
+          apiCalls.push(sent.url());
+      });
+      await page.goto(served.address);
+      await drawn(page);
+      assert.equal(
+        new URL(page.url()).pathname,
+        "/pods/alex-rivera/",
+        `the first visit opened no copy of Alex's pod: ${await heading(page)}`,
+      );
+      assert.equal(await heading(page), "Alex Rivera");
+      assert.equal(
+        await page.getAttribute("body", "data-engine"),
+        null,
+        "the engine was not held back",
+      );
+      const shown = await tiles(page);
+      for (const [kind, question] of Object.entries(TILES)) {
+        const rows = await asked(question, "alex-rivera");
+        assert.equal(
+          shown.get(kind),
+          rows.length === 0 ? undefined : rows.length,
+          `the ${kind} tile of the browser's copy of Alex's pod`,
+        );
+      }
+      assert.deepEqual(apiCalls, [], "the browser's app asked a server");
+      await page.unroute(/\/web_bg\.wasm$/);
+      for (const route of held) await route.continue().catch(() => undefined);
+      await page.close();
+    } finally {
+      await served.stop();
+    }
+  },
+);
 
 const server = await (async () => {
   /** @type {Awaited<ReturnType<typeof started>>} */
@@ -1885,6 +1941,27 @@ if (release === undefined) {
           assert.equal(set.asOf, INSTANT);
           assert.equal((await api(server, "hospitals")).asOf, INSTANT);
           const appOrigin = new URL(server.address).origin;
+          /** Where `/world-date?back=` sends a person, as its redirect names it. */
+          const sentBack = async (back) => {
+            const answer = await fetch(
+              new URL(
+                `/world-date?back=${encodeURIComponent(back)}`,
+                server.address,
+              ),
+              { redirect: "manual" },
+            );
+            assert.ok(
+              answer.status >= 300 && answer.status < 400,
+              `${back}: /world-date answered ${answer.status}, no redirect`,
+            );
+            return new URL(answer.headers.get("location") ?? "", server.address);
+          };
+          const own = await sentBack("/pods/hospital/");
+          assert.equal(
+            `${own.origin}${own.pathname}${own.hash}`,
+            `${appOrigin}/pods/hospital/#world-date`,
+            "/world-date does not go back to the pod's page with the date open",
+          );
           for (const back of [
             "//evil.test/",
             "/..//evil.test/",
@@ -1892,6 +1969,11 @@ if (release === undefined) {
             "/%2e%2e//evil.test/",
             "/a/..//evil.test",
           ]) {
+            assert.equal(
+              (await sentBack(back)).origin,
+              appOrigin,
+              `${back}: /world-date sends a person off this app`,
+            );
             await opened(
               page,
               server,
@@ -1902,16 +1984,6 @@ if (release === undefined) {
               appOrigin,
               `${back}: a back address off this app was followed`,
             );
-            for (const href of await page
-              .getByRole("link", { name: "Back" })
-              .evaluateAll((links) =>
-                links.map((link) => link.getAttribute("href")),
-              ))
-              assert.equal(
-                new URL(href, page.url()).origin,
-                appOrigin,
-                `${back}: the Back link goes off this app`,
-              );
           }
           await beginsWith(AS_OF_SAID);
           assert.ok((await pickerNow()).includes(AS_OF));
