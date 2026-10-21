@@ -1,7 +1,8 @@
 // The reads of the one list (`tools.ts`) for a page that carries no runtime: `GET /tools` names them, and
 // `POST /tools/<name>` runs one on a JSON input, so the page offers them to the model context as the browser target does.
 // The tools that move the app or write are the page's own (`PAGE_TOOLS` of `said.ts`), and are not here.
-import { checkInput, type InputSchema } from "cascade-runtime";
+import type { InputSchema } from "cascade-runtime";
+import { checkInput } from "cascade-runtime/check";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { addresses } from "../addresses.ts";
