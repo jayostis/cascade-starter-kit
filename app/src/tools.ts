@@ -1,8 +1,8 @@
 // The tools a model reaches the app by through the page's model context (WebMCP), on every screen, where the browser
 // has one: the reads of the one list (`tools.ts`) as the host runs them, and the tools the page runs itself
-// (`PAGE_TOOLS` of `said.ts`). A tool that moves the app moves it in place, as a step does; a write waits on the
-// person's Allow. They are offered while the screen shown is the one they were offered for, and taken away in the
-// commit that draws the next, never after the next paint.
+// (`PAGE_TOOLS` of `said.ts`). A tool that moves the app moves it in place through the router, as a step does; a write
+// waits on the person's Allow, then runs as the route's action. They are offered while the screen shown is the one they
+// were offered for, and taken away in the commit that draws the next, never after the next paint.
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useLocation } from "react-router";
 import {
@@ -12,12 +12,12 @@ import {
   type PageTool,
   type ToolInput,
 } from "../said.ts";
-import { useActions, type Actions } from "./actions.tsx";
+import { useToolSteps, type ToolSteps } from "./actions.tsx";
 import { routed, useAddress } from "./address.tsx";
 import { isRefusal, useHost, type ReadTool } from "./api.tsx";
 import { checkToolInput, type Input, type Schema } from "./check.ts";
 import { ACTIONS, SAID_NO, useConfirm, type Confirm } from "./confirm.tsx";
-import { settled } from "./doing.ts";
+import { isBusy } from "./doing.ts";
 
 /** The tool WebMCP's `registerTool` takes: it goes when its `signal` aborts. */
 interface ModelTool {
@@ -91,11 +91,7 @@ function useOpened(pod: string | undefined) {
 
 /** What a tool's run reads at the time of the call, not of the commit that offered it. */
 interface Now {
-  readonly act: Actions["act"];
   readonly confirm: Confirm;
-  readonly refreshPods: Actions["refreshPods"];
-  readonly heldNow: Actions["heldNow"];
-  readonly here: string;
   /** Whether the tools offered are those of the screen shown: its pod, if any, has been read. */
   readonly offered: boolean;
 }
@@ -107,10 +103,9 @@ interface Now {
  */
 export function useTools(screen: { readonly pod: string | undefined }) {
   const { api, reads } = useHost();
-  const { act, refreshPods, heldNow } = useActions();
+  const steps: ToolSteps = useToolSteps();
   const confirm = useConfirm();
   const address = useAddress();
-  const { pathname, search } = useLocation();
   const { opened, checked } = useOpened(screen.pod);
   const offered = screen.pod === undefined || checked === screen.pod;
   const pod =
@@ -119,24 +114,10 @@ export function useTools(screen: { readonly pod: string | undefined }) {
   useEffect(() => {
     reads.list().then(setListed, () => setListed([]));
   }, [reads]);
-  const now = useRef<Now>({
-    act,
-    confirm,
-    refreshPods,
-    heldNow,
-    here: pathname + search,
-    offered,
-  });
+  const now = useRef<Now>({ confirm, offered });
   const arriving = useRef<(() => void)[]>([]);
   useLayoutEffect(() => {
-    now.current = {
-      act,
-      confirm,
-      refreshPods,
-      heldNow,
-      here: pathname + search,
-      offered,
-    };
+    now.current = { confirm, offered };
     if (offered) for (const resolve of arriving.current.splice(0)) resolve();
   });
   useLayoutEffect(() => {
@@ -145,7 +126,7 @@ export function useTools(screen: { readonly pod: string | undefined }) {
     const controller = new AbortController();
     const { signal } = controller;
 
-    /** Runs a tool the page runs itself: a move in place through a step, a write once the person has said yes. */
+    /** Runs a tool the page runs itself: a move in place through the router, a write once the person has said yes. */
     async function runPage(
       tool: PageTool,
       input: ToolInput,
@@ -162,39 +143,19 @@ export function useTools(screen: { readonly pod: string | undefined }) {
         throw refusal(
           called?.aborted === true ? "The ask was withdrawn" : SAID_NO,
         );
-      let output: unknown;
-      let failure: unknown;
-      let ran = false;
-      await now.current.act(
-        async (go) => {
-          ran = true;
-          let went = false;
-          const door: PageDoor = {
-            address,
-            async open(to) {
-              went = true;
-              go(routed(new URL(to, location.href)));
-            },
-          };
-          try {
-            output = await tool.run(api, input, door);
-            if (tool.name === "make_pod") await now.current.refreshPods();
-            if (tool.name === "check_tables")
-              now.current.heldNow(
-                (output as { held: Parameters<Actions["heldNow"]>[0] }).held,
-              );
-          } catch (error) {
-            failure = error;
-          }
-          if (!went) go(now.current.here);
-        },
-        writes ? "Working…" : "Opening…",
-      );
-      if (!ran)
+      if (isBusy())
         throw refusal("The page is busy with something else; try again");
-      if (failure !== undefined) throw failure;
-      if (tool.opens === true) {
-        await settled();
+      if (writes) return steps.write(tool.name, input);
+      let to: string | undefined;
+      const door: PageDoor = {
+        address,
+        async open(address) {
+          to = routed(new URL(address, location.href));
+        },
+      };
+      const output = await tool.run(api, input, door);
+      if (to !== undefined) {
+        await steps.move(to);
         if (!now.current.offered)
           await new Promise<void>((resolve) => arriving.current.push(resolve));
       }
@@ -243,7 +204,7 @@ export function useTools(screen: { readonly pod: string | undefined }) {
     ];
     for (const tool of offering) context.registerTool(tool, { signal });
     return () => controller.abort();
-  }, [api, reads, address, listed, pod]);
+  }, [api, reads, address, listed, pod, steps]);
 }
 
 /** Offers the model context its tools for the screen shown; it draws nothing. */

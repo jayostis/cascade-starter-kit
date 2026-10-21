@@ -40,7 +40,6 @@ import {
 import { routed, useAddress } from "../address.tsx";
 import { type ChatModel, useHost } from "../api.tsx";
 import type { Asked } from "../ask.tsx";
-import { busy } from "../doing.ts";
 import { muted, quiet, tag } from "../look.ts";
 import {
   forgetOpen,
@@ -678,7 +677,6 @@ function Window({ model, pod }: { model: ChatModel; pod: string }) {
       const to = routed(new URL(address, location.href));
       if (now.current.running || to === now.current.at) return;
       following.current = true;
-      busy("Opening…");
       void navigate(to);
     },
     [navigate],

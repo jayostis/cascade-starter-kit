@@ -1,6 +1,6 @@
 // A pod's medicines by class: the active ones grouped under each class the tables give the drug, or one class alone when
 // the address picks it, with the table and version each came from, its credit, and which medicines are in none and why.
-import { useLocation, useParams, useSearchParams } from "react-router";
+import type { LoaderFunctionArgs } from "react-router";
 import {
   type Abouts,
   heldAt,
@@ -16,8 +16,9 @@ import {
   versionName,
 } from "../said.ts";
 import { useAddress } from "./address.tsx";
+import type { PodApi } from "./api.tsx";
 import { card, lead, muted, pickerLink, pickerList } from "./look.ts";
-import { Back, NotFound, sourceOf, useLoaded, Wrong } from "./screen.tsx";
+import { Back, screen, sourceOf, useApp, useRead } from "./screen.tsx";
 
 /** What the page is drawn from: PodApi's `classes`, its pairs as `Map`s again, and the series the app holds. */
 interface ClassesRead {
@@ -234,29 +235,29 @@ export function ClassesPage({
   );
 }
 
-/** The pod's active medicines by class, or with the address's `class` that one alone. */
-export function ClassesScreen({
-  titles,
-}: {
-  titles: ReadonlyMap<string, string>;
-}) {
-  const { pod = "" } = useParams();
-  const { pathname, search } = useLocation();
-  const [asked] = useSearchParams();
-  const loaded = useLoaded<ClassesRead>(
-    pathname + search,
-    async (api) => maps(await api.classes({ pod })) as unknown as ClassesRead,
-    () => "Medicines by class",
-  );
-  if (loaded === undefined) return null;
-  if ("wrong" in loaded) return <Wrong said={loaded.wrong} />;
-  if ("refused" in loaded) return <NotFound said={loaded.refused} />;
-  return (
-    <ClassesPage
-      pod={pod}
-      titles={titles}
-      read={loaded.value}
-      picked={asked.get("class") ?? undefined}
-    />
-  );
+interface ClassesAsked {
+  readonly pod: string;
+  readonly read: ClassesRead;
+  readonly picked?: string;
+}
+
+/** Reads the pod's active medicines by class, or with the address's `class` that one alone. */
+export const classesLoader = (api: PodApi) =>
+  screen(async ({ params, request }: LoaderFunctionArgs) => {
+    const pod = params.pod ?? "";
+    const picked = new URL(request.url).searchParams.get("class");
+    return {
+      value: {
+        pod,
+        read: maps(await api.classes({ pod })) as unknown as ClassesRead,
+        ...(picked !== null && { picked }),
+      } satisfies ClassesAsked,
+      title: "Medicines by class",
+    };
+  });
+
+export function ClassesScreen() {
+  const { pod, read, picked } = useRead<ClassesAsked>();
+  const { titles } = useApp();
+  return <ClassesPage pod={pod} titles={titles} read={read} picked={picked} />;
 }

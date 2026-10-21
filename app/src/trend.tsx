@@ -1,7 +1,7 @@
 // The trend of one test, a medication marked: a chart of the results with the days the medication started and stopped
 // dashed across it, each medication as a bar under it, a table of the results and links to pick another test or
 // medication. It states what changed after what, never why.
-import { useLocation, useParams, useSearchParams } from "react-router";
+import type { LoaderFunctionArgs } from "react-router";
 import {
   type Abouts,
   type Coded,
@@ -23,8 +23,10 @@ import {
   unitOf,
 } from "../said.ts";
 import { useAddress } from "./address.tsx";
+import type { PodApi } from "./api.tsx";
 import { AskButton } from "./ask.tsx";
 import { Chart, Lane } from "./chart.tsx";
+import { warming, whenNamed } from "./engine.ts";
 import {
   card,
   lead,
@@ -34,7 +36,7 @@ import {
   pickerLink,
   pickerList,
 } from "./look.ts";
-import { Back, NotFound, useLoaded, Wrong } from "./screen.tsx";
+import { Back, screen, useApp, useLate, useRead } from "./screen.tsx";
 
 /** A test's results in a pod, as `labSeriesIn` gives them. */
 interface LabSeries {
@@ -252,47 +254,51 @@ export function TrendPage({
   );
 }
 
-/** The trend the address asks for: with no test the strongest change's, else the pod's first. */
-export function TrendScreen({
-  titles,
-  engine,
-}: {
-  titles: ReadonlyMap<string, string>;
-  engine: "waiting" | "ready" | "failed";
-}) {
-  const { pod = "" } = useParams();
-  const { pathname, search } = useLocation();
-  const [asked] = useSearchParams();
-  const test = asked.get("test") || undefined;
-  const medication = asked.get("medication") || undefined;
-  const loaded = useLoaded<TrendRead & { named: boolean }>(
-    pathname + search,
-    async (api) => {
-      const named = engine === "ready";
-      return {
-        ...(maps(
-          await api.trend({
-            pod,
-            ...(test !== undefined && { test }),
-            ...(medication !== undefined && { medication }),
-            named,
-          }),
-        ) as unknown as TrendRead),
-        named,
-      };
-    },
-    ({ series, about }) => trendTitle(series, about),
-    engine === "ready",
-  );
-  if (loaded === undefined) return null;
-  if ("wrong" in loaded) return <Wrong said={loaded.wrong} />;
-  if ("refused" in loaded) return <NotFound said={loaded.refused} />;
+/** What a trend's loader read: the trend now, and with `named` the same named by the tables, once they can say. */
+interface TrendAsked {
+  readonly pod: string;
+  readonly read: TrendRead;
+  readonly named?: Promise<TrendRead>;
+}
+
+/** Reads the trend the address asks for: with no test the strongest change's, else the pod's first. */
+export const trendLoader = (api: PodApi) =>
+  screen(async ({ params, request }: LoaderFunctionArgs) => {
+    const pod = params.pod ?? "";
+    const asked = new URL(request.url).searchParams;
+    const test = asked.get("test") || undefined;
+    const medication = asked.get("medication") || undefined;
+    const trend = async (named: boolean) =>
+      maps(
+        await api.trend({
+          pod,
+          ...(test !== undefined && { test }),
+          ...(medication !== undefined && { medication }),
+          named,
+        }),
+      ) as unknown as TrendRead;
+    const later = warming();
+    const read = await trend(!later);
+    return {
+      value: {
+        pod,
+        read,
+        ...(later && { named: whenNamed(() => trend(true), read) }),
+      } satisfies TrendAsked,
+      title: trendTitle(read.series, read.about),
+    };
+  });
+
+export function TrendScreen() {
+  const { pod, read, named } = useRead<TrendAsked>();
+  const { titles } = useApp();
+  const came = useLate(named ?? read);
   return (
     <TrendPage
       pod={pod}
       titles={titles}
-      read={loaded.value}
-      naming={!loaded.value.named && engine !== "failed"}
+      read={came ?? read}
+      naming={came === undefined}
     />
   );
 }

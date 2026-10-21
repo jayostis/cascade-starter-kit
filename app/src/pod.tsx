@@ -1,8 +1,13 @@
 // A pod's page, as a person reads it: the person's name, how many records from how many places, what is worth a look,
 // what changed after a medication started or stopped, a tile per kind of record with its table in a box, and a way
 // to bring in more. It is drawn from the pod's answers first; what the tables say of them fills it in once known.
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { flushSync } from "react-dom";
+import { useRevalidator, type LoaderFunctionArgs } from "react-router";
 import {
+  BRINGING,
+  maps,
+  refusal,
   type Abouts,
   type Answers,
   capitalised,
@@ -48,9 +53,10 @@ import {
   leftSaid,
 } from "../said.ts";
 import { useAddress } from "./address.tsx";
-import type { ConnectionNow } from "./api.tsx";
+import { useHost, type ConnectionNow, type PodApi } from "./api.tsx";
 import { AskButton } from "./ask.tsx";
 import { Chart } from "./chart.tsx";
+import { warming, whenNamed } from "./engine.ts";
 import { Connection, SignIn, WorldDate } from "./hospitals.tsx";
 import {
   bullet,
@@ -65,6 +71,7 @@ import {
   tagWarm,
 } from "./look.ts";
 import { Box, Pending, Tag, useReopenedBox } from "./parts.tsx";
+import { screen, useApp, useLate, useRead } from "./screen.tsx";
 
 /** What a pod's page is drawn from: its answers, and once the tables can say, what they say of them. */
 export interface PodShown {
@@ -497,13 +504,11 @@ function Changed({
  * demo person, and Find a hospital. It says nothing of what a hospital holds: nothing here asks it.
  */
 function BringIn({
-  pod,
   empty,
   person,
   asOf,
   findHospital,
 }: {
-  pod: string;
   empty: boolean;
   person: Person | undefined;
   asOf: string | undefined;
@@ -516,11 +521,7 @@ function BringIn({
       <WorldDate asOf={asOf} />
       <div className={row}>
         {(person?.at ?? []).map((hospital) => (
-          <SignIn
-            key={hospital.fhirBase}
-            pod={pod}
-            fhirBase={hospital.fhirBase}
-          >
+          <SignIn key={hospital.fhirBase} fhirBase={hospital.fhirBase}>
             Sign in at {hospitalName(hospital.name)}
           </SignIn>
         ))}
@@ -532,22 +533,17 @@ function BringIn({
   );
 }
 
-/**
- * A pod's page, as `shown` gives it; `person` is the demo person it is for, `held` the series the app holds, and
- * `follow(n)` draws the connection numbered `n` in its box as it changes.
- */
+/** A pod's page, as `shown` gives it; `person` is the demo person it is for, `held` the series the app holds. */
 export function PodPage({
   shown,
   titles,
   person,
   held,
-  follow = () => undefined,
 }: {
   shown: PodShown;
   titles: ReadonlyMap<string, string>;
   person: Person | undefined;
   held: readonly Series[];
-  follow?: (n: number) => void;
 }) {
   const address = useAddress();
   useReopenedBox(shown.pod);
@@ -675,7 +671,6 @@ export function PodPage({
       )}
       {tiles.map(({ dialog }) => dialog)}
       <BringIn
-        pod={pod}
         empty={records === 0}
         person={person}
         asOf={shown.asOf}
@@ -687,9 +682,141 @@ export function PodPage({
           pod={pod}
           titles={titles}
           now={shown.connection}
-          follow={follow}
         />
       )}
     </>
+  );
+}
+
+/** What the tables say of a pod's codes and variants; no names when they cannot say. */
+type Named = Pick<PodShown, "about" | "said">;
+
+/** What a pod's page is drawn from: its answers now, and the tables' names of them, at once or as they come. */
+interface PodRead {
+  readonly shown: Omit<PodShown, "about" | "said">;
+  readonly named: Named | Promise<Named>;
+}
+
+async function namedOf(api: PodApi, pod: string): Promise<Named> {
+  try {
+    const { about, said } = maps(await api.said({ pod })) as {
+      about?: Abouts;
+      said?: VariantsSaid;
+    };
+    return { about: about ?? new Map(), ...(said !== undefined && { said }) };
+  } catch {
+    return { about: new Map() };
+  }
+}
+
+/** The pod's connection numbered `n` in the address, as `connection` gives it; none for no number, or one it has not. */
+async function connectionAt(
+  api: PodApi,
+  pod: string,
+  n: string | null,
+): Promise<ConnectionNow | undefined> {
+  if (n === null || !/^\d+$/.test(n)) return undefined;
+  try {
+    return await api.connection({ pod, connection: Number(n) });
+  } catch (error) {
+    if (error instanceof Error && error.name === "Refusal") return undefined;
+    throw error;
+  }
+}
+
+/**
+ * Reads the pod the address names, with the connection its `connection` names in a box over it: while that connection
+ * signs in, fetches or brings its record in, the page is busy with it, and once it failed where Try again can help, it
+ * went wrong.
+ */
+export const podLoader = (api: PodApi) =>
+  screen(async ({ params, request }: LoaderFunctionArgs) => {
+    const pod = params.pod ?? "";
+    const { pods } = await api.pods();
+    if (!pods.some(({ name }) => name === pod))
+      throw refusal(`This app keeps no pod named ${pod}.`);
+    const [answered, { asOf }, connection] = await Promise.all([
+      api.answers({ pod }),
+      api.hospitals({}),
+      connectionAt(
+        api,
+        pod,
+        new URL(request.url).searchParams.get("connection"),
+      ),
+    ]);
+    const named = whenNamed(() => namedOf(api, pod), { about: new Map() });
+    const titles = new Map(pods.map(({ name, title }) => [name, title]));
+    return {
+      value: {
+        shown: {
+          pod,
+          ...answered,
+          ...(asOf !== undefined && { asOf }),
+          ...(connection?.broughtIn
+            ? { from: connection.row.name }
+            : connection !== undefined && { connection }),
+        },
+        named: warming() ? named : await named,
+      } satisfies PodRead,
+      title: personName(pod, titles),
+      ...(connection !== undefined &&
+        !connection.broughtIn &&
+        !connection.settled && {
+          busy: connection.step === "bringing in" ? BRINGING : "Signing in…",
+        }),
+      ...(connection?.retry === true && {
+        failed: `the connection failed: ${connection.failed ?? connection.step}`,
+      }),
+    };
+  });
+
+/**
+ * The connection `read` as it moves on: while it is under way, each change is drawn as it comes, and once it has
+ * settled or brought its record in, the page is read again.
+ */
+function useFollowed(
+  pod: string,
+  read: ConnectionNow | undefined,
+): ConnectionNow | undefined {
+  const { api } = useHost();
+  const { revalidate } = useRevalidator();
+  const [now, setNow] = useState<{ of: ConnectionNow; now: ConnectionNow }>();
+  useEffect(() => {
+    if (read === undefined || read.settled) return;
+    const stop = new AbortController();
+    void (async () => {
+      for (let wait: "change" | undefined; ; wait = "change") {
+        const next = await api.connection({ pod, connection: read.n, wait });
+        if (stop.signal.aborted) return;
+        if (next.broughtIn === true) return revalidate();
+        flushSync(() => setNow({ of: read, now: next }));
+        if (next.settled) return revalidate();
+      }
+    })().catch(() => {
+      if (!stop.signal.aborted) void revalidate();
+    });
+    return () => stop.abort();
+  }, [api, pod, read, revalidate]);
+  return now !== undefined && now.of === read ? now.now : read;
+}
+
+/** The pod the address names, drawn from its answers, then filled in once the tables can say what they say of them. */
+export function PodScreen() {
+  const { shown, named } = useRead<PodRead>();
+  const { titles, people, held } = useApp();
+  const said = useLate(named);
+  const tables = useLate(held);
+  const connection = useFollowed(shown.pod, shown.connection);
+  return (
+    <PodPage
+      shown={{
+        ...shown,
+        ...said,
+        ...(connection !== undefined && { connection }),
+      }}
+      titles={titles}
+      person={people.find((each) => slug(each.name) === shown.pod)}
+      held={tables?.held ?? []}
+    />
   );
 }

@@ -1,9 +1,12 @@
 // Making a pod and opening one: the new-pod box, the six words of an encrypted pod to keep and check, and the screen
-// that asks an encrypted pod for its words. The words live in these screens' state alone: never in an address, never
-// in storage.
+// that asks an encrypted pod for its words. The words live in these screens and the forms that post them alone: never
+// in an address, never in storage.
 import { useEffect, useRef, useState } from "react";
-import { flushSync } from "react-dom";
-import { useLocation, useParams } from "react-router";
+import {
+  useActionData,
+  useLocation,
+  type LoaderFunctionArgs,
+} from "react-router";
 import {
   byFamily,
   ENCRYPT_BOX,
@@ -15,40 +18,46 @@ import {
   UNOPENED,
   type Person,
 } from "../said.ts";
-import { Notice, useActions } from "./actions.tsx";
-import { ROUTED, useGeneration } from "./address.tsx";
-import { isRefusal, useHost } from "./api.tsx";
-import { ready } from "./doing.ts";
+import type { Stayed } from "./actions.tsx";
+import type { PodApi } from "./api.tsx";
 import { lead, muted, note, row, stack, stackLabel } from "./look.ts";
-import { Box, PostButton } from "./parts.tsx";
+import { Box, PostButton, StepFields, StepForm } from "./parts.tsx";
+import { screen, useRead } from "./screen.tsx";
 
-/** Whether `error` is what the rules refused, rather than a pod that would not open. */
-const refused = (error: unknown): error is Error =>
-  isRefusal(error) && error.name === "Refusal";
+/**
+ * A number that changes with each outcome a step's action gives, for a form drawn again empty after each, even when
+ * two in a row say the same.
+ */
+function useAttempt(): {
+  readonly did: Stayed | undefined;
+  readonly n: number;
+} {
+  const did = useActionData() as Stayed | undefined;
+  const seen = useRef<{ did: Stayed | undefined; n: number }>({ did, n: 0 });
+  if (seen.current.did !== did) seen.current = { did, n: seen.current.n + 1 };
+  return seen.current;
+}
 
-/** A one-click choice of the new-pod box: a button that posts `fields`, and says what it is. */
+/** A one-click choice of the new-pod box: a button that makes the pod `fields` say, and says what it is. */
 function Choice({
   label,
   note,
   fields,
   doing,
-  onChoose,
 }: {
   label: string;
   note: string;
   fields: Record<string, string>;
   doing: string;
-  onChoose: () => void;
 }) {
   return (
     <li className="my-[0.35rem]">
       <PostButton
-        action="make"
+        intent="make"
         block
         className="block w-full border-line bg-soft text-left text-text hover:border-accent hover:bg-tint"
         fields={fields}
         doing={doing}
-        onPost={onChoose}
       >
         {label}
         <span className="muted block text-[0.8rem] text-muted">{note}</span>
@@ -71,19 +80,14 @@ export function NewPod({
   pods: readonly string[];
   samples: readonly string[];
 }) {
-  const { api } = useHost();
-  const { act, refreshPods } = useActions();
   const [encrypt, setEncrypt] = useState(false);
   const field = useRef<HTMLInputElement>(null);
-  const make = (person: string, doing: string) =>
-    act(async (go) => {
-      const made = await api.makePod({ person, encrypt });
-      setEncrypt(false);
-      if (field.current !== null) field.current.value = "";
-      if (made.waiting === true) return go(ROUTED.words(made.pod));
-      await refreshPods();
-      go(ROUTED.pod(made.pod));
-    }, doing);
+  const { pathname, search } = useLocation();
+  useEffect(() => {
+    setEncrypt(false);
+    if (field.current !== null) field.current.value = "";
+  }, [pathname, search]);
+  const encrypted = { encrypt: encrypt ? "on" : "" };
   const demo = byFamily(people).filter(
     (person) => !pods.includes(slug(person.name)),
   );
@@ -123,11 +127,8 @@ export function NewPod({
                 key={person.name}
                 label={familyFirst(person)}
                 note={`Records waiting at ${listed(person.at.map(({ name }) => hospitalName(name)))}`}
-                fields={{ person: person.name }}
+                fields={{ person: person.name, ...encrypted }}
                 doing={`Making ${person.name}'s pod…`}
-                onChoose={() =>
-                  make(person.name, `Making ${person.name}'s pod…`)
-                }
               />
             ))}
           </ul>
@@ -147,11 +148,8 @@ export function NewPod({
                 key={name}
                 label={`Load ${personName(name)}`}
                 note="A copy of a published example pod"
-                fields={{ pod: name }}
+                fields={{ pod: name, ...encrypted }}
                 doing={`Loading ${personName(name)}'s pod…`}
-                onChoose={() =>
-                  make(name, `Loading ${personName(name)}'s pod…`)
-                }
               />
             ))}
           </ul>
@@ -161,16 +159,8 @@ export function NewPod({
         <strong>Or make one for anyone.</strong> You can bring in records
         afterwards.
       </p>
-      <form
-        method="post"
-        action="make"
-        className={row}
-        data-doing="Making the pod…"
-        onSubmit={(event) => {
-          event.preventDefault();
-          make(field.current?.value ?? "", "Making the pod…");
-        }}
-      >
+      <StepForm className={row}>
+        <StepFields intent="make" doing="Making the pod…" fields={encrypted} />
         <input
           className="min-w-40 flex-1"
           ref={field}
@@ -180,76 +170,47 @@ export function NewPod({
           required
         />
         <button>Make the pod</button>
-      </form>
+      </StepForm>
     </Box>
   );
 }
 
-/** Offers the words to the browser's password manager, where it has an API for it; never relied on. */
-function offerToSave(name: string, words: string): void {
-  try {
-    const { PasswordCredential } = globalThis as {
-      PasswordCredential?: new (init: {
-        id: string;
-        name: string;
-        password: string;
-      }) => Credential;
-    };
-    if (PasswordCredential === undefined) return;
-    navigator.credentials
-      .store(new PasswordCredential({ id: name, name, password: words }))
-      .catch(() => undefined);
-  } catch {
-    // The offer is a courtesy.
-  }
-}
-
 /** What the words screen holds of the pod being made: its person's name and its words, or why there is none. */
 type Waiting =
-  | { readonly person: string; readonly words: string }
-  | { readonly refused: string }
-  | { readonly wrong: string };
+  | { readonly pod: string; readonly person: string; readonly words: string }
+  | { readonly refused: string };
 
-/** The screen at `/encrypted-pods/<pod>`: the words PodApi holds for the pod being made, or why it holds none. */
+/** Reads the words PodApi holds for the pod being made at `/encrypted-pods/<pod>`, or why it holds none. */
+export const wordsLoader = (api: PodApi) =>
+  screen<Waiting>(async ({ params }: LoaderFunctionArgs) => {
+    const pod = params.pod ?? "";
+    try {
+      const { person, words } = await api.waitingWords({ pod });
+      return {
+        value: { pod, person, words } satisfies Waiting,
+        title: "Your six words",
+      };
+    } catch (error) {
+      if (!(error instanceof Error) || error.name !== "Refusal") throw error;
+      return {
+        value: { refused: error.message } satisfies Waiting,
+        title: "Not done",
+      };
+    }
+  });
+
 export function WordsScreen() {
-  const { api } = useHost();
-  const { pod = "" } = useParams();
-  const generation = useGeneration();
-  const [waiting, setWaiting] = useState<Waiting>();
-  useEffect(() => {
-    let live = true;
-    api.waitingWords({ pod }).then(
-      ({ person, words }) => live && setWaiting({ person, words }),
-      (error: unknown) => {
-        if (!live) return;
-        setWaiting(
-          refused(error)
-            ? { refused: error.message }
-            : {
-                wrong: error instanceof Error ? error.message : String(error),
-              },
-        );
-      },
-    );
-    return () => {
-      live = false;
-    };
-  }, [api, pod, generation]);
-  useEffect(() => {
-    if (waiting === undefined) return;
-    document.title = `${"words" in waiting ? "Your six words" : "Not done"} · Cascade`;
-    if ("words" in waiting) ready();
-  }, [waiting]);
-  if (waiting === undefined) return null;
+  const waiting = useRead<Waiting>();
   if ("refused" in waiting)
-    return <Notice heading="Not done">{waiting.refused}</Notice>;
-  if ("wrong" in waiting)
     return (
-      <Notice heading="Something went wrong" wrong>
-        {waiting.wrong}
-      </Notice>
+      <>
+        <h1>Not done</h1>
+        <p>{waiting.refused}</p>
+      </>
     );
-  return <SixWords pod={pod} person={waiting.person} words={waiting.words} />;
+  return (
+    <SixWords pod={waiting.pod} person={waiting.person} words={waiting.words} />
+  );
 }
 
 /**
@@ -267,10 +228,7 @@ export function SixWords({
   person: string;
   words: string;
 }) {
-  const { api } = useHost();
-  const { act, refreshPods } = useActions();
-  const [problem, setProblem] = useState<string>();
-  const [attempt, setAttempt] = useState(0);
+  const { did, n } = useAttempt();
   const [copied, setCopied] = useState("");
   const copy = async () => {
     try {
@@ -305,49 +263,13 @@ export function SixWords({
         Encryption hides what the records say. It does not hide that this pod
         exists, its name, how many files it has or their sizes.
       </p>
-      {problem !== undefined && (
+      {did?.problem !== undefined && (
         <p className={note} role="alert">
-          {problem}
+          {did.problem}
         </p>
       )}
-      <form
-        key={attempt}
-        method="post"
-        action="confirm-words"
-        className={stack}
-        data-doing="Making the pod…"
-        autoComplete="on"
-        onSubmit={(event) => {
-          event.preventDefault();
-          const fields = new FormData(event.currentTarget);
-          const typed = (name: string) => String(fields.get(name) ?? "");
-          act(async (go) => {
-            try {
-              await api.confirmWords({
-                pod,
-                word2: typed("word2"),
-                word5: typed("word5"),
-                password: typed("password"),
-                username: typed("username"),
-              });
-            } catch (error) {
-              const waits = await api.waitingWords({ pod }).then(
-                () => true,
-                () => false,
-              );
-              if (!refused(error) || !waits) throw error;
-              flushSync(() => {
-                setProblem(error.message);
-                setAttempt((now) => now + 1);
-              });
-              return;
-            }
-            offerToSave(pod, words);
-            await refreshPods();
-            go(ROUTED.pod(pod));
-          }, "Making the pod…");
-        }}
-      >
+      <StepForm key={n} className={stack} autoComplete="on">
+        <StepFields intent="confirm-words" doing="Making the pod…" />
         <label className={stackLabel}>
           Pod{" "}
           <input
@@ -402,7 +324,7 @@ export function SixWords({
         <p>
           <button>Make the encrypted pod</button>
         </p>
-      </form>
+      </StepForm>
     </>
   );
 }
@@ -422,12 +344,8 @@ export function Unlock({
   titles: ReadonlyMap<string, string>;
   outcome: string;
 }) {
-  const { api } = useHost();
-  const { act } = useActions();
-  const { pathname, search } = useLocation();
-  const [failure, setFailure] = useState(outcome);
-  const [attempt, setAttempt] = useState(0);
-  useEffect(ready, [attempt]);
+  const { did, n } = useAttempt();
+  const failure = did?.unopened ?? outcome;
   const said = UNOPENED[failure];
   const wordsHelp =
     failure === "secret needed" || failure === "incorrect secret";
@@ -443,37 +361,8 @@ export function Unlock({
         </p>
       )}
       {wordsHelp && (
-        <form
-          key={attempt}
-          method="post"
-          action="unlock"
-          className={stack}
-          data-doing="Opening the pod…"
-          autoComplete="on"
-          onSubmit={(event) => {
-            event.preventDefault();
-            const secret = String(
-              new FormData(event.currentTarget).get("password") ?? "",
-            );
-            act(async (go) => {
-              try {
-                await api.unlock({ pod, secret });
-              } catch (error) {
-                if (!(error instanceof Error) || error.name !== "Unopened")
-                  throw error;
-                flushSync(() => {
-                  setFailure(
-                    (error as Error & { outcome?: string }).outcome ??
-                      "incorrect secret",
-                  );
-                  setAttempt((now) => now + 1);
-                });
-                return;
-              }
-              go(pathname + search);
-            }, "Opening the pod…");
-          }}
-        >
+        <StepForm key={n} className={stack} autoComplete="on">
+          <StepFields intent="unlock" doing="Opening the pod…" />
           <label className={stackLabel}>
             Pod{" "}
             <input
@@ -497,7 +386,7 @@ export function Unlock({
           <p>
             <button>Open this pod</button>
           </p>
-        </form>
+        </StepForm>
       )}
     </>
   );

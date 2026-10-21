@@ -51,7 +51,7 @@ const { addresses } = await import(
 const paths = addresses("/");
 const draw = await pages();
 
-/** The screens, drawn to markup inside the shell's providers, with nothing for PodApi to answer. */
+/** The screens, drawn to markup inside the shell's providers and a router, with nothing for PodApi to answer. */
 interface Drawn {
   tablesNav(props: object): string;
   tablePage(props: object): string;
@@ -60,26 +60,15 @@ interface Drawn {
   newPod(props: object): string;
   sixWords(props: object): string;
   unlock(props: object): string;
-  locking(api: Calls, locked: (pod: string, outcome: string) => void): Calls;
   podPage(props: object): string;
   connectionBox(props: object): string;
   hospitalsPage(props: object): string;
   worldDate(props: object): string;
 }
 
-/** The calls of PodApi the test makes. */
-interface Calls {
-  answers(input?: object): Promise<unknown>;
-  unlock(input?: object): Promise<unknown>;
-  pods(input?: object): Promise<unknown>;
-  said(input?: object): Promise<unknown>;
-}
-
 const drawn = await screens<Drawn>(`
 import { renderToStaticMarkup } from "react-dom/server";
-import { MemoryRouter } from "react-router";
-import { ActionsProvider } from "./actions.tsx";
-import { locking } from "./App.tsx";
+import { createMemoryRouter, RouterProvider } from "react-router";
 import { HostProvider } from "./api.tsx";
 import { ConnectionBox, HospitalsPage, WorldDate } from "./hospitals.tsx";
 import { NewPod, SixWords, Unlock } from "./newpod.tsx";
@@ -88,14 +77,13 @@ import { TablesNav } from "./shell.tsx";
 import { CodePage, SourcePage, TablePage } from "./tables.tsx";
 
 const host = { api: {}, about: {}, samples: [] };
-const actions = { act() {}, refreshPods: async () => [], heldNow() {} };
 const within = (screen) =>
   renderToStaticMarkup(
-    <MemoryRouter>
-      <HostProvider value={host}>
-        <ActionsProvider value={actions}>{screen}</ActionsProvider>
-      </HostProvider>
-    </MemoryRouter>,
+    <HostProvider value={host}>
+      <RouterProvider
+        router={createMemoryRouter([{ path: "*", element: screen }])}
+      />
+    </HostProvider>,
   );
 export const tablesNav = (props) => within(<TablesNav {...props} />);
 export const tablePage = (props) => within(<TablePage {...props} />);
@@ -104,10 +92,9 @@ export const codePage = (props) => within(<CodePage {...props} />);
 export const newPod = (props) => within(<NewPod {...props} />);
 export const sixWords = (props) => within(<SixWords {...props} />);
 export const unlock = (props) => within(<Unlock {...props} />);
-export { locking };
 export const podPage = (props) => within(<PodPage {...props} />);
 export const connectionBox = (props) =>
-  within(<ConnectionBox signInAgain={(label) => <button>{label}</button>} onBring={() => {}} {...props} />);
+  within(<ConnectionBox signInAgain={(label) => <button>{label}</button>} {...props} />);
 export const hospitalsPage = (props) => within(<HospitalsPage {...props} />);
 export const worldDate = (props) => within(<WorldDate {...props} />);
 `);
@@ -568,26 +555,6 @@ test("the six-words screen shows the words numbered, with the fields a password 
     assert.match(textOf(open), sentence, outcome);
     assert.equal(open.includes("current-password"), field, outcome);
   }
-});
-
-test("any call about an encrypted pod that finds it locked says so, for its unlock screen to be drawn where it was asked for, and is still refused; the call that opens it and a call about no pod say nothing", async () => {
-  const unopened = Object.assign(new Error("a secret is needed"), {
-    name: "Unopened",
-    outcome: "secret needed",
-  });
-  const fails = async () => {
-    throw unopened;
-  };
-  const told: string[][] = [];
-  const api = drawn.locking(
-    { answers: fails, unlock: fails, pods: fails, said: async () => "said" },
-    (pod, outcome) => told.push([pod, outcome]),
-  );
-  await assert.rejects(api.answers({ pod: "alan-turing" }), unopened);
-  await assert.rejects(api.unlock({ pod: "alan-turing" }), unopened);
-  await assert.rejects(api.pods(), unopened);
-  assert.equal(await api.said({ pod: "alan-turing" }), "said");
-  assert.deepEqual(told, [["alan-turing", "secret needed"]]);
 });
 
 const NORTH = {

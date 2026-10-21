@@ -1,7 +1,7 @@
 // Bringing records in from a hospital: Find a hospital, the sign-in a click starts, the box over the pod's page that
 // follows the connection until its record is here and brings it in, and the world's date the hospitals answer as of.
 import { useEffect, useRef, type ReactNode } from "react";
-import { useLocation, useParams } from "react-router";
+import { Form, type LoaderFunctionArgs } from "react-router";
 import {
   BRINGING,
   byFamily,
@@ -20,10 +20,14 @@ import {
   typedName,
   worldDateSaid,
 } from "../said.ts";
-import { useActions } from "./actions.tsx";
-import { BASE, ROUTED, useAddress } from "./address.tsx";
-import { useHost, type ConnectionNow, type Hospital } from "./api.tsx";
-import { isBusy, ready } from "./doing.ts";
+import { openSignIn } from "./actions.tsx";
+import { ROUTED, useAddress } from "./address.tsx";
+import {
+  useHost,
+  type ConnectionNow,
+  type Hospital,
+  type PodApi,
+} from "./api.tsx";
 import {
   card,
   lead,
@@ -33,55 +37,16 @@ import {
   quiet,
   row as rowLook,
 } from "./look.ts";
-import { Box, PostButton } from "./parts.tsx";
-import { NotFound, useLoaded, Wrong } from "./screen.tsx";
-
-/** The router's path of the address shown, without its hash. */
-const shownNow = () =>
-  `/${location.pathname.slice(BASE.length)}${location.search}`;
-
-/**
- * Signs the pod in at the hospital at a `fhirBase`, from the click that asks: in the host's own window when it has one,
- * opened in the click, and the box then follows the connection; else on the hospital's own page in place of the app,
- * which comes back by `/callback` to the box. The page says it is ready before it leaves, so that Back from the
- * hospital finds it as it was.
- */
-export function useSignIn(pod: string): (fhirBase: string) => void {
-  const host = useHost();
-  const { act } = useActions();
-  return (fhirBase) => {
-    if (isBusy()) return;
-    const inWindow = host.openSignIn !== undefined;
-    const close = host.openSignIn?.();
-    act(async (go) => {
-      const { connection, authorize } = await host.api
-        .connect({ pod, fhirBase })
-        .catch((error: unknown) => {
-          close?.();
-          throw error;
-        });
-      if (inWindow || authorize === undefined)
-        return go(ROUTED.connection(pod, connection));
-      ready();
-      location.assign(authorize);
-    }, "Signing in…");
-  };
-}
+import { Box, PostButton, StepFields, StepForm } from "./parts.tsx";
+import { screen, useApp, useRead } from "./screen.tsx";
 
 /** The world's date: what the hospitals answer as of, and a form to change it that opens at `#world-date`. */
 export function WorldDate({ asOf }: { asOf: string | undefined }) {
-  const { api } = useHost();
-  const { act } = useActions();
   const opened = useRef<HTMLDetailsElement>(null);
   useEffect(() => {
     if (location.hash === "#world-date" && opened.current !== null)
       opened.current.open = true;
   }, []);
-  const set = (date: string) =>
-    act(async (go) => {
-      await api.setWorldDate({ date });
-      go(shownNow());
-    }, "Setting the date…");
   const day =
     asOf === undefined
       ? undefined
@@ -93,16 +58,8 @@ export function WorldDate({ asOf }: { asOf: string | undefined }) {
         <summary className="cursor-pointer text-accent">
           Change the world's date
         </summary>
-        <form
-          method="post"
-          action="world-date"
-          className="mr-[0.4rem] inline"
-          data-doing="Setting the date…"
-          onSubmit={(event) => {
-            event.preventDefault();
-            set(String(new FormData(event.currentTarget).get("date") ?? ""));
-          }}
-        >
+        <StepForm className="mr-[0.4rem] inline">
+          <StepFields intent="world-date" doing="Setting the date…" />
           <label>
             Date{" "}
             <input
@@ -114,13 +71,12 @@ export function WorldDate({ asOf }: { asOf: string | undefined }) {
             />
           </label>{" "}
           <button>Set</button>
-        </form>{" "}
+        </StepForm>{" "}
         <PostButton
-          action="world-date"
+          intent="world-date"
           fields={{ date: "" }}
           className={quiet}
           doing="Setting the date…"
-          onPost={() => set("")}
         >
           Today
         </PostButton>
@@ -175,7 +131,7 @@ export function Steps({
  * record in, its steps; once it failed, why, to the person by the failure's kind (`failures` replacing a kind's row
  * for the host), with `signInAgain(label)` where signing in again can help, and Try again where bringing it in can be
  * tried again; else what the hospital has, whose record it is when not the pod's person, and the button that brings it
- * in, `onBring`.
+ * in.
  */
 export function ConnectionBox({
   pod,
@@ -184,7 +140,6 @@ export function ConnectionBox({
   back,
   failures,
   signInAgain,
-  onBring,
 }: {
   pod: string;
   titles?: ReadonlyMap<string, string>;
@@ -192,7 +147,6 @@ export function ConnectionBox({
   back: string;
   failures?: Readonly<Record<string, Failure>>;
   signInAgain: (label: string) => ReactNode;
-  onBring: () => void;
 }) {
   useEffect(() => {
     if (location.hash === "#connection") location.replace("#connection");
@@ -206,10 +160,10 @@ export function ConnectionBox({
   const name = hospitalName(now.row.name);
   const bring = (label: string, className?: string) => (
     <PostButton
-      action="bring"
+      intent="bring"
+      fields={{ connection: String(now.n) }}
       className={className}
       doing={BRINGING}
-      onPost={onBring}
     >
       {label}
     </PostButton>
@@ -314,24 +268,18 @@ export function ConnectionBox({
   );
 }
 
-/**
- * The box of the pod's connection `now`, its buttons signing in again and bringing the record in, which `follow` then
- * draws as it comes in; it closes to the pod.
- */
+/** The box of the pod's connection `now`, its buttons signing in again and bringing the record in; it closes to the pod. */
 export function Connection({
   pod,
   titles,
   now,
-  follow,
 }: {
   pod: string;
   titles: ReadonlyMap<string, string>;
   now: ConnectionNow;
-  follow: (n: number) => void;
 }) {
   const host = useHost();
   const address = useAddress();
-  const { act } = useActions();
   return (
     <ConnectionBox
       pod={pod}
@@ -340,38 +288,31 @@ export function Connection({
       back={address.pod(pod)}
       failures={host.failures}
       signInAgain={(label) => (
-        <SignIn pod={pod} fhirBase={now.row.fhirBase}>
-          {label}
-        </SignIn>
+        <SignIn fhirBase={now.row.fhirBase}>{label}</SignIn>
       )}
-      onBring={() =>
-        act(async (go) => {
-          await host.api.bring({ pod, connection: now.n });
-          go.stay();
-          follow(now.n);
-        }, BRINGING)
-      }
     />
   );
 }
 
-/** A sign-in button for the hospital at `fhirBase`, saying `label`. */
+/**
+ * A sign-in button for the hospital at `fhirBase`, saying `label`: in the host's own window when it has one, opened in
+ * the click, and the pod's page then follows the connection in its box; else on the hospital's own page in place of
+ * the app, which comes back by `/callback` to the box.
+ */
 export function SignIn({
-  pod,
   fhirBase,
   children,
 }: {
-  pod: string;
   fhirBase: string;
   children: ReactNode;
 }) {
-  const signIn = useSignIn(pod);
+  const host = useHost();
   return (
     <PostButton
-      action="sign-in"
+      intent="sign-in"
       fields={{ fhirBase }}
       doing="Signing in…"
-      onPost={() => signIn(fhirBase)}
+      onSubmit={() => openSignIn(host)}
     >
       {children}
     </PostButton>
@@ -403,7 +344,6 @@ export function HospitalsPage({
   people: readonly Person[];
 }) {
   const address = useAddress();
-  const { act } = useActions();
   const who = personName(pod, titles);
   return (
     <>
@@ -413,18 +353,10 @@ export function HospitalsPage({
         {who}'s pod.
       </p>
       <WorldDate asOf={read.asOf} />
-      <form
+      <Form
         method="get"
-        action={address.hospitals(pod)}
+        action={ROUTED.hospitals(pod)}
         className={`${rowLook} ${card}`}
-        data-doing="Searching…"
-        onSubmit={(event) => {
-          event.preventDefault();
-          const asked = String(
-            new FormData(event.currentTarget).get("q") ?? "",
-          );
-          act(async (go) => go(ROUTED.hospitals(pod, asked)), "Searching…");
-        }}
       >
         <input
           className="min-w-40 flex-1"
@@ -435,7 +367,7 @@ export function HospitalsPage({
           aria-label="Search by name or place"
         />
         <button>Search</button>
-      </form>
+      </Form>
       {read.rows.length === 0 ? (
         <p className={muted}>No hospital matches.</p>
       ) : (
@@ -447,9 +379,7 @@ export function HospitalsPage({
             <div className={card} key={row.fhirBase}>
               <div className={rowLook}>
                 <h2 className="m-0 flex-1">{hospitalName(row.name)}</h2>
-                <SignIn pod={pod} fhirBase={row.fhirBase}>
-                  Sign in
-                </SignIn>
+                <SignIn fhirBase={row.fhirBase}>Sign in</SignIn>
               </div>
               {row.places !== undefined && (
                 <p className={muted}>{row.places.join("; ")}</p>
@@ -494,34 +424,33 @@ export function HospitalsPage({
   );
 }
 
-/** Find a hospital for the pod the address names, the address's `q` its search. */
-export function HospitalsScreen({
-  titles,
-  people,
-}: {
-  titles: ReadonlyMap<string, string>;
-  people: readonly Person[];
-}) {
-  const { pod = "" } = useParams();
-  const { pathname, search } = useLocation();
-  const q = new URLSearchParams(search).get("q") ?? "";
-  const loaded = useLoaded<HospitalsRead>(
-    pathname + search,
-    async (api) => {
-      await api.pod({ pod });
-      return api.hospitals({ q });
-    },
-    () => "Find a hospital",
-  );
-  if (loaded === undefined) return null;
-  if ("wrong" in loaded) return <Wrong said={loaded.wrong} />;
-  if ("refused" in loaded) return <NotFound said={loaded.refused} />;
+interface HospitalsAsked {
+  readonly pod: string;
+  readonly q: string;
+  readonly read: HospitalsRead;
+}
+
+/** Reads Find a hospital for the pod the address names, the address's `q` its search. */
+export const hospitalsLoader = (api: PodApi) =>
+  screen(async ({ params, request }: LoaderFunctionArgs) => {
+    const pod = params.pod ?? "";
+    const q = new URL(request.url).searchParams.get("q") ?? "";
+    await api.pod({ pod });
+    return {
+      value: { pod, q, read: await api.hospitals({ q }) },
+      title: "Find a hospital",
+    };
+  });
+
+export function HospitalsScreen() {
+  const { pod, q, read } = useRead<HospitalsAsked>();
+  const { titles, people } = useApp();
   return (
     <HospitalsPage
       pod={pod}
       titles={titles}
       q={q}
-      read={loaded.value}
+      read={read}
       people={people}
     />
   );

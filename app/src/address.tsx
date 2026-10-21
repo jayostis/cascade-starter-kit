@@ -1,11 +1,10 @@
 // The app's addresses under the base it was built for, and the one listener that moves the app to one in place.
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { useEffect } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { addresses, movesInPlace } from "../addresses.ts";
-import { busy, landed } from "./doing.ts";
 
 export const BASE = import.meta.env.BASE_URL;
-const ADDRESS = addresses(BASE);
+export const ADDRESS = addresses(BASE);
 
 export const useAddress = () => ADDRESS;
 
@@ -16,69 +15,18 @@ export const ROUTED = addresses("/");
 export const routed = (url: URL) =>
   `/${url.pathname.slice(BASE.length)}${url.search}${url.hash}`;
 
-let goes = 0;
-
-/**
- * The state a step's own move to an address carries, so that the screen there is drawn again even at the same address;
- * `page` is this page's load, since the history keeps the state over a reload.
- */
-export const goState = () => ({
-  go: (goes += 1),
-  page: performance.timeOrigin,
-});
-
-/** Whether a step of this page's load moved the app to the address whose history state is `state`. */
-export const byStep = (state: unknown): boolean =>
-  (state as { page?: number } | null)?.page === performance.timeOrigin;
-
-/**
- * Which step's move last drew the app, as the page's load and its count of moves there: it changes with the location a
- * step moves to, never with a `#…` link, so a screen that reads its data again when it does is read again for a step
- * that leaves the address as it was.
- */
-export function useGeneration(): string {
-  const { go, page } = (useLocation().state ?? {}) as {
-    go?: number;
-    page?: number;
-  };
-  const kept = useRef("");
-  if (go !== undefined) kept.current = `${page} ${go}`;
-  return kept.current;
+/** The router's path of the address shown, its hash kept: where a step's form posts, so that it stays on its screen. */
+export function useHere(): string {
+  const { pathname, search, hash } = useLocation();
+  return pathname + search + hash;
 }
 
 /**
- * Says the page is busy when the address changes under a screen with nothing said yet: at a Back or Forward as it
- * leaves, and at any other move in the commit that draws the new address, before the screen's own effects run, so that
- * the page is not ready for a screen that is still being drawn. The commit that draws a step's own move tells the step
- * it has landed, in the same layout phase, so that only screens drawn there say the step is done.
+ * A click on a link to a screen of this app goes there without leaving the page; the address already shown is read
+ * again in its place in the history, not after it. A `#…` link is the browser's, which opens and closes the boxes; so
+ * is a download, a link to another window, a file and a modified click.
  */
-export function useOpening() {
-  const { pathname, search, state, key } = useLocation();
-  const first = useRef(true);
-  useEffect(() => {
-    const here = location.pathname + location.search;
-    const leaving = () => {
-      if (location.pathname + location.search !== here) busy("Opening…");
-    };
-    window.addEventListener("popstate", leaving);
-    return () => window.removeEventListener("popstate", leaving);
-  }, [pathname, search]);
-  useLayoutEffect(() => {
-    if (first.current) first.current = false;
-    else if (document.body.dataset.state === "ready") busy("Opening…");
-  }, [pathname, search]);
-  useLayoutEffect(
-    () => landed((state as { go?: number } | null)?.go, pathname + search),
-    [key, pathname, search, state],
-  );
-}
-
-/**
- * A click on a link to a screen of this app goes there without leaving the page, saying `opening(url)` while it does;
- * the address already shown is drawn again in its place in the history, not after it. A `#…` link is the browser's,
- * which opens and closes the boxes; so is a download, a link to another window, a file and a modified click.
- */
-export function useInPlace(opening: (url: URL) => string) {
+export function useInPlace() {
   const navigate = useNavigate();
   useEffect(() => {
     const click = (event: MouseEvent) => {
@@ -110,10 +58,9 @@ export function useInPlace(opening: (url: URL) => string) {
       event.preventDefault();
       const same =
         to.pathname === location.pathname && to.search === location.search;
-      if (!same) busy(opening(to));
-      navigate(routed(to), { replace: same });
+      void navigate(routed(to), { replace: same });
     };
     document.addEventListener("click", click);
     return () => document.removeEventListener("click", click);
-  }, [navigate, opening]);
+  }, [navigate]);
 }

@@ -1,7 +1,7 @@
 // The reference tables: a source's page and a table's, which search their codes, and a code's page, which says what
 // every table the app holds says of it and where from.
-import { Fragment, useEffect, useState, type ReactNode } from "react";
-import { useLocation, useParams } from "react-router";
+import { Fragment, type ReactNode } from "react";
+import { Form, type LoaderFunctionArgs } from "react-router";
 import {
   freshness,
   LICENCES,
@@ -19,10 +19,9 @@ import {
   type Series,
   type Source,
 } from "../said.ts";
-import { ROUTED, useAddress, useGeneration } from "./address.tsx";
-import { Notice, useActions } from "./actions.tsx";
-import { isRefusal, useHost } from "./api.tsx";
-import { ready } from "./doing.ts";
+import { ROUTED, useAddress } from "./address.tsx";
+import type { PodApi } from "./api.tsx";
+import { screen, useApp, useRead } from "./screen.tsx";
 import {
   bullet,
   bullets,
@@ -186,19 +185,11 @@ function Published({
 
 /** A search box for the table or source `id` (the first source with none), with `text` in it. */
 function SearchBox({ id, text }: { id?: string; text: string }) {
-  const address = useAddress();
-  const { act } = useActions();
   return (
-    <form
+    <Form
       method="get"
-      action={address.table(id)}
+      action={ROUTED.table(id)}
       className={`${rowLook} ${card}`}
-      data-doing="Searching…"
-      onSubmit={(event) => {
-        event.preventDefault();
-        const q = String(new FormData(event.currentTarget).get("q") ?? "");
-        act(async (go) => go(ROUTED.table(id, { q })), "Searching…");
-      }}
     >
       <input
         className="min-w-40 flex-1"
@@ -209,7 +200,7 @@ function SearchBox({ id, text }: { id?: string; text: string }) {
         aria-label="Search by code or name"
       />
       <button>Search</button>
-    </form>
+    </Form>
   );
 }
 
@@ -725,20 +716,8 @@ export function CodePage({
   );
 }
 
-type Body = { readonly at: string } & (
-  | { readonly read: TableRead }
-  | { readonly refused: string }
-  | { readonly wrong: string }
-);
-
-/** What was read for an address, and how many times a read has been drawn, so that each is said ready. */
-type Shown = Body & { readonly drawn: number };
-
 /** What the title of the page is for what was read: the table, source or code asked for. */
-function titleOf(shown: Shown): string {
-  if ("refused" in shown) return "Not found";
-  if ("wrong" in shown) return "Something went wrong";
-  const { source, series, facts } = shown.read;
+function titleOf({ source, series, facts }: TableRead): string {
   if (source === undefined) return "Reference tables";
   if (series !== undefined) return series.label;
   if (facts !== undefined)
@@ -746,77 +725,38 @@ function titleOf(shown: Shown): string {
   return source.label;
 }
 
+/** What a table's loader read, with the search the address asks for. */
+export interface TableAsked {
+  readonly read: TableRead;
+  readonly text: string;
+  readonly page: number;
+}
+
 /**
- * The table, source or code the address names: `/tables/<id>/` with `q` and `page` for a search of it, or `code` for
- * that code's page; with no id, the first source the app holds.
+ * Reads the table, source or code the address names: `/tables/<id>/` with `q` and `page` for a search of it, or
+ * `code` for that code's page; with no id, the first source the app holds.
  */
-export function TableScreen({
-  pods,
-  titles,
-}: {
-  pods: readonly string[];
-  titles: ReadonlyMap<string, string>;
-}) {
-  const { api } = useHost();
-  const { heldNow } = useActions();
-  const { id } = useParams();
-  const { pathname, search } = useLocation();
-  const generation = useGeneration();
-  const at = pathname + search;
-  const [shown, setShown] = useState<Shown>();
-  useEffect(() => {
-    let live = true;
-    const query = new URLSearchParams(search);
-    const asked = {
-      ...(id !== undefined && { id }),
-      q: query.get("q") ?? "",
-      page: pageNumber(query.get("page")),
+export const tableLoader = (api: PodApi) =>
+  screen(async ({ params, request }: LoaderFunctionArgs) => {
+    const query = new URL(request.url).searchParams;
+    const text = query.get("q") ?? "";
+    const page = pageNumber(query.get("page"));
+    const read = await api.table({
+      ...(params.id !== undefined && { id: params.id }),
+      q: text,
+      page,
       ...(query.has("code") && { code: query.get("code") ?? "" }),
+    });
+    return {
+      value: { read, text, page } satisfies TableAsked,
+      title: titleOf(read),
     };
-    const show = (body: Body) =>
-      live && setShown((now) => ({ ...body, drawn: (now?.drawn ?? 0) + 1 }));
-    api.table(asked).then(
-      (read) => {
-        if (!live) return;
-        heldNow(read.held);
-        show({ at, read });
-      },
-      (error: unknown) =>
-        show(
-          isRefusal(error) && error.name === "Refusal"
-            ? { at, refused: error.message }
-            : {
-                at,
-                wrong: error instanceof Error ? error.message : String(error),
-              },
-        ),
-    );
-    return () => {
-      live = false;
-    };
-  }, [api, heldNow, id, at, search, generation]);
-  useEffect(() => {
-    if (shown === undefined || shown.at !== at) return;
-    document.title = `${titleOf(shown)} · Cascade`;
-    if ("read" in shown) ready();
-  }, [shown, at]);
-  if (shown === undefined) return null;
-  if ("refused" in shown)
-    return (
-      <Notice heading="Not found" drawn={shown.drawn}>
-        {shown.refused}
-      </Notice>
-    );
-  if ("wrong" in shown)
-    return (
-      <Notice heading="Something went wrong" wrong drawn={shown.drawn}>
-        {shown.wrong}
-      </Notice>
-    );
-  const { source, series, searched, uses, facts, held } = shown.read;
-  const query = new URLSearchParams(search);
-  const text = query.get("q") ?? "";
-  const page = pageNumber(query.get("page"));
+  });
+
+export function TableScreen() {
+  const { read, text, page } = useRead<TableAsked>();
+  const { pods, titles } = useApp();
+  const { source, series, searched, uses, facts, held } = read;
   const now = Date.now();
   if (source === undefined) return <NoTables />;
   if (series !== undefined && searched !== undefined)
@@ -828,7 +768,7 @@ export function TableScreen({
         text={text}
         page={page}
         uses={uses ?? {}}
-        pods={pods}
+        pods={pods.map(({ name }) => name)}
         titles={titles}
         now={now}
       />

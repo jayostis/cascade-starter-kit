@@ -15,6 +15,7 @@ const routed = await screens<Routed>(`
 import { renderToStaticMarkup } from "react-dom/server";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import { routes } from "./App.tsx";
+import { HostProvider } from "./api.tsx";
 
 const idle = (router) =>
   new Promise((resolve) => {
@@ -47,7 +48,11 @@ export async function draw(api, at, posted) {
     await router.navigate(at, { formMethod: "post", formData });
     await idle(router);
   }
-  return renderToStaticMarkup(<RouterProvider router={router} />);
+  return renderToStaticMarkup(
+    <HostProvider value={host}>
+      <RouterProvider router={router} />
+    </HostProvider>,
+  );
 }
 `);
 
@@ -81,4 +86,19 @@ test("a screen is drawn from its route's loader, and a step its action refuses i
     }),
   );
   assert.match(set, /^Not done "soon" is not a date\.$/);
+});
+
+test("a read of an encrypted pod that will not open draws the pod's unlock screen at the address asked for", async () => {
+  const unopened = async () => {
+    throw Object.assign(new Error("a secret is needed"), {
+      name: "Unopened",
+      outcome: "secret needed",
+    });
+  };
+  const markup = await routed.draw(
+    { ...api, answers: unopened },
+    "/pods/alex-rivera/entries/e1",
+  );
+  assert.match(textOf(markup), /Open Alex Rivera's pod This pod is encrypted/);
+  assert.match(markup, /autocomplete="current-password"/i);
 });

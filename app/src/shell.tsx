@@ -2,20 +2,17 @@
 // side, the screen in `main`, and the line that says what the page is doing.
 import { useEffect, type ReactNode } from "react";
 import {
-  checkedNote,
-  didNote,
   personName,
   sourcesOf,
   tableId,
   type Person,
   type Series,
 } from "../said.ts";
-import { useActions } from "./actions.tsx";
-import { ROUTED, useAddress } from "./address.tsx";
-import { useHost, type About } from "./api.tsx";
+import { useAddress } from "./address.tsx";
+import type { About } from "./api.tsx";
 import { useSaying } from "./doing.ts";
 import { NewPod } from "./newpod.tsx";
-import { muted, note as noteLook, quiet, warm } from "./look.ts";
+import { muted, quiet, warm } from "./look.ts";
 import { Box, Pending, PostButton } from "./parts.tsx";
 import { currentSource } from "./tables.tsx";
 
@@ -90,36 +87,14 @@ function Menu({ name, items }: { name: string; items: [string, string][] }) {
 
 /** File's two items each open a box asking to confirm; Help, About says what the app is and what it runs on. */
 function MenuBoxes({ about }: { about: About }) {
-  const { api } = useHost();
-  const { act, refreshPods } = useActions();
-  const deleteAll = () =>
-    act(async (go) => {
-      const { deleted } = await api.deleteAll().finally(refreshPods);
-      go(
-        ROUTED.home,
-        didNote(new URLSearchParams({ deleted: String(deleted.length) }), []),
-      );
-    }, "Deleting all data…");
-  const resetAll = () =>
-    act(async (go) => {
-      const { pods } = await api.resetAll().finally(refreshPods);
-      const [first] = pods;
-      go(
-        first === undefined ? ROUTED.home : ROUTED.pod(first),
-        pods.length === 0
-          ? undefined
-          : didNote(new URLSearchParams("reset"), pods),
-      );
-    }, "Resetting all data…");
   return (
     <>
       <Box id="delete-all" heading="Delete all data?">
         <p>Every pod in this app goes.</p>
         <PostButton
-          action="delete-all"
+          intent="delete-all"
           className={warm}
           doing="Deleting all data…"
-          onPost={deleteAll}
         >
           Delete all data
         </PostButton>
@@ -130,10 +105,9 @@ function MenuBoxes({ about }: { about: About }) {
           again.
         </p>
         <PostButton
-          action="reset-all"
+          intent="reset-all"
           className={warm}
           doing="Resetting all data…"
-          onPost={resetAll}
         >
           Reset all data
         </PostButton>
@@ -163,15 +137,7 @@ export function TablesNav({
   current?: string;
 }) {
   const address = useAddress();
-  const { api } = useHost();
-  const { act, heldNow } = useActions();
   const sources = sourcesOf(tables.held);
-  const checkNow = () =>
-    act(async (go) => {
-      const { checked, held } = await api.checkTables();
-      heldNow(held);
-      go(ROUTED.table(), checkedNote(checked, held));
-    }, "Checking the feeds…");
   return (
     <section
       className="tables mt-7 border-t border-line pt-5"
@@ -206,11 +172,10 @@ export function TablesNav({
         <p className={`${muted} mt-0 mr-0 mb-3 ml-2.5`}>None yet.</p>
       )}
       <PostButton
-        action="check-tables"
+        intent="check-tables"
         block
         className={`${quiet} w-full`}
         doing="Checking the feeds…"
-        onPost={checkNow}
       >
         Check now
       </PostButton>
@@ -238,9 +203,8 @@ function Doing() {
 
 /**
  * The page around a screen: `pods` by name, the one shown `current`, with the titles they were made under; `table`,
- * when the screen shown is a reference table's, its id in the address (empty for the first source); `note` above the
- * screen when a step left one; `people` and `samples` for the new-pod box; `chat` at the foot of the page, on a host
- * that has one.
+ * when the screen shown is a reference table's, its id in the address (empty for the first source); `people` and
+ * `samples` for the new-pod box; `chat` at the foot of the page, on a host that has one.
  */
 export function Layout({
   pods,
@@ -251,7 +215,6 @@ export function Layout({
   about,
   people,
   samples,
-  note,
   chat,
   children,
 }: {
@@ -264,7 +227,6 @@ export function Layout({
   about: About;
   people: readonly Person[];
   samples: readonly string[];
-  note?: string;
   children: ReactNode;
 }) {
   const address = useAddress();
@@ -325,11 +287,6 @@ export function Layout({
           />
         </aside>
         <main className="max-w-[62rem] min-w-0 px-9 pt-7 pb-12 max-md:p-5">
-          {note !== undefined && (
-            <p className={noteLook} role="status">
-              {note}
-            </p>
-          )}
           {children}
         </main>
       </div>
