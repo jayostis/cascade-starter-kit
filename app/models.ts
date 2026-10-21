@@ -12,6 +12,7 @@ import {
   defaultSettingsMiddleware,
   type LanguageModel,
   RetryError,
+  StreamProviderError,
   wrapLanguageModel,
 } from "ai";
 import { Refusal } from "cascade-runtime";
@@ -170,12 +171,18 @@ export interface Model {
   failure(error: unknown): string | undefined;
 }
 
-/** The call's failure, unwrapped from the SDK's retries: the provider's reply or the network's. */
-function callFailure(error: unknown): APICallError | undefined {
-  if (APICallError.isInstance(error)) return error;
-  if (RetryError.isInstance(error) && APICallError.isInstance(error.lastError))
-    return error.lastError;
-  return undefined;
+/**
+ * The call's failure, unwrapped from the SDK's retries: the provider's reply or the network's, or the error the
+ * provider sent in the middle of the stream (Anthropic's `overloaded_error`, an OpenAI-compatible `{ error }` chunk).
+ */
+function callFailure(
+  error: unknown,
+): APICallError | StreamProviderError | undefined {
+  const failed = RetryError.isInstance(error) ? error.lastError : error;
+  return APICallError.isInstance(failed) ||
+    StreamProviderError.isInstance(failed)
+    ? failed
+    : undefined;
 }
 
 /** Anthropic's API asks for a bound on each answer; the others are left their own. */
