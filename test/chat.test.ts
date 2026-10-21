@@ -2,55 +2,51 @@ import assert from "node:assert/strict";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { after, before, test } from "node:test";
+import type {
+  LanguageModelV4CallOptions,
+  LanguageModelV4StreamPart,
+} from "@ai-sdk/provider";
+import { getRequestListener } from "@hono/node-server";
 import { loadHospital, loadStories } from "@the-cascade-protocol/sandbox/node";
-import {
-  openPod,
-  type Pod,
-  pullFiles,
-  Refusal,
-  timelineIn,
-} from "cascade-runtime";
+import { APICallError } from "ai";
+import { MockLanguageModelV4 } from "ai/test";
+import { openPod, type Pod, pullFiles, timelineIn } from "cascade-runtime";
 import { pulled } from "./hospitals.js";
 
-type ChatEvent = { type: string; [key: string]: unknown };
-type Request = {
-  system: string[];
-  messages: { role: string; content?: string }[];
-  tools: { name: string }[];
-  signal: AbortSignal;
-};
+type Chunk = { type: string; [key: string]: unknown };
 type Model = {
   provider: string;
   name: string;
   local: boolean;
-  turn(request: Request): AsyncIterable<unknown>;
+  language(): unknown;
+  failure(error: unknown): string | undefined;
 };
-type Tools = unknown;
+type Routes = {
+  request(path: string, init?: RequestInit): Promise<Response>;
+  fetch(request: Request): Promise<Response>;
+};
+type Offered = Record<
+  string,
+  { execute?: unknown; inputSchema: { jsonSchema: unknown } }
+>;
 
-const {
-  chatRoute,
-  chatTools,
-  checkBody,
-  EXPLAIN_THE_THING,
-  MAX_ROUNDS,
-  runChat,
-} = (await import(new URL("../../app/chat.mjs", import.meta.url).href)) as {
-  chatRoute: (
-    request: unknown,
-    response: unknown,
-    options: { model: Model | undefined; tools: Tools },
-  ) => Promise<void>;
-  chatTools: (api: unknown) => Tools;
-  checkBody: (body: unknown) => unknown;
+const { chatRoutes, chatTools, EXPLAIN_THE_THING, MAX_ROUNDS } = (await import(
+  new URL("../../app/server/chat.ts", import.meta.url).href
+)) as {
+  chatRoutes: (options: { api: unknown; model: Model | undefined }) => Routes;
+  chatTools: (api: unknown) => Offered;
   EXPLAIN_THE_THING: string;
   MAX_ROUNDS: number;
-  runChat: (options: {
-    model: Model;
-    tools: Tools;
-    body: unknown;
-    signal: AbortSignal;
-    emit: (event: ChatEvent) => void;
-  }) => Promise<void>;
+};
+const { modelOf } = (await import(
+  new URL("../../app/models.ts", import.meta.url).href
+)) as {
+  modelOf: (settings: {
+    provider: string;
+    url: string;
+    name: string;
+    key: string;
+  }) => Model;
 };
 type Api = {
   said(input: object): Promise<Record<string, unknown>>;
@@ -63,23 +59,33 @@ const { maps, podApi } = (await import(
   maps: (output: object) => { about: Map<string, unknown> };
   podApi: (host: object) => Api;
 };
-const { TOOLS } = (await import(
+type Schema = { properties?: Record<string, unknown> };
+const { NEVER, TOOLS, withPod } = (await import(
   new URL("../../app/tools.mjs", import.meta.url).href
-)) as { TOOLS: { name: string; tier: string; opens?: true }[] };
-const { changeSaid, entryId, HISTORY, SOURCES } = (await import(
+)) as {
+  NEVER: { op: string; with?: string }[];
+  TOOLS: {
+    name: string;
+    tier: string;
+    ofPod?: true;
+    opens?: true;
+    inputSchema: Schema;
+  }[];
+  withPod: (schema: Schema) => Schema;
+};
+const { changeSaid, entryId, HISTORY } = (await import(
   new URL("../../app/said.ts", import.meta.url).href
 )) as {
   changeSaid: (finding: unknown, about: Map<string, unknown>) => string;
   entryId: (entry: string) => string;
   HISTORY: string;
-  SOURCES: string;
 };
 
 const STATIN = "story-statin";
 /** What the tables call atorvastatin, which no record of the pod calls it. */
 const TABLES_NAME = "the tables' atorvastatin";
+const KEY = "sk-test-key-that-must-not-leave";
 const pods = new Map<string, Pod>();
-let tools: Tools;
 let api: Api;
 
 before(async () => {
@@ -118,82 +124,160 @@ before(async () => {
     opensEncrypted: true,
     unsaid() {},
   });
-  tools = chatTools(api);
 });
 
 after(async () => {
   await api.close();
 });
 
-const call = (id: string, name: string, input: unknown) => ({
-  type: "call",
-  id,
-  name,
-  arguments: typeof input === "string" ? input : JSON.stringify(input),
+const USAGE = {
+  inputTokens: {
+    total: 1,
+    noCache: 1,
+    cacheRead: undefined,
+    cacheWrite: undefined,
+  },
+  outputTokens: { total: 1, text: 1, reasoning: undefined },
+};
+const finish = (
+  unified: "stop" | "tool-calls" | "content-filter",
+): LanguageModelV4StreamPart => ({
+  type: "finish",
+  usage: USAGE,
+  finishReason: { unified, raw: undefined },
 });
-const calling = (...calls: unknown[]) => [
+const call = (
+  id: string,
+  name: string,
+  input: unknown,
+  providerMetadata?: Record<string, Record<string, string>>,
+): LanguageModelV4StreamPart => ({
+  type: "tool-call",
+  toolCallId: id,
+  toolName: name,
+  input: typeof input === "string" ? input : JSON.stringify(input),
+  ...(providerMetadata === undefined ? {} : { providerMetadata }),
+});
+const calling = (...calls: LanguageModelV4StreamPart[]) => [
   ...calls,
-  { type: "done", stop: "calls" },
+  finish("tool-calls"),
 ];
-const reply = (text: string) => [
-  { type: "text", text },
-  { type: "done", stop: "end" },
+const reply = (text: string): LanguageModelV4StreamPart[] => [
+  { type: "text-start", id: "t" },
+  { type: "text-delta", id: "t", delta: text },
+  { type: "text-end", id: "t" },
+  finish("stop"),
 ];
 
-/** A model over `turns`, one per request, an in-process stand-in for the model client. */
-function fakeModel(turns: unknown[][], { local = true } = {}) {
-  const requests: Request[] = [];
+const streamOf = (parts: LanguageModelV4StreamPart[]) =>
+  new ReadableStream<LanguageModelV4StreamPart>({
+    start(controller) {
+      controller.enqueue({ type: "stream-start", warnings: [] });
+      for (const part of parts) controller.enqueue(part);
+      controller.close();
+    },
+  });
+
+/** A model of `turns`, one per call, the AI SDK's mock in place of a provider; `calls` is what each call was given. */
+function fakeModel(
+  turns: LanguageModelV4StreamPart[][],
+  doStream?: (options: LanguageModelV4CallOptions) => Promise<{
+    stream: ReadableStream<LanguageModelV4StreamPart>;
+  }>,
+) {
+  const calls: LanguageModelV4CallOptions[] = [];
+  const mock = new MockLanguageModelV4({
+    doStream:
+      doStream ??
+      (async (options) => {
+        calls.push(options);
+        const parts = turns[calls.length - 1];
+        assert.ok(parts, `no turn ${calls.length} was scripted`);
+        return { stream: streamOf(parts) };
+      }),
+  });
   const model: Model = {
     provider: "fake",
     name: "fake-1",
-    local,
-    async *turn(request) {
-      requests.push({ ...request, messages: [...request.messages] });
-      const events = turns[requests.length - 1];
-      assert.ok(events, `no turn ${requests.length} was scripted`);
-      for (const event of events) yield event;
-    },
+    local: true,
+    language: () => mock,
+    failure: (error) =>
+      APICallError.isInstance(error) ? error.message : undefined,
   };
-  return { model, requests };
+  return { model, calls };
 }
 
-async function chat(
-  model: Model,
-  body: Record<string, unknown>,
-  using: Tools = tools,
-) {
-  const events: ChatEvent[] = [];
-  await runChat({
-    model,
-    tools: using,
-    body: { pod: STATIN, page: `/pods/${STATIN}/`, ...body },
-    signal: new AbortController().signal,
-    emit: (event) => events.push(event),
-  });
-  return events;
-}
-
-const said = (text: string) => ({
-  messages: [{ role: "user", content: text }],
+const user = (text: string, id = "u1") => ({
+  id,
+  role: "user",
+  parts: [{ type: "text", text }],
 });
-const toolEvents = (events: ChatEvent[]) =>
-  events.filter(({ type }) => type === "tool");
+const said = (text: string) => ({ messages: [user(text)] });
 
-test("a question that calls find_changes runs it: the model sees the compact finding, the events carry the finding with the keys of its rows, the page goes in its own context message, each finding says itself in the app's own sentence, and the call goes back with what the provider attached to it", async () => {
-  const signed = { google: { thought_signature: "sig" } };
-  const { model, requests } = fakeModel([
-    calling({ ...call("c1", "find_changes", { pod: STATIN }), extra: signed }),
+const post = (routes: Routes, body: unknown, signal?: AbortSignal) =>
+  routes.request("/chat", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: typeof body === "string" ? body : JSON.stringify(body),
+    ...(signal === undefined ? {} : { signal }),
+  });
+
+/** The chunks of a UI message stream. */
+const chunksOf = async (response: Response): Promise<Chunk[]> =>
+  (await response.text())
+    .split("\n\n")
+    .map((event) => event.trim())
+    .filter((event) => event.startsWith("data: ") && event !== "data: [DONE]")
+    .map((event) => JSON.parse(event.slice("data: ".length)) as Chunk);
+
+async function chat(model: Model, body: Record<string, unknown>) {
+  const response = await post(chatRoutes({ api, model }), {
+    pod: STATIN,
+    page: `/pods/${STATIN}/`,
+    ...body,
+  });
+  assert.equal(response.status, 200);
+  return chunksOf(response);
+}
+
+const KINDS = new Set([
+  "start",
+  "tool-input-available",
+  "tool-input-error",
+  "tool-output-available",
+  "tool-output-error",
+  "text-delta",
+  "data-refused",
+  "error",
+  "finish",
+]);
+const kinds = (chunks: Chunk[]) =>
+  chunks.map(({ type }) => type).filter((type) => KINDS.has(type));
+const ofType = (chunks: Chunk[], type: string) =>
+  chunks.filter((chunk) => chunk.type === type);
+const systemOf = (options: LanguageModelV4CallOptions) =>
+  options.prompt
+    .filter(({ role }) => role === "system")
+    .map(({ content }) => content as string)
+    .join("\n");
+
+test("a question that calls find_changes runs it: the model sees the compact finding, the page the finding with the keys of its rows, the page goes in the system prompt, each finding says itself in the app's own sentence, and the call goes back with what the provider attached to it", async () => {
+  const signed = { google: { thoughtSignature: "sig" } };
+  const { model, calls } = fakeModel([
+    calling(call("c1", "find_changes", { pod: STATIN }, signed)),
     reply("LDL was lower after the statin started."),
   ]);
-  const events = await chat(model, said("find anything interesting"));
-  assert.deepEqual(
-    events.map(({ type }) => type),
-    ["start", "tool", "delta", "done"],
-  );
+  const chunks = await chat(model, said("find anything interesting"));
+  assert.deepEqual(kinds(chunks), [
+    "start",
+    "tool-input-available",
+    "tool-output-available",
+    "text-delta",
+    "finish",
+  ]);
 
-  const [found] = toolEvents(events);
-  assert.equal(found!.ok, true);
-  const [finding] = found!.findings as {
+  const [found] = ofType(chunks, "tool-output-available");
+  const [finding] = found!.output as {
     key: string;
     said: string;
     view: string;
@@ -215,20 +299,26 @@ test("a question that calls find_changes runs it: the model sees the compact fin
   const entries = new Set(lab.map((row) => entryId(row.entry!)));
   for (const row of finding!.rows) assert.ok(entries.has(row.entry), row.entry);
 
-  const [first, second] = requests;
-  assert.deepEqual(first!.messages, said("find anything interesting").messages);
-  assert.ok(first!.system.some((part) => part.includes(STATIN)));
-  const toolMessage = second!.messages.at(-1) as unknown as {
-    role: string;
-    content: string;
-  };
+  const [first, second] = calls;
+  assert.ok(systemOf(first!).includes(STATIN));
+  assert.deepEqual(
+    first!.prompt.filter(({ role }) => role !== "system"),
+    [
+      {
+        role: "user",
+        content: [{ type: "text", text: "find anything interesting" }],
+      },
+    ],
+  );
+  const toolMessage = second!.prompt.at(-1)!;
   assert.equal(toolMessage.role, "tool");
-  assert.ok(toolMessage.content.includes(finding!.key));
-  assert.ok(!toolMessage.content.includes('"rows"'));
-  const asked = second!.messages.at(-2) as unknown as {
-    calls: { extra?: unknown }[];
-  };
-  assert.deepEqual(asked.calls[0]!.extra, signed);
+  const toModel = JSON.stringify(toolMessage.content);
+  assert.ok(toModel.includes(finding!.key));
+  assert.ok(!toModel.includes('"rows"'));
+  const asked = second!.prompt.at(-2)!;
+  assert.equal(asked.role, "assistant");
+  const [asking] = asked.content as { providerOptions?: unknown }[];
+  assert.deepEqual(asking!.providerOptions, signed);
 });
 
 test("a finding says itself as the page does: named by what the tables say of its codes", async () => {
@@ -243,9 +333,9 @@ test("a finding says itself as the page does: named by what the tables say of it
     calling(call("c1", "find_changes", { pod: STATIN })),
     reply("Done."),
   ]);
-  const events = await chat(model, said("find anything"));
-  const [found] = toolEvents(events);
-  const finding = (found!.findings as { said: string; key: string }[]).find(
+  const chunks = await chat(model, said("find anything"));
+  const [found] = ofType(chunks, "tool-output-available");
+  const finding = (found!.output as { said: string; key: string }[]).find(
     ({ key }) => key === whole!.key,
   );
   assert.ok(
@@ -255,138 +345,165 @@ test("a finding says itself as the page does: named by what the tables say of it
   assert.equal(finding!.said, changeSaid(whole, names));
 });
 
-test("the chat offers the free tools of the one list; its open_pod, open_trend and open_entry give the address of a page that is there, and open_entry for an entry the pod lacks a tool error that says where IDs are", async () => {
-  const free = TOOLS.filter(({ tier }) => tier === "free");
+test("every tool /chat offers is a free read the server runs, or a navigation or ask tool it leaves to the page; none takes what the never list keeps from tools", () => {
+  const offered = chatTools(api);
   assert.deepEqual(
-    (tools as { specs: { name: string }[] }).specs.map(({ name }) => name),
-    free.map(({ name }) => name),
+    Object.keys(offered),
+    TOOLS.map(({ name }) => name),
   );
-  const [source] = await pods.get(STATIN)!.ask(SOURCES);
-  const entry = source!.entry!;
-  const table: [string, Record<string, unknown>, string | RegExp][] = [
-    ["open_pod", { pod: STATIN }, `/pods/${STATIN}/`],
-    [
-      "open_trend",
-      { pod: STATIN, test: "18262-6", medication: "617310" },
-      `/pods/${STATIN}/trend?test=18262-6&medication=617310`,
-    ],
-    [
-      "open_trend",
-      { pod: STATIN, test: "18262-6", medication: "Atorvastatin 20 mg tablet" },
-      `/pods/${STATIN}/trend?test=18262-6&medication=617310`,
-    ],
-    [
-      "open_trend",
-      { pod: STATIN, test: "18262-6" },
-      `/pods/${STATIN}/trend?test=18262-6`,
-    ],
-    [
-      "open_entry",
-      { pod: STATIN, entry },
-      `/pods/${STATIN}/entries/${encodeURIComponent(entryId(entry))}`,
-    ],
-    [
-      "open_entry",
-      { pod: STATIN, entry: "nothing" },
-      /holds no entry nothing; ask's rows give each entry's ID/,
-    ],
-  ];
-  assert.deepEqual(
-    [...new Set(table.map(([name]) => name))],
-    free.filter(({ opens }) => opens).map(({ name }) => name),
+  for (const { name, tier, opens } of TOOLS)
+    assert.equal(
+      typeof offered[name]!.execute === "function",
+      tier === "free" && opens !== true,
+      name,
+    );
+  const kept = NEVER.flatMap(({ with: given }) =>
+    given === undefined ? [] : [given],
   );
-  const { model } = fakeModel([
-    calling(...table.map(([name, input], at) => call(`c${at}`, name, input))),
-    reply("Opened."),
+  assert.ok(kept.length > 0);
+  for (const [name, { inputSchema }] of Object.entries(offered))
+    for (const property of kept)
+      assert.ok(
+        !Object.hasOwn(
+          (inputSchema.jsonSchema as Schema).properties ?? {},
+          property,
+        ),
+        `${name} takes ${property}`,
+      );
+});
+
+test("open_pod, open_trend and open_entry are offered to the model with their schemas as tools the page runs: a call to one ends the server's turn with the call for the page, unrun", async () => {
+  const { model, calls } = fakeModel([
+    calling(call("c1", "open_pod", { pod: STATIN })),
   ]);
-  const events = await chat(model, said("show me"));
-  const tool = toolEvents(events);
-  assert.equal(tool.length, table.length);
-  table.forEach(([name, input, expected], at) => {
-    const label = `${name} ${JSON.stringify(input)}`;
-    if (typeof expected === "string") {
-      assert.equal(tool[at]!.ok, true, label);
-      assert.equal(tool[at]!.open, expected, label);
-    } else {
-      assert.equal(tool[at]!.ok, false, label);
-      assert.match(tool[at]!.error as string, expected, label);
-      assert.equal(tool[at]!.open, undefined, label);
-    }
-  });
-  assert.equal(events.at(-1)!.type, "done");
+  const chunks = await chat(model, said("show me"));
+  const offered = new Map(
+    (calls[0]!.tools ?? []).map((each) => [
+      each.name,
+      "inputSchema" in each ? each.inputSchema : undefined,
+    ]),
+  );
+  const opening = TOOLS.filter(({ opens }) => opens);
+  assert.deepEqual(
+    opening.map(({ name }) => name),
+    ["open_pod", "open_trend", "open_entry"],
+  );
+  for (const { name, inputSchema } of opening)
+    assert.deepEqual(offered.get(name), withPod(inputSchema), name);
+  assert.deepEqual(kinds(chunks), ["start", "tool-input-available", "finish"]);
+  const [asked] = ofType(chunks, "tool-input-available");
+  assert.equal(asked!.toolName, "open_pod");
+  assert.deepEqual(asked!.input, { pod: STATIN });
+  assert.equal(calls.length, 1);
 });
 
 test("a tool call that cannot be run is reported to the model as a tool error, and the loop goes on: arguments that are not JSON, an unknown tool, input the schema refuses, input the pod refuses", async () => {
   const table: [string, string | Record<string, unknown>, RegExp][] = [
-    ["list_pods", "{not json", /not JSON/],
+    ["list_pods", "{not json", /JSON/],
     ["list_pods", "[]", /must be an object/],
-    [
-      "delete_pod",
-      { pod: STATIN },
-      /there is no tool delete_pod; the tools are/,
-    ],
+    ["delete_pod", { pod: STATIN }, /delete_pod/],
     ["find_changes", {}, /pod is required/],
     ["ask", { pod: STATIN, question: "SELECT * WHERE {}" }, /must be one of/],
     ["lab_series", { pod: STATIN, test: "0000-0" }, /no test 0000-0/],
   ];
-  const { model, requests } = fakeModel([
+  const { model, calls } = fakeModel([
     calling(...table.map(([name, input], at) => call(`c${at}`, name, input))),
     reply("Sorry."),
   ]);
-  const events = await chat(model, said("break"));
-  const tool = toolEvents(events);
-  assert.equal(tool.length, table.length);
+  const chunks = await chat(model, said("break"));
+  const errors = [
+    ...ofType(chunks, "tool-input-error"),
+    ...ofType(chunks, "tool-output-error"),
+  ];
   table.forEach(([name, , reason], at) => {
-    assert.equal(tool[at]!.ok, false, name);
-    assert.match(tool[at]!.error as string, reason, name);
+    const failed = errors.filter(({ toolCallId }) => toolCallId === `c${at}`);
+    assert.ok(failed.length > 0, name);
+    assert.ok(
+      failed.some(({ errorText }) => reason.test(String(errorText))),
+      `${name}: ${JSON.stringify(failed)}`,
+    );
   });
-  assert.equal(events.at(-1)!.type, "done");
-  const fed = requests[1]!.messages.filter(({ role }) => role === "tool");
+  assert.equal(ofType(chunks, "tool-output-available").length, 0);
+  assert.equal(kinds(chunks).at(-1), "finish");
+  const fed = calls[1]!.prompt.flatMap((message) =>
+    message.role === "tool" ? message.content : [],
+  );
   assert.equal(fed.length, table.length);
 });
 
-test("a round of tool calls past the sixth ends the loop with an error", async () => {
+test("a round of tool calls past the sixth ends the chat with an error", async () => {
   const rounds = Array.from({ length: MAX_ROUNDS + 1 }, (_, at) =>
     calling(call(`c${at}`, "list_pods", {})),
   );
-  const { model, requests } = fakeModel(rounds);
-  const events = await chat(model, said("again"));
-  assert.equal(toolEvents(events).length, MAX_ROUNDS);
-  assert.equal(requests.length, MAX_ROUNDS + 1);
-  assert.equal(events.at(-1)!.type, "error");
+  const { model, calls } = fakeModel(rounds);
+  const chunks = await chat(model, said("again"));
+  assert.equal(calls.length, MAX_ROUNDS + 1);
+  const [error] = ofType(chunks, "error");
+  assert.match(
+    String(error!.errorText),
+    new RegExp(`after ${MAX_ROUNDS} rounds`),
+  );
 });
 
-test("the model's refusal and its error end the chat as events of their own", async () => {
+test("the model's refusal and its error each end the chat as a part of its own, apart from an answer", async () => {
   const refused = await chat(
-    fakeModel([[{ type: "refused", text: "I cannot help with that." }]]).model,
+    fakeModel([[finish("content-filter")]]).model,
     said("hello"),
   );
-  assert.deepEqual(refused.at(-1), {
-    type: "refused",
-    text: "I cannot help with that.",
-  });
+  assert.deepEqual(
+    kinds(refused).filter((kind) => kind !== "start" && kind !== "finish"),
+    ["data-refused"],
+  );
+  const [part] = ofType(refused, "data-refused");
+  assert.match(String((part!.data as { text: string }).text), /declined/);
+
   const failed = await chat(
     fakeModel([
       [
-        { type: "text", text: "Well" },
-        { type: "error", status: 429, message: "rate limited" },
+        { type: "text-start", id: "t" },
+        { type: "text-delta", id: "t", delta: "Well" },
+        {
+          type: "error",
+          error: new APICallError({
+            message: "rate limited",
+            url: "http://127.0.0.1:1/v1/chat/completions",
+            requestBodyValues: {},
+            statusCode: 429,
+          }),
+        },
       ],
     ]).model,
     said("hello"),
   );
   assert.deepEqual(
-    failed.map(({ type }) => type),
-    ["start", "delta", "error"],
+    kinds(failed).filter((kind) => kind !== "start" && kind !== "finish"),
+    ["text-delta", "error"],
   );
+  assert.equal(ofType(failed, "error")[0]!.errorText, "rate limited");
 });
 
-test("a body the rules refuse is a Refusal naming what is wrong, and so is a pod there is none of; nothing is emitted", async () => {
+test("a body the rules refuse is 400 with the reason, and so is a pod there is none of; the model is not called and nothing is streamed", async () => {
   const good = {
     pod: STATIN,
     page: "/",
-    messages: [{ role: "user", content: "hello" }],
+    messages: [user("hello")],
+  };
+  const answered = {
+    id: "a1",
+    role: "assistant",
+    parts: [
+      {
+        type: "tool-open_pod",
+        toolCallId: "c1",
+        state: "output-available",
+        input: { pod: STATIN },
+        output: { opened: `/pods/${STATIN}/` },
+      },
+    ],
   };
   const refused: [unknown, RegExp][] = [
+    ["{not json", /JSON/],
+    [`{"x":"${"x".repeat(1024 * 1024)}"}`, /at most 1048576 bytes/],
     [null, /JSON object/],
     [[], /JSON object/],
     [{ ...good, extra: 1 }, /extra is not a property/],
@@ -395,18 +512,50 @@ test("a body the rules refuse is a Refusal naming what is wrong, and so is a pod
     [{ ...good, messages: [] }, /at least one message/],
     [{ ...good, messages: "hi" }, /at least one message/],
     [
-      { ...good, messages: [{ role: "system", content: "x" }] },
+      {
+        ...good,
+        messages: [
+          { id: "s", role: "system", parts: [{ type: "text", text: "x" }] },
+        ],
+      },
       /messages\[0\]/,
     ],
-    [{ ...good, messages: [{ role: "user", content: "" }] }, /messages\[0\]/],
+    [{ ...good, messages: [user("")] }, /messages\[0\]/],
     [
-      { ...good, messages: [{ role: "assistant", content: "x" }] },
+      {
+        ...good,
+        messages: [
+          {
+            id: "u",
+            role: "user",
+            parts: [{ type: "file", url: "x", mediaType: "text/plain" }],
+          },
+        ],
+      },
+      /messages\[0\]/,
+    ],
+    [
+      {
+        ...good,
+        messages: [
+          { id: "a", role: "assistant", parts: [{ type: "text", text: "x" }] },
+        ],
+      },
       /the last message must be the person's/,
     ],
     [
-      { ...good, messages: [{ role: "user", content: "x".repeat(100_001) }] },
-      /characters in all/,
+      {
+        ...good,
+        messages: [
+          {
+            ...answered,
+            parts: [{ ...answered.parts[0], input: { pod: 3 } }],
+          },
+        ],
+      },
+      /messages/,
     ],
+    [{ ...good, messages: [user("x".repeat(100_001))] }, /characters in all/],
     [{ ...good, context: "text" }, /context must be/],
     [{ ...good, context: { about: "x" } }, /context must be/],
     [{ ...good, context: { kind: "person", id: "x" } }, /context must be/],
@@ -434,156 +583,193 @@ test("a body the rules refuse is a Refusal naming what is wrong, and so is a pod
     [
       {
         ...good,
-        messages: Array.from({ length: 101 }, () => ({
-          role: "user",
-          content: "x",
-        })),
+        messages: Array.from({ length: 101 }, (_, at) => user("x", `u${at}`)),
       },
       /at most 100 messages/,
     ],
+    [{ ...good, pod: "nobody" }, /there is no pod nobody/],
   ];
-  for (const [body, reason] of refused)
-    assert.throws(
-      () => checkBody(body),
-      (error) => error instanceof Refusal && reason.test(error.message),
-      JSON.stringify(body),
+  const { model, calls } = fakeModel([]);
+  const routes = chatRoutes({ api, model });
+  for (const [body, reason] of refused) {
+    const label = JSON.stringify(body).slice(0, 200);
+    const response = await post(routes, body);
+    assert.equal(response.status, 400, label);
+    assert.match(response.headers.get("content-type")!, /json/, label);
+    assert.match(
+      ((await response.json()) as { error: string }).error,
+      reason,
+      label,
     );
-  assert.doesNotThrow(() => checkBody(good));
-  assert.doesNotThrow(() =>
-    checkBody({ ...good, context: { kind: "worth", entry: "e1" } }),
-  );
+  }
+  assert.equal(calls.length, 0);
 
-  const events: ChatEvent[] = [];
-  await assert.rejects(
-    runChat({
-      model: fakeModel([]).model,
-      tools,
-      body: { ...good, pod: "nobody" },
-      signal: new AbortController().signal,
-      emit: (event) => events.push(event),
-    }),
-    /there is no pod nobody/,
-  );
-  assert.deepEqual(events, []);
+  const accepted = [
+    good,
+    { ...good, id: "chat-1", trigger: "submit-message", messageId: "m1" },
+    { ...good, context: { kind: "worth", entry: "e1" } },
+    { ...good, messages: [user("open it"), answered] },
+  ];
+  const answering = fakeModel(accepted.map(() => reply("Done.")));
+  for (const body of accepted) {
+    const response = await post(
+      chatRoutes({ api, model: answering.model }),
+      body,
+    );
+    assert.equal(response.status, 200, JSON.stringify(body));
+    await response.text();
+  }
 });
 
-/** `chatRoute` served on a loopback port, over `model`. */
-async function served(model: Model | undefined) {
+/** An OpenAI-compatible model on loopback that lists the pods, and answers "Done." once it has their names. */
+async function stubModel() {
   const server: Server = createServer((request, response) => {
-    void chatRoute(request, response, { model, tools });
+    const chunks: Buffer[] = [];
+    request.on("data", (chunk: Buffer) => chunks.push(chunk));
+    request.on("end", () => {
+      const { messages } = JSON.parse(Buffer.concat(chunks).toString()) as {
+        messages: { role: string }[];
+      };
+      const send = (delta: object, finished: string | null = null) =>
+        response.write(
+          `data: ${JSON.stringify({ id: "stub", object: "chat.completion.chunk", choices: [{ index: 0, delta, finish_reason: finished }] })}\n\n`,
+        );
+      response.writeHead(200, { "content-type": "text/event-stream" });
+      if (messages.at(-1)!.role === "tool") {
+        send({ content: "Done." });
+        send({}, "stop");
+      } else {
+        send({
+          tool_calls: [
+            {
+              index: 0,
+              id: "call_1",
+              type: "function",
+              function: { name: "list_pods", arguments: "{}" },
+            },
+          ],
+        });
+        send({}, "tool_calls");
+      }
+      response.end("data: [DONE]\n\n");
+    });
   });
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
   const { port } = server.address() as AddressInfo;
   return {
-    url: `http://127.0.0.1:${port}/chat`,
-    close: () =>
-      new Promise((resolve) => {
-        server.close(resolve);
-        server.closeAllConnections();
-      }),
+    url: `http://127.0.0.1:${port}/v1`,
+    close: () => new Promise((done) => server.close(done)),
   };
 }
 
-const post = (url: string, body: unknown, signal?: AbortSignal) =>
-  fetch(url, {
-    method: "POST",
-    body: typeof body === "string" ? body : JSON.stringify(body),
-    signal,
+test("POST /chat answers with the UI message stream, holding the tool's part and the answer and neither the model's key nor its address; GET /chat names the model and nothing more; no model set is 503; and an error of the server's own is a fixed message", async (t) => {
+  const stub = await stubModel();
+  const model = modelOf({
+    provider: "other",
+    url: stub.url,
+    name: "stub-1",
+    key: KEY,
   });
-
-test("POST /chat streams the events as NDJSON; a body the rules refuse is 400 with the reason, no model set is 503, and an error of its own is an error event with a fixed message", async (t) => {
-  const { model } = fakeModel([
-    calling(call("c1", "open_pod", { pod: STATIN })),
-    reply("Opened."),
+  const routes = chatRoutes({ api, model });
+  const answered = await post(routes, {
+    pod: "",
+    page: "/",
+    ...said("which pods are there?"),
+  });
+  assert.equal(answered.status, 200);
+  assert.match(answered.headers.get("content-type")!, /^text\/event-stream/);
+  assert.equal(answered.headers.get("x-vercel-ai-ui-message-stream"), "v1");
+  const text = await answered.text();
+  const chunks = await chunksOf(new Response(text));
+  assert.deepEqual(kinds(chunks), [
+    "start",
+    "tool-input-available",
+    "tool-output-available",
+    "text-delta",
+    "finish",
   ]);
-  const running = await served(model);
-  const ok = await post(running.url, {
-    pod: STATIN,
-    page: "/",
-    ...said("open it"),
-  });
-  assert.equal(ok.status, 200);
-  assert.match(ok.headers.get("content-type")!, /^application\/x-ndjson/);
-  const lines = (await ok.text()).trim().split("\n");
-  assert.deepEqual(
-    lines.map((line) => (JSON.parse(line) as ChatEvent).type),
-    ["start", "tool", "delta", "done"],
-  );
-
-  for (const body of ["{not json", { pod: STATIN }]) {
-    const refused = await post(running.url, body);
-    assert.equal(refused.status, 400);
-    assert.ok(((await refused.json()) as { error: string }).error.length > 0);
-  }
-  const huge = await post(running.url, `{"x":"${"x".repeat(1024 * 1024)}"}`);
-  assert.equal(huge.status, 400);
-  assert.match(((await huge.json()) as { error: string }).error, /at most/);
-  await running.close();
-
-  const none = await served(undefined);
-  assert.equal((await post(none.url, {})).status, 503);
-  await none.close();
-
-  t.mock.method(console, "error", () => {});
-  const broken: Model = {
-    provider: "fake",
-    name: "fake-1",
+  assert.deepEqual(ofType(chunks, "tool-output-available")[0]!.output, [
+    STATIN,
+  ]);
+  const named = await (await routes.request("/chat")).text();
+  assert.deepEqual(JSON.parse(named), {
+    provider: "other",
+    name: "stub-1",
     local: true,
-    // eslint-disable-next-line require-yield
-    async *turn() {
-      throw new Error("ENOENT: open 'C:/private/path'");
-    },
-  };
-  const failing = await served(broken);
-  const failed = await post(failing.url, {
-    pod: STATIN,
-    page: "/",
-    ...said("hello"),
   });
-  const events = (await failed.text())
-    .trim()
-    .split("\n")
-    .map((line) => JSON.parse(line) as ChatEvent);
-  assert.equal(events.at(-1)!.type, "error");
-  assert.doesNotMatch(JSON.stringify(events), /private/);
-  await failing.close();
+  for (const shown of [text, named]) {
+    assert.equal(shown.includes(KEY), false);
+    assert.equal(shown.includes(new URL(stub.url).host), false);
+  }
+  await stub.close();
+
+  const none = chatRoutes({ api, model: undefined });
+  assert.deepEqual(await (await none.request("/chat")).json(), {});
+  const unset = await post(none, {});
+  assert.equal(unset.status, 503);
+  assert.deepEqual(await unset.json(), {
+    error: "No model is set. Run `npm run model`.",
+  });
+
+  const logged = t.mock.method(console, "error", () => {});
+  const broken = fakeModel([], async () => {
+    throw new Error("ENOENT: open 'C:/private/path'");
+  });
+  const failed = await chunksOf(
+    await post(chatRoutes({ api, model: broken.model }), {
+      pod: STATIN,
+      page: "/",
+      ...said("hello"),
+    }),
+  );
+  const [error] = ofType(failed, "error");
+  assert.match(String(error!.errorText), /the server's log says why/);
+  assert.doesNotMatch(JSON.stringify(failed), /private/);
+  assert.ok(logged.mock.callCount() > 0);
 });
 
 test("a request that closes before the answer ends aborts the call to the model", async () => {
   let aborted!: () => void;
   const sawAbort = new Promise<void>((resolve) => (aborted = resolve));
-  const waiting: Model = {
-    provider: "fake",
-    name: "fake-1",
-    local: true,
-    async *turn({ signal }) {
-      yield { type: "text", text: "Let me" };
-      await new Promise<void>((resolve) =>
-        signal.addEventListener("abort", () => resolve(), { once: true }),
-      );
-      aborted();
-    },
-  };
-  const running = await served(waiting);
+  const waiting = fakeModel([], async ({ abortSignal }) => ({
+    stream: new ReadableStream<LanguageModelV4StreamPart>({
+      start(controller) {
+        controller.enqueue({ type: "stream-start", warnings: [] });
+        controller.enqueue({ type: "text-start", id: "t" });
+        controller.enqueue({ type: "text-delta", id: "t", delta: "Let me" });
+        abortSignal!.addEventListener("abort", () => aborted(), {
+          once: true,
+        });
+      },
+    }),
+  }));
+  const routes = chatRoutes({ api, model: waiting.model });
+  const server = createServer(getRequestListener(routes.fetch));
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address() as AddressInfo;
   const stop = new AbortController();
-  const response = await post(
-    running.url,
-    { pod: STATIN, page: "/", ...said("hello") },
-    stop.signal,
-  );
+  const response = await fetch(`http://127.0.0.1:${port}/chat`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ pod: STATIN, page: "/", ...said("hello") }),
+    signal: stop.signal,
+  });
   const reader = response.body!.getReader();
   await reader.read();
   stop.abort();
   await sawAbort;
-  await running.close();
+  await new Promise((resolve) => {
+    server.close(resolve);
+    server.closeAllConnections();
+  });
 });
 
 test("a chat that began with Ask about this tells the model the thing it asked about and to explain the thing, never the person; a chat with no context is told neither", async () => {
   const context = { kind: "finding", key: "start:617310:18262-6" };
-  const { model, requests } = fakeModel([reply("Done."), reply("Done.")]);
+  const { model, calls } = fakeModel([reply("Done."), reply("Done.")]);
   await chat(model, { ...said("tell me about this"), context });
   await chat(model, said("tell me about this"));
-  const [asked, plain] = requests.map(({ system }) => system.join("\n"));
+  const [asked, plain] = calls.map(systemOf);
   assert.ok(asked!.includes(JSON.stringify(context)));
   assert.ok(asked!.includes(EXPLAIN_THE_THING));
   assert.ok(!plain!.includes(EXPLAIN_THE_THING));
