@@ -34,18 +34,26 @@ calling `podApi`'s operations only, with its consent `tier`: `free` reads
 (`open_pod`, `open_trend`, `open_entry`, through the door's `open` and its own addresses), and `ask` writes,
 which the person confirms first (`make_pod`, never encrypted; `check_tables`; `set_world_date`). `NEVER` is what
 no tool calls: `makePod` with `encrypt`, `waitingWords`, `confirmWords`, `unlock`, `connect`, `bring`,
-`deleteAll` and `resetAll`. The MCP server offers the free reads; `chat.mjs`, the
-app's `POST /chat`, the free tools, so the chat only reads and moves the app; try/'s WebMCP the free tools for the
-pod shown. No door offers an `ask` tool yet. A hosted client sends what the tools return to its provider:
+`deleteAll` and `resetAll`. The MCP server offers the free reads; `chat.mjs`, `npm start`'s
+`POST /chat`, the free tools, so its chat only reads and moves the app; try/'s WebMCP the free tools for the
+pod shown. `server/chat.ts`, `npm run next`'s `/chat`, runs on the Vercel AI SDK (`ai`): `chatTools(api)` offers
+every tool of the list, the free reads with a server `execute` and the navigation and `ask` tools with none, so a
+call to one ends the server's turn and the page runs it (the window is step 9's). `POST /chat` takes the SDK's
+`messages` beside `pod`, `page` and `context`, answers with the SDK's UI message stream, stops after `MAX_ROUNDS`
+rounds of tool calls, and says the model's refusal as a `data-refused` part; `GET /chat` gives the model's
+`{ provider, name, local }`, or `{}`. A hosted client sends what the tools return to its provider:
 never point one at a person's own pod without their say. The starter holds only
 made-up records (the kits, the demo hospitals); before connecting real records,
 decide whether a hosted model may see them.
-`npm run model` runs `model.mjs`: it asks which model a chat uses, checks that the
-model calls a tool and writes `CASCADE_MODEL_PROVIDER`, `_URL`, `_NAME` and `_KEY`
-to `.env` (untracked; `--off` removes them). `model-client.mjs` is the one door to
-a model: `modelFrom()` reads those settings, loads `.env` itself and gives
-nothing when there are none; a model's `turn()` streams events whatever the
-provider. Nothing else may know a provider's wire format or hold its key.
+`npm run model` runs `model.ts`: it asks which model a chat uses, checks on the
+AI SDK that the model calls a tool and writes `CASCADE_MODEL_PROVIDER`, `_URL`, `_NAME` and `_KEY`
+to `.env` (untracked; `--off` removes them). `models.ts` is the door to a model
+for the new server: `modelFrom()` reads those settings, loads `.env` itself and gives
+nothing when there are none, and `modelOf()` makes the model through the AI SDK's
+provider packages: `@ai-sdk/anthropic`, `@ai-sdk/groq`, `@openrouter/ai-sdk-provider`, and
+`@ai-sdk/openai-compatible` for Gemini (at its OpenAI-compatible address), a model on this computer and any
+other address. `model-client.mjs` is `npm start`'s door, on wires of its own, over the same settings and
+`PROVIDERS`. Nothing else may hold a model's key.
 `server.mjs` answers requests, hands it the rows, and renders each page to
 HTML with `preact-render-to-string`. A pod's page also brings in a
 record from a hospital of the test directory: the person signs in on the
@@ -137,7 +145,8 @@ keeping the package and the pods, under `pods/<name>/`. It is made with four,
 - `npm run dev` serves the app as `npm start` does, restarting it on every save.
 - `npm run next` builds the app being ported to React (`index.html`, `src/`, by
   `vite.config.ts`) into `dist/` and serves it with PodApi at `/api/` from
-  `server/main.ts`, on `PORT` (3001 if unset). Screens not ported yet say so.
+  `server/main.ts`, on `PORT` (3001 if unset), with the chat's `/chat` on the AI SDK.
+  Screens not ported yet say so.
 - `npm run dev:next` serves that app through Vite instead, in the same
   process, rebuilt on every save.
 - `npm run build` builds that app for `server/main.ts`.

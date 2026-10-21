@@ -95,11 +95,30 @@ const AT =
         entryLink: (pod: string, id: string) =>
           `?pod=${pod}&entry=${encodeURIComponent(id)}`,
         code: (code: string) => `?table=&code=${code}`,
+        classes: (pod: string) => `try/index.html?pod=${pod}&classes`,
+        trend: (pod: string, test: string) =>
+          `try/index.html?pod=${pod}&trend&test=${test}`,
         podOf: (url: string) => new URL(url).searchParams.get("pod"),
         entryOf: (url: string) => new URL(url).searchParams.get("entry"),
         table: (id: string, q: string) => `try/index.html?table=${id}&q=${q}`,
         tableOf: (url: string) => new URL(url).searchParams.get("table"),
         codeOf: (url: string) => new URL(url).searchParams.get("code"),
+        trendOf: (url: string) => {
+          const query = new URL(url).searchParams;
+          return query.has("trend")
+            ? {
+                pod: query.get("pod"),
+                test: query.get("test"),
+                medication: query.get("medication"),
+              }
+            : null;
+        },
+        links: 'a[href^="?"]',
+        shapeOf: (href: string) =>
+          [...new URL(href, "http://x/try/index.html").searchParams.keys()]
+            .sort()
+            .join(","),
+        screenOf: (_shape: string): string | undefined => undefined,
       }
     : {
         home: "next/",
@@ -117,6 +136,34 @@ const AT =
         tableOf: (url: string) =>
           /\/tables\/([^/]+)\//.exec(new URL(url).pathname)?.[1] ?? null,
         codeOf: (url: string) => new URL(url).searchParams.get("code"),
+        classes: (pod: string) => `next/pods/${pod}/classes`,
+        trend: (pod: string, test: string) =>
+          `next/pods/${pod}/trend?test=${test}`,
+        trendOf: (url: string) => {
+          const at = new URL(url);
+          const pod = /\/pods\/([^/]+)\/trend$/.exec(at.pathname)?.[1];
+          return pod === undefined
+            ? null
+            : {
+                pod,
+                test: at.searchParams.get("test"),
+                medication: at.searchParams.get("medication"),
+              };
+        },
+        links: 'a[href^="/next/"]',
+        screenOf: (shape: string): string | undefined =>
+          shape.startsWith("pods/*/hospitals") ? "hospitals" : undefined,
+        shapeOf: (href: string) => {
+          const at = new URL(href, "http://x/");
+          return [
+            at.pathname
+              .replace(/^\/next\/pods\/[^/]+/, "pods/*")
+              .replace(/^\/next\/tables\/[^/]+/, "tables/*")
+              .replace(/\/entries\/.+$/, "/entries/*")
+              .replace(/^\/next\//, ""),
+            ...[...at.searchParams.keys()].sort(),
+          ].join("?");
+        },
       };
 
 interface Followed {
@@ -510,27 +557,36 @@ function recordTools(): void {
   });
 }
 
+interface Leaving {
+  leaving?: { count: number; from: string | null; still?: number };
+}
+
 /**
- * Holds what Preact runs after a paint, a view's registration and the abort a page leaving gives it, once
- * `globalThis.effectsHeld` is set (never until a test sets it): its frame callbacks and 35 ms timeouts are dropped
- * and never run, so no machine is slow enough to let them through.
+ * Looks, in every page of the context, at the tools of the pod left at the first change of the page that follows from
+ * `globalThis.leaving = { count, from }` being set: the title bar marking another pod than `from`. A mutation observer
+ * calls back in the microtask after the commit that made the change, before the macrotask in which a passive effect
+ * (React's scheduler) or a post-paint timer (Preact's) runs, so a tool taken away from one of those is still on. It
+ * sets `leaving.still` to how many of the first `count` tools registered are still on. No timer and no machine's speed
+ * decides it.
  */
-function lagEffects(): void {
-  const held = (): boolean =>
-    (globalThis as unknown as { effectsHeld?: boolean }).effectsHeld === true;
-  const timeout = globalThis.setTimeout.bind(globalThis);
-  const frame = globalThis.requestAnimationFrame.bind(globalThis);
-  // Preact waits for a frame or 35 ms, whichever comes first.
-  globalThis.setTimeout = ((
-    callback: TimerHandler,
-    ms?: number,
-    ...rest: unknown[]
-  ) =>
-    ms === 35 && held()
-      ? 0
-      : timeout(callback, ms, ...rest)) as typeof globalThis.setTimeout;
-  globalThis.requestAnimationFrame = ((callback: FrameRequestCallback) =>
-    held() ? 0 : frame(callback)) as typeof frame;
+function watchLeaving(): void {
+  const here = globalThis as unknown as Leaving & Registered;
+  const marked = (): string | null =>
+    document.querySelector("aside nav a[aria-current]")?.textContent ?? null;
+  new MutationObserver(() => {
+    const watch = here.leaving;
+    if (watch === undefined || watch.still !== undefined) return;
+    if (marked() === watch.from) return;
+    watch.still = here.registered
+      .slice(0, watch.count)
+      .filter(({ signal }) => !signal.aborted).length;
+  }).observe(document, {
+    subtree: true,
+    childList: true,
+    characterData: true,
+    attributes: true,
+    attributeFilter: ["aria-current"],
+  });
 }
 
 /** When `what` was first drawn in the page, ms since its navigation started or, after a click, since the click. */
@@ -554,12 +610,6 @@ async function drawnAt(page: Page, what: string): Promise<number> {
 
 const median = (values: readonly number[]): number =>
   [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)] ?? 0;
-
-/** The query names of an address a page links, joined: the shape of the address. */
-const shapeOf = (href: string): string =>
-  [...new URL(href, "http://x/try/index.html").searchParams.keys()]
-    .sort()
-    .join(",");
 
 /** The samples the new-pod box offers to load, by folder. */
 const loadable = (page: Page): Promise<string[]> =>
@@ -1845,7 +1895,7 @@ ${shots.join("\n")}`);
   }
 });
 
-test("in try/, Martin's pod, copied on a first visit, has a Genetic variants tile whose rows open each variant's entry once the engine is ready: the MLH1 variant's two reports with their labs and what ClinVar says today, a gene the series does not cover, and a variant it holds no row for, then the counsellor sentence and ClinVar's disclaimer; a row opens its entry with no request, each address shape the pod's page and the entry link opens a page, and the pages reach their table-dependent line within twice their budgets", async () => {
+test("in try/, Martin's pod, copied on a first visit, has a Genetic variants tile whose rows open each variant's entry once the engine is ready: the MLH1 variant's two reports with their labs and what ClinVar says today, a gene the series does not cover, and a variant it holds no row for, then the counsellor sentence and ClinVar's disclaimer; a row opens its entry with no request, each address shape the pod's page and the entry link opens a page, and the pages reach their table-dependent line within twice their budgets", async (t) => {
   const context = await browser.newContext();
   await context.addInitScript(recordDraws);
   try {
@@ -1855,7 +1905,7 @@ test("in try/, Martin's pod, copied on a first visit, has a Genetic variants til
       if (worker.url().endsWith("/tables-worker.js")) tablesWorkers += 1;
     };
     page.on("worker", counted);
-    await page.goto(`${served.url}try/index.html`);
+    await page.goto(`${served.url}${AT.home}`);
     await settled(page);
     await page.waitForSelector('body[data-tables="ready"]', {
       timeout: 60_000,
@@ -1863,7 +1913,7 @@ test("in try/, Martin's pod, copied on a first visit, has a Genetic variants til
     page.off("worker", counted);
     assert.equal(tablesWorkers, 1, "the starter is copied in one worker");
     await page.goto(
-      `${served.url}try/index.html?pod=martin-okafor#see-genetic-variants`,
+      `${served.url}${AT.pod("martin-okafor")}#see-genetic-variants`,
     );
     await settled(page);
     assert.equal(await page.textContent("main h1"), "Martin Okafor");
@@ -1920,7 +1970,7 @@ test("in try/, Martin's pod, copied on a first visit, has a Genetic variants til
     const opens = async (row: Locator): Promise<void> => {
       requested.length = 0;
       await inPlace(page, () => row.locator("td:first-child a").click());
-      assert.ok(new URL(page.url()).searchParams.has("entry"));
+      assert.ok(AT.entryOf(page.url()) !== null, page.url());
       assert.deepEqual(
         requested,
         [],
@@ -1974,7 +2024,7 @@ test("in try/, Martin's pod, copied on a first visit, has a Genetic variants til
       ),
     );
 
-    const podUrl = `${served.url}try/index.html?pod=martin-okafor`;
+    const podUrl = `${served.url}${AT.pod("martin-okafor")}`;
     const opened = async (fresh: Page, address: string): Promise<void> => {
       await fresh.goto(address);
       await settled(fresh);
@@ -2025,10 +2075,10 @@ test("in try/, Martin's pod, copied on a first visit, has a Genetic variants til
       fresh: Page,
     ): Promise<{ shape: string; href: string }[]> => {
       const found = new Map<string, string>();
-      for (const href of await fresh.$$eval('a[href^="?"]', (links) =>
+      for (const href of await fresh.$$eval(AT.links, (links) =>
         links.map((link) => link.getAttribute("href") ?? ""),
       ))
-        if (!found.has(shapeOf(href))) found.set(shapeOf(href), href);
+        if (!found.has(AT.shapeOf(href))) found.set(AT.shapeOf(href), href);
       return [...found].map(([shape, href]) => ({ shape, href }));
     };
     for (const address of [podUrl, entryUrl]) {
@@ -2037,6 +2087,9 @@ test("in try/, Martin's pod, copied on a first visit, has a Genetic variants til
       const found = await shapes(fresh);
       assert.ok(found.length > 1, `${address} links one shape of address`);
       for (const { shape, href } of found) {
+        const screen = AT.screenOf(shape);
+        if (screen !== undefined && !ported(t, `the link ${href}`, screen))
+          continue;
         await opened(fresh, address);
         await inPlace(fresh, () =>
           fresh
@@ -2045,7 +2098,7 @@ test("in try/, Martin's pod, copied on a first visit, has a Genetic variants til
             .evaluate((link) => (link as HTMLElement).click()),
         );
         assert.ok(
-          !["Not found", "Something went wrong"].includes(
+          !["Not found", "Something went wrong", "Not ported yet"].includes(
             (await fresh.textContent("main h1")) ?? "",
           ),
           `${address} links ${href} (${shape}), which draws a page that is not found`,
@@ -2063,13 +2116,13 @@ test("in try/, Priya's pod, copied on a first visit, names her potassium result 
   await context.addInitScript(recordDraws);
   try {
     const page = watched(await context.newPage());
-    await page.goto(`${served.url}try/index.html`);
+    await page.goto(`${served.url}${AT.home}`);
     await settled(page);
     await page.waitForSelector('body[data-tables="ready"]', {
       timeout: 60_000,
     });
     await page.goto(
-      `${served.url}try/index.html?pod=priya-natarajan#see-lab-results`,
+      `${served.url}${AT.pod("priya-natarajan")}#see-lab-results`,
     );
     await settled(page);
     await page.waitForSelector('body[data-tables="ready"]', {
@@ -2125,7 +2178,7 @@ test("in try/, Priya's pod, copied on a first visit, names her potassium result 
       ),
       "the sidebar still says the tables are loading",
     );
-    await page.goto(`${served.url}try/index.html?pod=priya-natarajan`);
+    await page.goto(`${served.url}${AT.pod("priya-natarajan")}`);
     await settled(page);
     await inPlace(page, () =>
       page.click(".tiles .tile-box:has(.kind:text-is('Medications')) a.by"),
@@ -2156,7 +2209,88 @@ test("in try/, Priya's pod, copied on a first visit, names her potassium result 
   }
 });
 
-test("in try/, Ines Calloway's new pod signed in at North says what changed after atorvastatin started and registers the free tools of the one list for the pod with the model context, opens the trend at its address, and going to another pod takes every tool away", async () => {
+test("in try/, the pod shown offers the free tools of the one list to the model context, a change card opens the trend at its address, and going to another pod takes every tool of the pod left away when the page shows the other, never after the next paint", async () => {
+  const context = await browser.newContext();
+  await context.addInitScript(recordTools);
+  await context.addInitScript(watchLeaving);
+  try {
+    const page = watched(await context.newPage());
+    const live = (): Promise<string[]> =>
+      page.evaluate(() =>
+        (globalThis as unknown as Registered).registered
+          .filter(({ signal }) => !signal.aborted)
+          .map(({ name }) => name)
+          .sort(),
+      );
+    await page.goto(`${served.url}${AT.home}`);
+    await settled(page);
+    await page.goto(`${served.url}${AT.pod("tamsin-vale")}`);
+    await settled(page);
+    await page.locator(".change").first().waitFor({ timeout: 60_000 });
+    await page.waitForFunction(() =>
+      (globalThis as unknown as Registered).registered.some(
+        ({ name, signal }) => name === "open_trend" && !signal.aborted,
+      ),
+    );
+    assert.deepEqual(await live(), FREE_TOOLS);
+    const total = (): Promise<number> =>
+      page.evaluate(
+        () => (globalThis as unknown as Registered).registered.length,
+      );
+    const offered = await total();
+
+    await inPlace(page, () =>
+      page.click('.change a:has-text("Open the trend")'),
+    );
+    assert.deepEqual(AT.trendOf(page.url()), {
+      pod: "tamsin-vale",
+      test: "4548-4",
+      medication: "861007",
+    });
+    const chart = page.locator("svg.chart.large");
+    assert.equal(await chart.locator("circle.marker").count(), 6);
+    assert.equal(
+      await chart.locator("title").first().textContent(),
+      await page.textContent("main h1"),
+    );
+    assert.deepEqual(await live(), FREE_TOOLS);
+    assert.equal(
+      await total(),
+      offered,
+      "a move between the pod's screens offered the tools again",
+    );
+
+    await page.evaluate(
+      ([from, count]) => {
+        Object.assign(globalThis, { leaving: { from, count } });
+      },
+      [await page.textContent("aside nav a[aria-current]"), await total()],
+    );
+    await inPlace(page, () => page.click('nav a:has-text("Alex Rivera")'));
+    assert.equal(await page.textContent("main h1"), "Alex Rivera");
+    assert.equal(
+      await page.evaluate(
+        () => (globalThis as unknown as Leaving).leaving?.still,
+      ),
+      0,
+      "a tool of the pod left was still on when the page showed another pod",
+    );
+    assert.deepEqual(await live(), FREE_TOOLS);
+
+    await page.goto(`${served.url}${AT.trend("tamsin-vale", "0000-0")}`);
+    await settled(page);
+    assert.equal(await page.textContent("main h1"), "Not found");
+    assert.match(
+      (await page.textContent("main p")) ?? "",
+      /no test 0000-0 in the pod/,
+    );
+  } finally {
+    await context.close();
+  }
+});
+
+test("in try/, Ines Calloway's new pod signed in at North says what changed after atorvastatin started, opens the trend at its address, and its class page puts her estradiol in estrogen", async (t) => {
+  if (!ported(t, "#13's sign-in at North", "hospitals")) return;
   const demo = await loadHospitals();
   const ines = view
     .demoPeople(demo)
@@ -2171,18 +2305,9 @@ test("in try/, Ines Calloway's new pod signed in at North says what changed afte
   assert.ok(patient, "North holds no patient Ines Calloway");
 
   const context = await browser.newContext();
-  await context.addInitScript(recordTools);
-  await context.addInitScript(lagEffects);
   try {
     const page = watched(await context.newPage());
-    const live = (): Promise<string[]> =>
-      page.evaluate(() =>
-        (globalThis as unknown as Registered).registered
-          .filter(({ signal }) => !signal.aborted)
-          .map(({ name }) => name)
-          .sort(),
-      );
-    await page.goto(`${served.url}try/index.html`);
+    await page.goto(`${served.url}${AT.home}`);
     await settled(page);
     await newPod(page, view.familyFirst(ines));
     await page.waitForFunction(
@@ -2213,55 +2338,22 @@ test("in try/, Ines Calloway's new pod signed in at North says what changed afte
       said,
     );
 
-    await page.waitForFunction(() =>
-      (globalThis as unknown as Registered).registered.some(
-        ({ name, signal }) => name === "open_trend" && !signal.aborted,
-      ),
-    );
-    assert.deepEqual(await live(), FREE_TOOLS);
-
     await inPlace(page, () =>
       page.click('.change a:has-text("Open the trend")'),
     );
-    const query = new URL(page.url()).searchParams;
-    assert.deepEqual(
-      [
-        query.get("pod"),
-        query.has("trend"),
-        query.get("test"),
-        query.get("medication"),
-      ],
-      ["ines-calloway", true, "18262-6", "617310"],
-    );
+    assert.deepEqual(AT.trendOf(page.url()), {
+      pod: "ines-calloway",
+      test: "18262-6",
+      medication: "617310",
+    });
     const chart = page.locator("svg.chart.large");
     assert.equal(await chart.locator("circle.marker").count(), 6);
     assert.equal(
       await chart.locator("title").first().textContent(),
       await page.textContent("main h1"),
     );
-    assert.deepEqual(await live(), FREE_TOOLS);
 
-    const recorded = await page.evaluate(
-      () => (globalThis as unknown as Registered).registered.length,
-    );
-    await page.evaluate(() => {
-      Object.assign(globalThis, { effectsHeld: true });
-    });
-    await inPlace(page, () => page.click('nav a:has-text("Alex Rivera")'));
-    assert.equal(await page.textContent("main h1"), "Alex Rivera");
-    assert.ok(
-      await page.evaluate(
-        (count) =>
-          (globalThis as unknown as Registered).registered
-            .slice(0, count)
-            .every(({ signal }) => signal.aborted),
-        recorded,
-      ),
-      "a tool of the pod left is still registered",
-    );
-    assert.deepEqual(await live(), FREE_TOOLS);
-
-    await page.goto(`${served.url}try/index.html?pod=ines-calloway&classes`);
+    await page.goto(`${served.url}${AT.classes("ines-calloway")}`);
     await settled(page);
     await page.waitForFunction(
       () =>

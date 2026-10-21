@@ -32,6 +32,14 @@ export interface PodApi extends WritesApi {
   }>;
   answers(input: { pod: string }): Promise<Answered>;
   said(input: { pod: string; entry?: string }): Promise<SaidSent>;
+  trend(input: {
+    pod: string;
+    test?: string;
+    medication?: string;
+    named?: boolean;
+  }): Promise<SaidSent>;
+  classes(input: { pod: string }): Promise<SaidSent>;
+  panel(input: { pod: string; panel?: string }): Promise<SaidSent>;
   makePod(input: {
     person: string;
     encrypt?: boolean;
@@ -90,6 +98,11 @@ export interface Host {
   engine(): Promise<void>;
   /** Resolves once the tables are kept up to date. */
   tables(): Promise<void>;
+  /**
+   * Offers a model the free tools for the pod shown, `open` moving the app to an address; the function it returns takes
+   * them away. A host with no model context offers none.
+   */
+  offer?(pod: string, open: (address: string) => Promise<void>): () => void;
 }
 
 const HostContext = createContext<Host | undefined>(undefined);

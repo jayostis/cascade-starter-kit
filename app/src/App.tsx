@@ -35,11 +35,17 @@ import {
   type PodApi,
   type PodListed,
 } from "./api.tsx";
+import { ClassesScreen } from "./classes.tsx";
 import { failed, firstReady, flight, ready, type Outcome } from "./doing.ts";
+import { EntryScreen } from "./entry.tsx";
 import { Unlock, WordsScreen } from "./newpod.tsx";
+import { PanelScreen } from "./panel.tsx";
 import { PodPage, type PodShown } from "./pod.tsx";
+import { NotFound, Wrong } from "./screen.tsx";
 import { Layout, type TablesHeld } from "./shell.tsx";
 import { TableScreen } from "./tables.tsx";
+import { usePodTools } from "./tools.ts";
+import { TrendScreen } from "./trend.tsx";
 
 type Engine = "waiting" | "ready" | "failed";
 
@@ -113,16 +119,6 @@ type Screen =
   | Locked
   | { readonly at: string; readonly page: { readonly wrong: string } };
 
-function Wrong({ said }: { said: string }) {
-  useEffect(failed, []);
-  return (
-    <>
-      <h1>Something went wrong</h1>
-      <p>{said}</p>
-    </>
-  );
-}
-
 /** The pod the address names, drawn from its answers, then filled in once the engine can say what the tables say. */
 function PodScreen({
   pods,
@@ -191,8 +187,8 @@ function PodScreen({
     };
   }, [api, engine, page]);
   useEffect(() => {
-    if (shown?.at !== at || (typeof page === "object" && "wrong" in page))
-      return;
+    if (shown?.at !== at) return;
+    if (typeof page === "object" && "wrong" in page) return failed();
     const title =
       typeof page === "object"
         ? personName(page.pod, titles)
@@ -207,12 +203,7 @@ function PodScreen({
     return <Unlock pod={pod} titles={titles} outcome={shown.outcome} />;
   const screen = shown.page;
   if (screen === "unknown")
-    return (
-      <>
-        <h1>Not found</h1>
-        <p>This app keeps no pod named {pod}.</p>
-      </>
-    );
+    return <NotFound said={`This app keeps no pod named ${pod}.`} />;
   if ("wrong" in screen) return <Wrong said={screen.wrong} />;
   return (
     <PodPage
@@ -373,10 +364,13 @@ export function App() {
     ),
   );
   const opened = pods !== undefined;
+  const told = useRef(false);
   useLayoutEffect(() => {
-    // The shell is drawn once the pods are read, after the browser matched `:target`, so a load at `#about` is told again.
-    if (opened && /^#[^/]+$/.test(location.hash))
-      location.replace(location.hash);
+    // The shell is drawn once the pods are read, after the browser matched `:target`, so a load at `#about` is told
+    // again, once: `location.replace` wipes `history.state`, which a step's move and the router's keys live in.
+    if (!opened || told.current) return;
+    told.current = true;
+    if (/^#[^/]+$/.test(location.hash)) location.replace(location.hash);
   }, [opened]);
   useEffect(() => {
     void (async () => {
@@ -404,6 +398,8 @@ export function App() {
       );
   }, [api, host]);
   const names = useMemo(() => (pods ?? []).map(({ name }) => name), [pods]);
+  const shown = current === undefined ? undefined : decodeURIComponent(current);
+  usePodTools(shown !== undefined && names.includes(shown) ? shown : undefined);
   if (pods === undefined) return null;
   return (
     <HostProvider value={guarded}>
@@ -462,6 +458,24 @@ export function App() {
                     engine={engine}
                   />
                 }
+              />
+              <Route
+                path="/pods/:pod/entries/:id"
+                element={
+                  <EntryScreen titles={titles} held={tables} engine={engine} />
+                }
+              />
+              <Route
+                path="/pods/:pod/trend"
+                element={<TrendScreen titles={titles} engine={engine} />}
+              />
+              <Route
+                path="/pods/:pod/classes"
+                element={<ClassesScreen titles={titles} />}
+              />
+              <Route
+                path="/pods/:pod/panel"
+                element={<PanelScreen titles={titles} />}
               />
               <Route
                 path="/tables/:id?"

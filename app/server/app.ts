@@ -2,10 +2,8 @@
 // `/callback`, and the built app: its files as they are, and its page for any other address a person opens.
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { IncomingMessage, ServerResponse } from "node:http";
 import type { HttpBindings } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
-import { RESPONSE_ALREADY_SENT } from "@hono/node-server/utils/response";
 import { Hono, type MiddlewareHandler } from "hono";
 import { addresses } from "../addresses.ts";
 import { apiRoutes, type Operations } from "./api.ts";
@@ -15,8 +13,8 @@ export interface Served {
   readonly api: Operations;
   /** This server's own addresses, known once it listens. */
   own(): Own;
-  /** Answers `POST /chat` on the request itself. */
-  chat(request: IncomingMessage, response: ServerResponse): Promise<void>;
+  /** `GET /chat` and `POST /chat` (`chat.ts`). */
+  readonly chat: Hono;
   /** The sign-in a hospital's redirect to `/callback` finishes, as `{ pod, connection }`; none when none waits. */
   back(url: URL): { pod: string; connection: number } | undefined;
   /** The built app's folder, or in development what serves its pages. */
@@ -40,10 +38,7 @@ export function appServer(served: Served) {
   const app = new Hono<{ Bindings: HttpBindings }>()
     .use(guard(served.own))
     .route("/", apiRoutes(served.api))
-    .post("/chat", async (c) => {
-      await served.chat(c.env.incoming, c.env.outgoing);
-      return RESPONSE_ALREADY_SENT;
-    })
+    .route("/", served.chat)
     .get("/callback", (c) => {
       const at = served.back(new URL(c.req.url));
       return at === undefined

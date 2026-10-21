@@ -41,12 +41,12 @@ export async function screens<T>(source: string): Promise<T> {
 
 /** The links of a rendered page, each with its address, its text, its `rel` and whether it marks the page shown. */
 export function linksOf(markup: string) {
-  return [...markup.matchAll(/<a ([^>]*)>([^<]*)</g)].map(
-    ([, attributes = "", text = ""]) => ({
-      href: /href="([^"]*)"/.exec(attributes)?.[1]?.replaceAll("&amp;", "&"),
-      rel: /rel="([^"]*)"/.exec(attributes)?.[1],
-      current: /aria-current="page"/.test(attributes),
-      text,
+  return [...markup.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/g)].map(
+    ([, attributes = "", inner = ""]) => ({
+      href: /\bhref="([^"]*)"/.exec(attributes)?.[1]?.replaceAll("&amp;", "&"),
+      rel: /\brel="([^"]*)"/.exec(attributes)?.[1],
+      current: /\baria-current="page"/.test(attributes),
+      text: textOf(inner),
     }),
   );
 }
@@ -57,6 +57,58 @@ export const textOf = (markup: string): string =>
     .replace(/<[^>]*>/g, " ")
     .replaceAll("&#x27;", "'")
     .replaceAll("&quot;", '"')
+    .replaceAll("&gt;", ">")
     .replaceAll("&amp;", "&")
     .replace(/\s+/g, " ")
     .trim();
+
+/** Whether the page links to `href` with `text`. */
+export const links = (page: string, href: string, text: string): boolean =>
+  linksOf(page).some((link) => link.href === href && link.text === text);
+
+/** How many rows of data the page's tables hold, their heading rows not counted. */
+export const rowsIn = (page: string): number =>
+  page.split(/<tr\b/).filter((row) => /<td\b/.test(row)).length;
+
+/** The text of the element with `id`. */
+export const textAt = (page: string, id: string): string | undefined => {
+  const tag = new RegExp(
+    `<(\\w+)\\b[^>]*\\bid="${id}"[^>]*>([\\s\\S]*?)</\\1>`,
+  );
+  const inner = tag.exec(page)?.[2];
+  return inner === undefined ? undefined : textOf(inner);
+};
+
+/** The text of each element the page marks as the current one. */
+export const currentIn = (page: string): string[] =>
+  [
+    ...page.matchAll(
+      /<(\w+)\b[^>]*\baria-current="true"[^>]*>([\s\S]*?)<\/\1>/g,
+    ),
+  ].map(([, , inner]) => textOf(inner ?? ""));
+
+const PAGES = `
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { ClassesPage } from "./classes.tsx";
+import { EntryPage } from "./entry.tsx";
+import { PanelPage } from "./panel.tsx";
+import { TrendPage } from "./trend.tsx";
+const pages = { ClassesPage, EntryPage, PanelPage, TrendPage };
+export const markup = (page, props) =>
+  renderToStaticMarkup(createElement(pages[page], props));
+`;
+
+/** A page's name and the props it is drawn from, to the markup it draws, with the app under the base `/`. */
+export type Markup = (
+  page: "ClassesPage" | "EntryPage" | "PanelPage" | "TrendPage",
+  props: object,
+) => string;
+
+let bundled: Promise<Markup> | undefined;
+
+/** The read-only screens' pages, bundled once however many tests ask. */
+export function pages(): Promise<Markup> {
+  bundled ??= screens<{ markup: Markup }>(PAGES).then(({ markup }) => markup);
+  return bundled;
+}

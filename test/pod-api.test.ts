@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { after, before, test, type TestContext } from "node:test";
 import { getRequestListener } from "@hono/node-server";
 import { loadHospital, loadStories } from "@the-cascade-protocol/sandbox/node";
+import { Hono } from "hono";
 import {
   ConnectionFailure,
   openPod,
@@ -74,7 +75,7 @@ const { appServer } = (await import(
   appServer: (served: {
     api: Api;
     own: () => Own;
-    chat: () => Promise<void>;
+    chat: Hono;
     back: () => undefined;
     pages: string;
   }) => App;
@@ -261,7 +262,7 @@ function served(built: Api, own: () => Own): [App, Call[]] {
   const app = appServer({
     api: recording,
     own,
-    chat: async () => undefined,
+    chat: new Hono(),
     back: () => undefined,
     pages: folder,
   });
@@ -1109,7 +1110,7 @@ test("the server answers its page to an address a person opens, even with a dot 
   const app = appServer({
     api: apis.get("in-process")!,
     own: () => ({ hosts: new Set(["localhost"]), origins: new Set() }),
-    chat: async () => undefined,
+    chat: new Hono(),
     back: () => undefined,
     pages,
   });

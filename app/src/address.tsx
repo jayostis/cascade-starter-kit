@@ -33,12 +33,21 @@ export function useGeneration(): number {
 }
 
 /**
- * Says the page is busy when the address changes under a screen with nothing said yet (Back or Forward), before the
- * screen's own effects run, so that the page is not ready for a screen that is still being drawn.
+ * Says the page is busy when the address changes under a screen with nothing said yet: at a Back or Forward as it
+ * leaves, and at any other move in the commit that draws the new address, before the screen's own effects run, so that
+ * the page is not ready for a screen that is still being drawn.
  */
 export function useOpening() {
   const { pathname, search } = useLocation();
   const first = useRef(true);
+  useEffect(() => {
+    const here = location.pathname + location.search;
+    const leaving = () => {
+      if (location.pathname + location.search !== here) busy("Opening…");
+    };
+    window.addEventListener("popstate", leaving);
+    return () => window.removeEventListener("popstate", leaving);
+  }, [pathname, search]);
   useLayoutEffect(() => {
     if (first.current) first.current = false;
     else if (document.body.dataset.state === "ready") busy("Opening…");
