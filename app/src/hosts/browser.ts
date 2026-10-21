@@ -180,18 +180,20 @@ const browser = {
 };
 
 /** PodApi in the page, an `Unopened` it throws named so, as the screens tell errors by name. */
-function named(api: Record<string, (input?: object) => Promise<unknown>>) {
+function named<T extends object>(api: T): T {
   return Object.fromEntries(
     Object.entries(api).map(([operation, run]) => [
       operation,
       (input?: object) =>
-        run(input).catch((error: unknown) => {
-          if (error instanceof Unopened)
-            Object.defineProperty(error, "name", { value: "Unopened" });
-          throw error;
-        }),
+        (run as (input?: object) => Promise<unknown>)(input).catch(
+          (error: unknown) => {
+            if (error instanceof Unopened)
+              Object.defineProperty(error, "name", { value: "Unopened" });
+            throw error;
+          },
+        ),
     ]),
-  ) as unknown as PodApi;
+  ) as T;
 }
 
 const inPage = named(podApi(browser));

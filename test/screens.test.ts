@@ -2046,7 +2046,11 @@ test("a card is drawn once, by the tables' names: with the tables not yet asked 
   const before = podPage(shown);
   assert.equal(count(before, 'class="change"'), 0);
   assert.match(textOf(before), /What changed\s*Naming what changed…/);
-  assert.equal(count(before, 'aria-busy="true"'), 2, "it and the credits wait");
+  assert.equal(
+    count(before, 'aria-busy="true"'),
+    3,
+    "it, the tiles and the credits wait",
+  );
 
   const about = new Map([
     [

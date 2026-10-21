@@ -612,7 +612,9 @@ export function PodPage({
           />
         ))}
       {tiles.length > 0 && (
-        <div className="tiles">{tiles.map(({ tile }) => tile)}</div>
+        <div className="tiles" aria-busy={about === undefined || undefined}>
+          {tiles.map(({ tile }) => tile)}
+        </div>
       )}
       {about === undefined && tiles.length > 0 ? (
         <Pending lines={3} pitch="2rem" said="Loading the credits…" />

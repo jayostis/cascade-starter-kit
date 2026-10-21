@@ -101,7 +101,7 @@ type Input = Record<string, unknown> & { pod: string };
 interface Listed {
   readonly name: string;
   readonly description: string;
-  readonly inputSchema: JSONSchema7;
+  readonly inputSchema: InputSchema;
   readonly tier: string;
   readonly ofPod?: boolean;
   readonly opens?: boolean;
@@ -116,11 +116,11 @@ interface Listed {
 const LISTED = TOOLS as unknown as readonly Listed[];
 
 /** `schema` as the AI SDK takes it, its input checked as the runtime checks a tool's. */
-function checked(schema: JSONSchema7) {
-  return jsonSchema<Input>(schema, {
+function checked(schema: InputSchema) {
+  return jsonSchema<Input>(schema as JSONSchema7, {
     validate(value) {
       try {
-        checkInput(schema as never, value);
+        checkInput(schema, value);
         return { success: true, value: value as Input };
       } catch (error) {
         if (!isRefusal(error)) throw error;
@@ -175,9 +175,7 @@ async function running<T>(run: () => Promise<T>): Promise<T> {
 export function chatTools(api: PodApi): ToolSet {
   return Object.fromEntries(
     LISTED.map((each) => {
-      const schema = each.ofPod
-        ? (withPod(each.inputSchema as InputSchema) as JSONSchema7)
-        : each.inputSchema;
+      const schema = each.ofPod ? withPod(each.inputSchema) : each.inputSchema;
       const offered = {
         description: each.description,
         inputSchema: checked(schema),

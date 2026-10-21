@@ -231,6 +231,7 @@ script goes after `--`, or npm keeps it for itself.
 - `npm run reset` removes every pod and loads Alex's, Priya's, Martin's and Tamsin's again, as
   the File menu's "Reset all data" does: both load the kits through
   `restoreKits` in `pods.ts`.
+- `npm run pod:new <name>` makes an empty pod.
 - `npm run pod:load -- <kit> [--through <step>] [--as <name>]` replays a kit's
   story into `pods/<name>/`. One app can hold a kit at two points:
   `npm run pod:load -- alex-rivera --through J24 --as alex-rivera-j24` beside
