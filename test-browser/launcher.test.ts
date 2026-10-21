@@ -77,17 +77,15 @@ test("a new pod's person signs in at the SMART launcher in a popup, on its own p
   const context = await browser.newContext();
   try {
     const page = watched(await context.newPage());
-    /** The patient the launcher's token names, or why its body could not be read. */
-    const patient = new Promise<string>((resolve) => {
-      page.on("response", (response) => {
-        if (response.url().endsWith("/auth/token"))
-          resolve(
-            response.json().then(
-              (body: { patient?: string }) => body.patient ?? "no patient",
-              (error: unknown) => `an unread token: ${String(error)}`,
-            ),
-          );
-      });
+    /** The patient the launcher's token names, or why its body could not be read, from a copy kept as it passes. */
+    let patient: Promise<string> = Promise.resolve("no token was asked for");
+    await context.route("**/auth/token", async (route) => {
+      const response = await route.fetch();
+      patient = response.json().then(
+        (body: { patient?: string }) => body.patient ?? "no patient",
+        (error: unknown) => `an unread token: ${String(error)}`,
+      );
+      await route.fulfill({ response });
     });
     await page.goto(`${served.url}try/`);
     await settled(page);
