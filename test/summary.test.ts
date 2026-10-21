@@ -2817,6 +2817,11 @@ test("Ask about this: once the chat names a model, each What changed card, each 
       asksOf(markup).filter(({ kind }) => kind === asked[0].kind),
       asked,
     );
+    assert.deepEqual(
+      [...new Set(asksOf(markup).map(({ kind }) => kind))],
+      [asked[0].kind],
+      "the page draws no other kind of ask",
+    );
     for (const [button, inside] of markup.matchAll(
       /<button [^>]*data-ask="[^>]*>(.*?)<\/button>/g,
     )) {

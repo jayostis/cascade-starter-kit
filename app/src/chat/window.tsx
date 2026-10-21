@@ -26,7 +26,7 @@ import {
   useState,
   type RefObject,
 } from "react";
-import { useNavigate } from "react-router";
+import { useLocation, useNavigate } from "react-router";
 import {
   firstQuestion,
   maps,
@@ -275,6 +275,14 @@ function Thread({
     latest.current = { pod, running, asking, saved: saved.bind(null, id) };
   });
   const failed = useRef(false);
+  /** That this chat is no longer open: an answer to a tool it called would continue a chat nothing draws. */
+  const gone = useRef(false);
+  useEffect(() => {
+    gone.current = false;
+    return () => {
+      gone.current = true;
+    };
+  }, []);
   const continued = useRef(new Set<string>());
   const transport = useMemo(
     () =>
@@ -298,7 +306,7 @@ function Thread({
     onToolCall: ({ toolCall }) => {
       const { toolName, toolCallId } = toolCall;
       void run(toolName, toolCall.input as ToolInput).then((answer) => {
-        if (answer === undefined) return;
+        if (answer === undefined || gone.current) return;
         void helpers.current.addToolOutput(
           "output" in answer
             ? { tool: toolName, toolCallId, output: answer.output }
@@ -326,7 +334,7 @@ function Thread({
       return true;
     },
     onFinish: ({ message, messages, isAbort, isError }) => {
-      failed.current = isError;
+      failed.current = isError || isAbort;
       if (!isAbort) return;
       const at = noteAt(message, messages);
       if (at !== undefined)
@@ -520,6 +528,10 @@ function Window({ model, pod }: { model: ChatModel; pod: string }) {
   const { sealed, suggestions } = usePodChat(pod);
   const known = useRef(sealed);
   known.current = sealed;
+  /** The last pod the app said anything of, and what: a chat leaving a pod it never said anything of is sealed. */
+  const learned = useRef<{ pod: string; sealed: boolean }>(undefined);
+  if (sealed !== undefined) learned.current = { pod, sealed };
+  const { pathname, search } = useLocation();
   /** The chats kept only in the page: an encrypted pod's, and one shown before the app said whether its pod is. */
   const inPage = useRef<Kept[]>([]);
   const stored = () => [
@@ -540,9 +552,10 @@ function Window({ model, pod }: { model: ChatModel; pod: string }) {
   const [recent, setRecent] = useState(false);
   const [running, setRunning] = useState(false);
   const following = useRef(false);
-  const now = useRef({ running, first });
+  const at = pathname + search;
+  const now = useRef({ running, first, at });
   useLayoutEffect(() => {
-    now.current = { running, first };
+    now.current = { running, first, at };
   });
 
   const fold = useCallback((to: boolean) => {
@@ -577,7 +590,9 @@ function Window({ model, pod }: { model: ChatModel; pod: string }) {
       if (opening) show(kept);
       const unsaid = (each: Kept) =>
         each.sealed === true ||
-        (each.id === kept.id && known.current === undefined);
+        (inPage.current.some(({ id }) => id === each.id)
+          ? !(each.id === kept.id && known.current === false)
+          : each.id === kept.id && known.current === undefined);
       inPage.current = list.filter(unsaid);
       const open = shownChat.current;
       keepChats(
@@ -591,7 +606,7 @@ function Window({ model, pod }: { model: ChatModel; pod: string }) {
 
   useEffect(() => {
     if (sealed === undefined) return;
-    if (sealed || shownChat.current.messages.length === 0) setChats(stored());
+    if (shownChat.current.messages.length === 0) setChats(stored());
     else keep(shownChat.current);
   }, [sealed, keep]);
 
@@ -600,7 +615,9 @@ function Window({ model, pod }: { model: ChatModel; pod: string }) {
     if (shown.pod === pod) return;
     if (following.current) {
       following.current = false;
-      keep({ ...shown, pod });
+      const was =
+        learned.current?.pod === shown.pod ? learned.current.sealed : undefined;
+      keep({ ...shown, pod, ...(was === false ? {} : { sealed: true }) });
       return;
     }
     show(
@@ -609,6 +626,11 @@ function Window({ model, pod }: { model: ChatModel; pod: string }) {
     );
     setChats(stored());
   }, [pod]);
+
+  // After the pod effect, which reads it on the move that changes the pod: a move that stays in the pod is over.
+  useEffect(() => {
+    following.current = false;
+  }, [pathname, search]);
 
   const saved = useCallback(
     (id: string, messages: readonly UIMessage[], note?: [string, Note]) => {
@@ -644,10 +666,11 @@ function Window({ model, pod }: { model: ChatModel; pod: string }) {
 
   const open = useCallback(
     (address: string) => {
-      if (now.current.running) return;
+      const to = routed(new URL(address, location.href));
+      if (now.current.running || to === now.current.at) return;
       following.current = true;
       busy("Opening…");
-      void navigate(routed(new URL(address, location.href)));
+      void navigate(to);
     },
     [navigate],
   );

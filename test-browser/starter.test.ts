@@ -266,11 +266,24 @@ test("asking to open another pod moves the app there in place, and the question,
     await page.waitForURL(`${modelled.origin}/pods/ines-calloway/`);
     await page.locator(".chat-log .model", { hasText: "Done." }).waitFor();
   });
-  assert.equal(await page.locator("h1").first().textContent(), "Ines Calloway");
+  await page
+    .locator("h1", { hasText: /^Ines Calloway$/ })
+    .first()
+    .waitFor();
   assert.equal(await page.locator(".chat-log .you").textContent(), ASKS);
   assert.equal(await page.locator(".chat-log .model").textContent(), "Done.");
   assert.equal(
     await page.locator(".chat-recent li button").textContent(),
+    ASKS,
+  );
+  await page.waitForFunction(
+    (title) =>
+      (
+        JSON.parse(localStorage.getItem("cascade.chats") ?? "[]") as {
+          title: string;
+          pod: string;
+        }[]
+      ).some((each) => each.title === title && each.pod === "ines-calloway"),
     ASKS,
   );
   const { chats, open } = await storage(page);
@@ -278,6 +291,22 @@ test("asking to open another pod moves the app there in place, and the question,
     chats.filter(({ title }) => title === ASKS).map(({ id, pod }) => [id, pod]),
     [[open, "ines-calloway"]],
   );
+  await page.close();
+});
+
+test("a move within the pod shown does not make the chat follow the next click to another pod", async (t) => {
+  if (skipped(t, "chat")) return;
+  const page = await browser.newPage();
+  await page.goto(`${modelled.origin}/pods/ines-calloway/`);
+  await ask(page, ASKS);
+  await page.locator(".chat-log .model", { hasText: "Done." }).waitFor();
+  await page.locator("aside nav a", { hasText: "Ada Lovelace" }).click();
+  await page
+    .locator("h1", { hasText: /^Ada Lovelace$/ })
+    .first()
+    .waitFor();
+  assert.equal(await page.locator(".chat-log .you").count(), 0);
+  assert.equal(await page.locator(".chat-recent li button").count(), 0);
   await page.close();
 });
 
@@ -357,6 +386,34 @@ test("a write the model asks for waits on the page's confirm: Cancel makes no po
   await asking.getByRole("button", { name: "Allow" }).click();
   await page.locator("aside nav a", { hasText: "Cora Diaz" }).waitFor();
   assert.equal((await pods()).includes("cora-diaz"), true);
+  await page.close();
+});
+
+test("a write the model asked for is withdrawn when its chat is closed: the box goes, nothing is made, and the model is not asked again", async (t) => {
+  if (skipped(t, "chat")) return;
+  const page = await browser.newPage();
+  await page.goto(`${modelled.origin}/pods/ada-lovelace/`);
+  const posts: string[] = [];
+  page.on("request", (request) => {
+    if (isPost(request)) posts.push(request.url());
+  });
+  await ask(page, "make a pod for Dora Xu");
+  const asking = page.getByRole("alertdialog");
+  await asking.waitFor();
+  const before = posts.length;
+  await page.getByRole("button", { name: "New chat" }).dispatchEvent("click");
+  await asking.waitFor({ state: "detached" });
+  await page.waitForTimeout(500);
+  assert.equal(posts.length, before);
+  const made = (await (
+    await post(modelled.origin, "/api/pods", {})
+  ).json()) as {
+    pods: { name: string }[];
+  };
+  assert.equal(
+    made.pods.some(({ name }) => name === "dora-xu"),
+    false,
+  );
   await page.close();
 });
 
@@ -711,6 +768,26 @@ test("an encrypted pod's chat is kept in neither localStorage nor sessionStorage
   await page.locator(".chat-log .stopped").waitFor();
   const { all } = await storage(page);
   assert.equal(all.includes("long story about Grace"), false, all);
+
+  // A question sent before the app has said the pod is encrypted, whose answer moves the chat to another pod: the
+  // lookup is held until the chat has moved, so the follow happens with the encryption unknown.
+  let release = () => {};
+  const held = new Promise<void>((done) => (release = done));
+  await page.route("**/api/pod", async (route) => {
+    if (route.request().postData()?.includes(made.pod) === true) await held;
+    await route.continue();
+  });
+  await page.goto(`${modelled.origin}/pods/${made.pod}/`);
+  await page.getByLabel("Ask a question").waitFor();
+  await ask(page, ASKS);
+  await page.waitForURL(`${modelled.origin}/pods/ines-calloway/`);
+  await page.locator(".chat-log .model", { hasText: "Done." }).waitFor();
+  release();
+  await page.locator(".chat-recent li button", { hasText: ASKS }).waitFor({
+    state: "attached",
+  });
+  const followed = await storage(page);
+  assert.equal(followed.all.includes(ASKS), false, followed.all);
   await page.close();
 });
 

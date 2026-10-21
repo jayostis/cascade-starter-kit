@@ -6,6 +6,8 @@ import {
   Fragment,
   useCallback,
   useContext,
+  useEffect,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -16,16 +18,47 @@ export interface Asking {
   readonly input: Readonly<Record<string, unknown>>;
 }
 
-/** Shows the person `asking` and resolves true on Allow, false on Cancel; asks made meanwhile wait their turn. */
-export type Confirm = (asking: Asking) => Promise<boolean>;
+/**
+ * Shows the person `asking` and resolves true on Allow, false on Cancel; asks made meanwhile wait their turn. An ask
+ * whose `signal` aborts is withdrawn, from the box or from the queue, and resolves false.
+ */
+export type Confirm = (
+  asking: Asking,
+  signal?: AbortSignal,
+) => Promise<boolean>;
+
+/** What the person is asked to allow, for each write a page tool makes. */
+export const ACTIONS: Readonly<Record<string, string>> = {
+  make_pod: "Make a pod",
+  check_tables: "Check the reference tables for newer versions",
+  set_world_date: "Set the date the demo hospitals answer as of",
+};
+
+/** What the model is told when the person cancels a write. */
+export const SAID_NO = "The person said no";
 
 const ConfirmContext = createContext<Confirm | undefined>(undefined);
 
+/** `confirm` for the calling component: its asks are withdrawn when it unmounts, so none outlives who asked. */
 export function useConfirm(): Confirm {
   const confirm = useContext(ConfirmContext);
   if (confirm === undefined)
     throw new Error("the app is drawn with no confirm box");
-  return confirm;
+  const mounted = useRef(new AbortController());
+  useEffect(() => {
+    if (mounted.current.signal.aborted) mounted.current = new AbortController();
+    return () => mounted.current.abort();
+  }, []);
+  return useCallback<Confirm>(
+    (asking, signal) =>
+      confirm(
+        asking,
+        signal === undefined
+          ? mounted.current.signal
+          : AbortSignal.any([mounted.current.signal, signal]),
+      ),
+    [confirm],
+  );
 }
 
 interface Waiting {
@@ -40,9 +73,18 @@ const said = (value: unknown) =>
 export function ConfirmProvider({ children }: { children: ReactNode }) {
   const [queue, setQueue] = useState<readonly Waiting[]>([]);
   const confirm = useCallback<Confirm>(
-    (asking) =>
+    (asking, signal) =>
       new Promise((answer) => {
+        if (signal?.aborted) return answer(false);
         const waiting = { asking, answer };
+        signal?.addEventListener(
+          "abort",
+          () => {
+            setQueue((now) => now.filter((each) => each !== waiting));
+            answer(false);
+          },
+          { once: true },
+        );
         setQueue((now) => (now.includes(waiting) ? now : [...now, waiting]));
       }),
     [],
