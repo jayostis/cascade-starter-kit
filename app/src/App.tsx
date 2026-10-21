@@ -272,14 +272,16 @@ function PodScreen({
       : undefined;
   const followed = following?.n;
   const tracked = useRef<number>(undefined);
+  const looping = useRef<AbortController>(undefined);
   const follow = useCallback(
     (n: number) => {
       if (tracked.current === n) return;
       tracked.current = n;
+      const { signal } = (looping.current = new AbortController());
       void (async () => {
         for (let wait: "change" | undefined; ; wait = "change") {
           const now = await api.connection({ pod, connection: n, wait });
-          if (tracked.current !== n) return;
+          if (signal.aborted) return;
           if (now.broughtIn) {
             tracked.current = undefined;
             return navigate(at, { replace: true, state: goState() });
@@ -300,7 +302,7 @@ function PodScreen({
         }
       })().catch(
         (error: unknown) =>
-          tracked.current === n &&
+          !signal.aborted &&
           setShown({
             at,
             page: {
@@ -317,6 +319,7 @@ function PodScreen({
   useEffect(
     () => () => {
       tracked.current = undefined;
+      looping.current?.abort();
     },
     [at],
   );
@@ -538,25 +541,26 @@ export function App() {
       setPeople(await host.people());
       await host.firstVisit();
       setPods((await api.pods()).pods);
-    })().catch(failed);
+    })().catch((error: unknown) => {
+      console.error(error);
+      failed();
+    });
   }, [api, host]);
   useEffect(() => {
     void firstReady
       .then(() => host.engine())
-      .then(
-        async () => {
-          document.body.dataset.engine = "ready";
-          const { held, failed: unread } = await api.held();
-          setTables({ held, read: unread ? "failed" : "read" });
-          setEngine("ready");
-          await host.tables().catch(() => undefined);
-          document.body.dataset.tables = "ready";
-        },
-        () => {
-          setTables((now) => ({ ...now, read: now.read ?? "failed" }));
-          setEngine("failed");
-        },
-      );
+      .then(async () => {
+        document.body.dataset.engine = "ready";
+        const { held, failed: unread } = await api.held();
+        setTables({ held, read: unread ? "failed" : "read" });
+        setEngine("ready");
+        await host.tables().catch(() => undefined);
+        document.body.dataset.tables = "ready";
+      })
+      .catch(() => {
+        setTables((now) => ({ ...now, read: now.read ?? "failed" }));
+        setEngine("failed");
+      });
   }, [api, host]);
   const [model, setModel] = useState<{ named?: ChatModel }>();
   useEffect(() => {
