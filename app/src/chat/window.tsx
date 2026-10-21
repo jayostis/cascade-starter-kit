@@ -41,6 +41,7 @@ import { routed, useAddress } from "../address.tsx";
 import { type ChatModel, useHost } from "../api.tsx";
 import type { Asked } from "../ask.tsx";
 import { busy } from "../doing.ts";
+import { muted, quiet, tag } from "../look.ts";
 import {
   forgetOpen,
   fresh,
@@ -110,28 +111,28 @@ function Card({ finding }: { finding: Found }) {
   const test = finding.test.name ?? finding.test.notation ?? finding.test.code;
   const base = finding.view.replace(/trend\?.*$/, "");
   return (
-    <div className="card">
+    <div className="card m-0 rounded-[10px] border border-line bg-page px-[0.9rem] py-[0.7rem] [&_p]:my-[0.15rem]">
       <p className="said">
         {finding.said ??
           `${test}: not enough results around ${finding.medication.name}`}
       </p>
-      <p className="muted">
+      <p className={muted}>
         {sideSaid("Before", finding.before, finding.unit)}
       </p>
-      <p className="muted">{sideSaid("After", finding.after, finding.unit)}</p>
-      <ul>
+      <p className={muted}>{sideSaid("After", finding.after, finding.unit)}</p>
+      <ul className="my-[0.4rem] max-h-36 list-none overflow-auto p-0 text-[0.9rem]">
         {finding.rows.map((row) => (
           <li key={`${row.entry} ${row.side}`}>
             <a href={`${base}entries/${encodeURIComponent(row.entry)}`}>
               {`${row.performed.slice(0, 10)}: ${row.value} ${row.unit}`}
             </a>{" "}
-            <span className="tag">{row.side}</span>
+            <span className={tag}>{row.side}</span>
           </li>
         ))}
       </ul>
       <button
         type="button"
-        className="quiet"
+        className={quiet}
         onClick={() => open(finding.view)}
       >
         Open the trend
@@ -154,9 +155,12 @@ function Cards() {
   return found.map((finding) => <Card key={finding.key} finding={finding} />);
 }
 
+const STOPPED = "stopped text-[0.9rem] text-muted";
 const Said = ({ text }: { text: string }) => <div>{text}</div>;
 const Refused = ({ data }: { data: { text?: string } }) => (
-  <div className="refused">The model declined: {data.text}</div>
+  <div className="refused rounded-r-[7px] border-l-[3px] border-accent bg-soft px-[0.8rem] py-[0.4rem]">
+    The model declined: {data.text}
+  </div>
 );
 const Silent = () => null;
 
@@ -165,9 +169,13 @@ function Noted({ inside }: { inside: boolean }) {
   const id = useAuiState(({ message }) => message.id);
   const note = useContext(DrawnContext).notes[id];
   if (note?.kind === "stopped")
-    return inside ? <div className="stopped">Stopped.</div> : null;
+    return inside ? <div className={STOPPED}>Stopped.</div> : null;
   if (note?.kind === "failed" && !inside)
-    return <div className="failed">No answer: {note.text}</div>;
+    return (
+      <div className="failed rounded-r-[7px] border-l-[3px] border-warm bg-warm-bg px-[0.8rem] py-[0.4rem] text-warm">
+        No answer: {note.text}
+      </div>
+    );
   return null;
 }
 
@@ -176,12 +184,12 @@ function UserMessage() {
   const stopped = useContext(DrawnContext).notes[id]?.kind === "stopped";
   return (
     <>
-      <MessagePrimitive.Root className="you">
+      <MessagePrimitive.Root className="you max-w-[80%] self-end rounded-[10px] bg-tint px-[0.8rem] py-[0.3rem] whitespace-pre-wrap">
         <MessagePrimitive.Parts components={{ Text: Said }} />
       </MessagePrimitive.Root>
       {stopped && (
-        <div className="model">
-          <div className="stopped">Stopped.</div>
+        <div className="model whitespace-pre-wrap">
+          <div className={STOPPED}>Stopped.</div>
         </div>
       )}
       <Noted inside={false} />
@@ -192,7 +200,7 @@ function UserMessage() {
 function AssistantMessage() {
   return (
     <>
-      <MessagePrimitive.Root className="model">
+      <MessagePrimitive.Root className="model whitespace-pre-wrap">
         <MessagePrimitive.Parts
           components={{
             Text: Said,
@@ -407,7 +415,7 @@ function Thread({
     <AssistantRuntimeProvider runtime={runtime}>
       <DrawnContext.Provider value={drawn}>
         <div
-          className="chat-about muted"
+          className={`chat-about ${muted} mb-[0.4rem] line-clamp-2 flex-none wrap-anywhere max-md:line-clamp-1`}
           hidden={context === undefined}
           title={context === undefined ? undefined : `About: ${kept.label}`}
         >
@@ -415,7 +423,7 @@ function Thread({
         </div>
         <ThreadPrimitive.Viewport
           ref={log}
-          className="chat-log"
+          className="chat-log mb-2 flex min-h-16 flex-[0_1_auto] flex-col gap-2 overflow-auto"
           role="log"
           aria-live="polite"
           hidden={empty}
@@ -433,13 +441,13 @@ function Thread({
           />
         </ThreadPrimitive.Viewport>
         <div
-          className="chat-chips"
+          className="chat-chips mb-2 flex min-h-0 flex-[0_1_auto] flex-wrap gap-[0.4rem] overflow-auto"
           hidden={!empty || context !== undefined || suggestions.length === 0}
         >
           {suggestions.map((text) => (
             <button
               type="button"
-              className="quiet"
+              className={`${quiet} rounded-full px-[0.7rem] py-[0.15rem] text-[0.85rem]`}
               key={text}
               data-ask-text={text}
             >
@@ -447,8 +455,9 @@ function Thread({
             </button>
           ))}
         </div>
-        <ComposerPrimitive.Root className="chat-form">
+        <ComposerPrimitive.Root className="chat-form flex flex-none gap-2">
           <ComposerPrimitive.Input
+            className="min-w-0 flex-1"
             render={<input />}
             name="text"
             autoComplete="off"
@@ -461,7 +470,7 @@ function Thread({
             Send
           </ComposerPrimitive.Send>
           <ComposerPrimitive.Cancel
-            className="quiet chat-stop"
+            className={`${quiet} chat-stop`}
             hidden={!busyNow}
           >
             Stop
@@ -723,29 +732,32 @@ function Window({ model, pod }: { model: ChatModel; pod: string }) {
   const here = chats.filter((each) => each.pod === pod);
   return (
     <section
-      className="chat"
+      className="chat group sticky bottom-0 z-8 flex max-h-[max(33vh,15rem)] flex-col border-t border-line bg-panel px-5 py-[0.6rem] shadow-[0_-4px_16px_rgb(0_0_0/0.08)] data-[folded=true]:[&>:not(.chat-bar)]:hidden"
       aria-label="Chat"
       data-folded={folded ? "true" : "false"}
     >
-      <div className="chat-bar">
+      <div className="chat-bar mb-[0.4rem] flex flex-none flex-wrap items-center gap-3 group-data-[folded=true]:mb-0 max-md:gap-x-3 max-md:gap-y-1">
         <strong>Chat</strong>
-        <span className="muted">
+        <span className={muted}>
           {model.name}
           {model.local ? ", on this computer" : `, from ${model.provider}`}
         </span>
         <details
-          className="chat-recent"
+          className="chat-recent relative text-[0.9rem]"
           open={recent}
           onToggle={(event) => setRecent(event.currentTarget.open)}
         >
-          <summary>Recent chats</summary>
-          <ul>
+          <summary className="cursor-pointer text-accent">Recent chats</summary>
+          <ul className="absolute bottom-[calc(100%+0.35rem)] left-0 z-10 m-0 max-h-56 min-w-64 list-none overflow-auto rounded-lg border border-line bg-panel p-[0.3rem] shadow-pop">
             {here.length === 0 ? (
-              <li className="empty">No chats yet</li>
+              <li className="empty px-[0.6rem] py-[0.3rem] text-muted">
+                No chats yet
+              </li>
             ) : (
               here.map((each) => (
                 <li key={each.id}>
                   <button
+                    className="block w-full truncate border-transparent bg-transparent text-left text-text hover:bg-soft"
                     type="button"
                     onClick={() => {
                       if (running) return;
@@ -764,7 +776,7 @@ function Window({ model, pod }: { model: ChatModel; pod: string }) {
         </details>
         <button
           type="button"
-          className="quiet chat-new"
+          className={`${quiet} chat-new ml-auto px-[0.7rem] py-[0.15rem]`}
           onClick={() => {
             if (!running) begin();
           }}
@@ -773,7 +785,7 @@ function Window({ model, pod }: { model: ChatModel; pod: string }) {
         </button>
         <button
           type="button"
-          className="quiet chat-fold"
+          className={`${quiet} chat-fold px-[0.7rem] py-[0.15rem]`}
           aria-expanded={!folded}
           onClick={() => fold(!folded)}
         >
@@ -807,8 +819,11 @@ export function ChatWindow({
 }) {
   if (model === undefined)
     return (
-      <section className="chat" aria-label="Chat">
-        <p className="chat-off">
+      <section
+        className="chat sticky bottom-0 z-8 flex max-h-[max(33vh,15rem)] flex-col border-t border-line bg-panel px-5 py-[0.6rem] shadow-[0_-4px_16px_rgb(0_0_0/0.08)]"
+        aria-label="Chat"
+      >
+        <p className="chat-off m-0 flex-none text-[0.9rem] text-muted">
           To chat with a model about these pods, run <code>npm run model</code>.
         </p>
       </section>

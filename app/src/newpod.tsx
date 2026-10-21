@@ -19,6 +19,7 @@ import { Notice, useActions } from "./actions.tsx";
 import { ROUTED, useGeneration } from "./address.tsx";
 import { isRefusal, useHost } from "./api.tsx";
 import { ready } from "./doing.ts";
+import { lead, muted, note, row, stack, stackLabel } from "./look.ts";
 import { Box, PostButton } from "./parts.tsx";
 
 /** Whether `error` is what the rules refused, rather than a pod that would not open. */
@@ -40,10 +41,17 @@ function Choice({
   onChoose: () => void;
 }) {
   return (
-    <li>
-      <PostButton action="make" fields={fields} doing={doing} onPost={onChoose}>
+    <li className="my-[0.35rem]">
+      <PostButton
+        action="make"
+        block
+        className="block w-full border-line bg-soft text-left text-text hover:border-accent hover:bg-tint"
+        fields={fields}
+        doing={doing}
+        onPost={onChoose}
+      >
         {label}
-        <span className="muted">{note}</span>
+        <span className="muted block text-[0.8rem] text-muted">{note}</span>
       </PostButton>
     </li>
   );
@@ -87,7 +95,7 @@ export function NewPod({
         they download, and hospitals they sign in to. It notices when two
         sources describe the same thing, and when they disagree.
       </p>
-      <p className="encrypt">
+      <p className="encrypt my-3">
         <label>
           <input
             type="checkbox"
@@ -97,7 +105,7 @@ export function NewPod({
           />{" "}
           Encrypt this pod with six words
         </label>
-        <span className="muted">
+        <span className="muted ml-[1.6rem] block text-[0.9rem] text-muted">
           You get six words to keep. Only they open the pod again.
         </span>
       </p>
@@ -109,7 +117,7 @@ export function NewPod({
               made up, and signing in needs no password.
             </strong>
           </p>
-          <ul className="people">
+          <ul className="people mt-2 mr-0 mb-5 ml-0 list-none p-0">
             {demo.map((person) => (
               <Choice
                 key={person.name}
@@ -133,7 +141,7 @@ export function NewPod({
               places.
             </strong>
           </p>
-          <ul className="people">
+          <ul className="people mt-2 mr-0 mb-5 ml-0 list-none p-0">
             {loadable.map((name) => (
               <Choice
                 key={name}
@@ -156,7 +164,7 @@ export function NewPod({
       <form
         method="post"
         action="make"
-        className="row"
+        className={row}
         data-doing="Making the pod…"
         onSubmit={(event) => {
           event.preventDefault();
@@ -164,6 +172,7 @@ export function NewPod({
         }}
       >
         <input
+          className="min-w-40 flex-1"
           ref={field}
           name="person"
           placeholder="A person's name"
@@ -274,12 +283,17 @@ export function SixWords({
   return (
     <>
       <h1>Your six words</h1>
-      <p className="lead">
+      <p className={lead}>
         For {personName(pod, new Map([[pod, person]]))}'s pod.
       </p>
-      <ol className="words">
+      <ol className="words my-4 grid [counter-reset:word] list-none grid-cols-[repeat(3,1fr)] gap-[0.6rem] p-0">
         {words.split(" ").map((word, at) => (
-          <li key={at}>{word}</li>
+          <li
+            className="rounded-lg border border-line bg-soft px-4 py-[0.8rem] text-[1.35rem] font-semibold [counter-increment:word] before:mr-[0.6rem] before:text-[0.8rem] before:font-normal before:text-muted before:content-[counter(word)]"
+            key={at}
+          >
+            {word}
+          </li>
         ))}
       </ol>
       <p>
@@ -287,12 +301,12 @@ export function SixWords({
         only way into this pod. Nobody can recover them: if you lose them, the
         pod's records are gone for good.
       </p>
-      <p className="muted">
+      <p className={muted}>
         Encryption hides what the records say. It does not hide that this pod
         exists, its name, how many files it has or their sizes.
       </p>
       {problem !== undefined && (
-        <p className="note" role="alert">
+        <p className={note} role="alert">
           {problem}
         </p>
       )}
@@ -300,7 +314,7 @@ export function SixWords({
         key={attempt}
         method="post"
         action="confirm-words"
-        className="stack"
+        className={stack}
         data-doing="Making the pod…"
         autoComplete="on"
         onSubmit={(event) => {
@@ -334,7 +348,7 @@ export function SixWords({
           }, "Making the pod…");
         }}
       >
-        <label>
+        <label className={stackLabel}>
           Pod{" "}
           <input
             type="text"
@@ -343,7 +357,7 @@ export function SixWords({
             defaultValue={pod}
           />
         </label>
-        <label>
+        <label className={stackLabel}>
           Password{" "}
           <input
             type="password"
@@ -352,7 +366,7 @@ export function SixWords({
             defaultValue={words}
           />
         </label>
-        <p className="muted">
+        <p className={muted}>
           Your password manager can save these as the pod's password.{" "}
           <button type="button" data-copy-words onClick={() => void copy()}>
             Copy words
@@ -365,7 +379,7 @@ export function SixWords({
           <strong>Check that you have them.</strong> Type the second and the
           fifth word.
         </p>
-        <label>
+        <label className={stackLabel}>
           Word 2{" "}
           <input
             name="word2"
@@ -375,7 +389,7 @@ export function SixWords({
             required
           />
         </label>
-        <label>
+        <label className={stackLabel}>
           Word 5{" "}
           <input
             name="word5"
@@ -424,7 +438,7 @@ export function Unlock({
         <p>This pod is encrypted. Type its six words to open it.</p>
       )}
       {said !== undefined && (
-        <p className="note" role="alert">
+        <p className={note} role="alert">
           {said}
         </p>
       )}
@@ -433,7 +447,7 @@ export function Unlock({
           key={attempt}
           method="post"
           action="unlock"
-          className="stack"
+          className={stack}
           data-doing="Opening the pod…"
           autoComplete="on"
           onSubmit={(event) => {
@@ -460,7 +474,7 @@ export function Unlock({
             }, "Opening the pod…");
           }}
         >
-          <label>
+          <label className={stackLabel}>
             Pod{" "}
             <input
               type="text"
@@ -469,7 +483,7 @@ export function Unlock({
               defaultValue={pod}
             />
           </label>
-          <label>
+          <label className={stackLabel}>
             Your six words{" "}
             <input
               type="password"

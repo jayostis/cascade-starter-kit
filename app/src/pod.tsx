@@ -52,6 +52,18 @@ import type { ConnectionNow } from "./api.tsx";
 import { AskButton } from "./ask.tsx";
 import { Chart } from "./chart.tsx";
 import { Connection, SignIn, WorldDate } from "./hospitals.tsx";
+import {
+  bullet,
+  bullets,
+  buttonQuiet,
+  card,
+  lead as leadLook,
+  muted,
+  note,
+  row,
+  tag,
+  tagWarm,
+} from "./look.ts";
 import { Box, Pending, Tag, useReopenedBox } from "./parts.tsx";
 
 /** What a pod's page is drawn from: its answers, and once the tables can say, what they say of them. */
@@ -104,14 +116,14 @@ function Table({
     <>
       <input
         type="search"
-        className="filter"
+        className="filter mt-1 mb-3 w-full"
         placeholder="Filter"
         aria-label={`Filter ${section.title.toLowerCase()}`}
         onChange={(event) =>
           setWanted(event.currentTarget.value.trim().toLowerCase())
         }
       />
-      <div className="scroll">
+      <div className="scroll max-h-[60vh] overflow-auto pr-3">
         <table>
           <thead>
             <tr>
@@ -119,8 +131,9 @@ function Table({
                 const by =
                   index === at ? (up ? "ascending" : "descending") : undefined;
                 return (
-                  <th key={column.head} aria-sort={by}>
+                  <th className="group" key={column.head} aria-sort={by}>
                     <button
+                      className="inline cursor-pointer rounded-none border-0 bg-transparent p-0 text-[0.78rem] tracking-[0.06em] whitespace-nowrap text-muted uppercase group-[[aria-sort]]:text-accent group-aria-[sort=ascending]:after:content-['_↑'] group-aria-[sort=descending]:after:content-['_↓'] hover:text-accent"
                       type="button"
                       data-type={column.type}
                       onClick={() =>
@@ -152,9 +165,7 @@ function Table({
                     const text = shown(column, row);
                     const cell =
                       column.tag && text !== "" ? (
-                        <span
-                          className={`tag${column.warm?.(row) ? " warm" : ""}`}
-                        >
+                        <span className={column.warm?.(row) ? tagWarm : tag}>
                           {text}
                         </span>
                       ) : (
@@ -203,10 +214,24 @@ function tile(
       : []),
   ].join(", ");
   const opener = (
-    <a className="tile" key={id} href={`#${id}`}>
-      <span className="kind">{section.title}</span>
-      <span className="count">{current.length}</span>
-      <span className="peek">{names}</span>
+    <a
+      className={
+        by === undefined
+          ? "tile block rounded-[10px] border border-line bg-panel px-[1.1rem] py-4 text-text no-underline hover:border-accent hover:bg-tint"
+          : "tile block flex-1 bg-panel px-[1.1rem] py-4 text-text no-underline hover:bg-tint"
+      }
+      key={id}
+      href={`#${id}`}
+    >
+      <span className="kind block text-[0.78rem] tracking-[0.06em] text-muted uppercase">
+        {section.title}
+      </span>
+      <span className="count block text-[2rem] leading-[1.2] font-semibold text-accent">
+        {current.length}
+      </span>
+      <span className="peek mt-[0.2rem] block truncate text-[0.88rem] text-muted">
+        {names}
+      </span>
     </a>
   );
   return {
@@ -214,9 +239,16 @@ function tile(
       by === undefined ? (
         opener
       ) : (
-        <div className="tile-box" key={id}>
+        <div
+          className="tile-box flex flex-col overflow-hidden rounded-[10px] border border-line bg-panel hover:border-accent"
+          key={id}
+        >
           {opener}
-          <a className="by" href={by.href} title={by.title}>
+          <a
+            className="by block border-t border-line px-[1.1rem] py-[0.55rem] font-semibold no-underline hover:bg-tint"
+            href={by.href}
+            title={by.title}
+          >
             {by.label}
           </a>
         </div>
@@ -227,7 +259,7 @@ function tile(
         id={id}
         heading={
           <>
-            {section.title} <span className="muted">{rows.length}</span>
+            {section.title} <span className={muted}>{rows.length}</span>
           </>
         }
         wide
@@ -250,12 +282,17 @@ function Worth({
 }) {
   if (lines.length === 0 && !waiting) return null;
   return (
-    <div className="card worth">
+    <div className="card worth mb-5 rounded-[10px] border border-transparent bg-tint px-5 py-[1.1rem]">
       <h2>Worth a look</h2>
-      <ul>
+      <ul className={bullets}>
         {lines.map(({ sentence, entry, tag }) => (
-          <li className="arrive" key={`${entry} ${sentence}`}>
-            <a href={entryHref(entry)}>{sentence}</a>
+          <li
+            className={`arrive ${bullet} animate-arrive motion-reduce:animate-none`}
+            key={`${entry} ${sentence}`}
+          >
+            <a className="text-text hover:text-accent" href={entryHref(entry)}>
+              {sentence}
+            </a>
             {tag !== undefined && <Tag tag={tag} />}
             <AskButton
               about={{ kind: "worth", entry: entryId(entry) }}
@@ -298,13 +335,13 @@ function Change({
   const shown = rows.before.length + rows.after.length + rows.left.length;
   const times = points.map((point) => point.time);
   return (
-    <div className="change">
-      <p className="said">{sentence}</p>
+    <div className="change border-t border-line py-[0.9rem] [h2+&]:border-t-0 [h2+&]:pt-0">
+      <p className="said font-semibold">{sentence}</p>
       <p>
         {rounded(before.mean)} → {rounded(after.mean)} {unit}, the mean of{" "}
         {resultsSaid(before.count)} before and {after.count} after.
       </p>
-      {forgone !== undefined && <p className="muted">{forgone}</p>}
+      {forgone !== undefined && <p className={muted}>{forgone}</p>}
       <Chart
         id={id}
         plot={plot}
@@ -314,7 +351,7 @@ function Change({
         title={names.test}
         desc={`${resultsSaid(points.length)} from ${dayAt(Math.min(...times))} to ${dayAt(Math.max(...times))}. ${names.medication} ${kind === "after start" ? "started" : "stopped"} ${day(finding.medication.date)}.`}
       />
-      <p className="row">
+      <p className={row}>
         <a href={`#${id}`}>Show the {resultsSaid(shown)}</a>{" "}
         <a href={trendHref(finding)}>Open the trend</a>
         <AskButton about={{ kind: "finding", key }} label={sentence} />
@@ -326,12 +363,12 @@ function Change({
 /** The mechanism behind What changed, as `howOf` gives it: the pulls in order, and each medication's versions. */
 function How({ how, about }: { how: HowSaid; about: Abouts }) {
   return (
-    <div className="how">
-      <h3>Where this comes from</h3>
+    <div className="how border-t border-line py-[0.9rem]">
+      <h3 className="m-0 mb-[0.3rem] text-[0.95rem]">Where this comes from</h3>
       <p>
         The pod's records came in {how.pulls.length} imports, in this order:
       </p>
-      <ol>
+      <ol className="my-1 pl-[1.4rem]">
         {how.pulls.map((pull, at) => (
           <li key={at}>{pullSaid(pull)}</li>
         ))}
@@ -380,7 +417,7 @@ function Changed({
   );
   return (
     <>
-      <div className="card changes">
+      <div className={`${card} changes [&_p]:my-1`}>
         <h2>What changed</h2>
         {shown.length === 0 ? (
           <p>Nothing stands out yet.</p>
@@ -404,7 +441,7 @@ function Changed({
         {shown.length > 0 && how !== undefined && (
           <How how={how} about={about} />
         )}
-        <p className="muted">
+        <p className={muted}>
           These say what changed after what, never why. A clinician can say why.
         </p>
       </div>
@@ -419,7 +456,7 @@ function Changed({
             wide
           >
             {rows.left.length > 0 && (
-              <p className="muted">
+              <p className={muted}>
                 {rows.left.length} of these{" "}
                 {rows.left.length === 1 ? "was" : "were"} left out of the means.
               </p>
@@ -473,11 +510,11 @@ function BringIn({
   findHospital: string;
 }) {
   return (
-    <div className="card">
+    <div className={card}>
       <h2>{empty ? "Bring in records" : "Bring in more"}</h2>
       <p>Sign in at a hospital, see what it has, and bring it into this pod.</p>
       <WorldDate asOf={asOf} />
-      <div className="row">
+      <div className={row}>
         {(person?.at ?? []).map((hospital) => (
           <SignIn
             key={hospital.fhirBase}
@@ -487,7 +524,7 @@ function BringIn({
             Sign in at {hospitalName(hospital.name)}
           </SignIn>
         ))}
-        <a className="button quiet" href={findHospital}>
+        <a className={buttonQuiet} href={findHospital}>
           Find a hospital
         </a>
       </div>
@@ -561,19 +598,24 @@ export function PodPage({
   return (
     <>
       <h1>{personName(pod, titles)}</h1>
-      <p className="lead">{lead}</p>
+      <p className={leadLook}>{lead}</p>
       {places.length > 0 && (
-        <ul className="chips">
+        <ul className="chips mt-0 mr-0 mb-6 ml-0 flex list-none flex-wrap gap-[0.4rem] p-0">
           {places.map((place) => (
-            <li key={place}>{place}</li>
+            <li
+              className="rounded-full border border-line bg-panel px-[0.6rem] py-[0.15rem] text-[0.82rem] text-muted"
+              key={place}
+            >
+              {place}
+            </li>
           ))}
         </ul>
       )}
       {from !== undefined && (
-        <p className="note">Brought in the record from {hospitalName(from)}.</p>
+        <p className={note}>Brought in the record from {hospitalName(from)}.</p>
       )}
       {unheld.length > 0 && (
-        <p className="note">
+        <p className={note}>
           This pod was matched with{" "}
           {unheld.length === 1
             ? "a reference table version"
@@ -593,7 +635,7 @@ export function PodPage({
       />
       {due &&
         (about === undefined ? (
-          <div className="card changes">
+          <div className={`${card} changes [&_p]:my-1`}>
             <h2>What changed</h2>
             <Pending lines={4} said="Naming what changed…" />
           </div>
@@ -612,7 +654,10 @@ export function PodPage({
           />
         ))}
       {tiles.length > 0 && (
-        <div className="tiles" aria-busy={about === undefined || undefined}>
+        <div
+          className="tiles mb-5 grid grid-cols-[repeat(auto-fill,minmax(13.5rem,1fr))] gap-4"
+          aria-busy={about === undefined || undefined}
+        >
           {tiles.map(({ tile }) => tile)}
         </div>
       )}
@@ -620,7 +665,10 @@ export function PodPage({
         <Pending lines={3} pitch="2rem" said="Loading the credits…" />
       ) : (
         credits.map((credit) => (
-          <p className="muted arrive" key={credit}>
+          <p
+            className={`${muted} arrive animate-arrive motion-reduce:animate-none`}
+            key={credit}
+          >
             {credit}
           </p>
         ))

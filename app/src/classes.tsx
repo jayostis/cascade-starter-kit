@@ -16,6 +16,7 @@ import {
   versionName,
 } from "../said.ts";
 import { useAddress } from "./address.tsx";
+import { card, lead, muted, pickerLink, pickerList } from "./look.ts";
 import { Back, NotFound, sourceOf, useLoaded, Wrong } from "./screen.tsx";
 
 /** What the page is drawn from: PodApi's `classes`, its pairs as `Map`s again, and the series the app holds. */
@@ -107,7 +108,7 @@ export function ClassesPage({
       return found === undefined ? [] : [found];
     });
     return versions.length === 0 ? null : (
-      <p className="muted">
+      <p className={muted}>
         From{" "}
         {listed(
           versions.map(
@@ -147,17 +148,18 @@ export function ClassesPage({
     <>
       <Back pod={pod} titles={titles} />
       <h1>Medicines by class</h1>
-      <p className="lead">
+      <p className={lead}>
         {classed.length === 0
           ? "None of this pod's active medicines is in a class the app's tables know."
           : "Which of the active medicines of this pod are in a class, by the classes MED-RT gives the drug."}
       </p>
       {classed.length > 0 && (
-        <div className="card picker">
+        <div className={`${card} picker`}>
           <h2>Pick a class</h2>
-          <ul>
+          <ul className={pickerList}>
             <li>
               <a
+                className={pickerLink}
                 href={address.classes(pod)}
                 aria-current={picked === undefined ? "true" : undefined}
               >
@@ -167,6 +169,7 @@ export function ClassesPage({
             {classed.map((group) => (
               <li key={`${group.relation} ${group.class}`}>
                 <a
+                  className={pickerLink}
                   href={address.classes(pod, group.class)}
                   aria-current={picked === group.class ? "true" : undefined}
                 >
@@ -178,9 +181,9 @@ export function ClassesPage({
         </div>
       )}
       {shown.map((group) => (
-        <div key={`${group.relation} ${group.class}`} className="card">
+        <div key={`${group.relation} ${group.class}`} className={card}>
           <h2>{link(group)}</h2>
-          <p className="muted">{relationName(group.relation)}</p>
+          <p className={muted}>{relationName(group.relation)}</p>
           <ul>
             {[...group.medicines.values()].map((medicine) => (
               <li key={medicine.entry}>
@@ -188,7 +191,7 @@ export function ClassesPage({
                 {medicine.through.size > 0 && (
                   <>
                     {" "}
-                    <span className="muted">
+                    <span className={muted}>
                       through {listed([...medicine.through].map(nameOf))}
                     </span>
                   </>
@@ -203,12 +206,12 @@ export function ClassesPage({
         <p>None of this pod's active medicines is in that class.</p>
       )}
       {credits.map((credit) => (
-        <p key={credit} className="muted">
+        <p key={credit} className={muted}>
           {credit}
         </p>
       ))}
       {left.length > 0 && (
-        <div className="card">
+        <div className={card}>
           <h2>Not in a class here</h2>
           {formOf.map(({ entry, medication, code }) => (
             <p key={entry}>

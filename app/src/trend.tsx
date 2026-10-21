@@ -25,6 +25,15 @@ import {
 import { useAddress } from "./address.tsx";
 import { AskButton } from "./ask.tsx";
 import { Chart, Lane } from "./chart.tsx";
+import {
+  card,
+  lead,
+  muted,
+  note,
+  pickerHeading,
+  pickerLink,
+  pickerList,
+} from "./look.ts";
 import { Back, NotFound, useLoaded, Wrong } from "./screen.tsx";
 
 /** A test's results in a pod, as `labSeriesIn` gives them. */
@@ -119,7 +128,7 @@ export function TrendPage({
     <>
       <Back pod={pod} titles={titles} />
       <h1 aria-busy={busy}>{name}</h1>
-      <p className="lead">
+      <p className={lead}>
         {series.results.length === 0
           ? "No result of this test is a number."
           : `${resultsSaid(series.results.length)}${unit === "" ? "" : `, in ${unit}`}`}
@@ -133,10 +142,10 @@ export function TrendPage({
         />
       </p>
       {medication !== undefined && chosen === undefined && (
-        <p className="note">This pod holds no medication {medication}.</p>
+        <p className={note}>This pod holds no medication {medication}.</p>
       )}
       {points.length > 0 && (
-        <div className="card trend" aria-busy={busy}>
+        <div className={`${card} trend`} aria-busy={busy}>
           <Chart
             id="trend-chart"
             plot={plot}
@@ -165,17 +174,17 @@ export function TrendPage({
             }
           />
           {unplotted > 0 && (
-            <p className="muted">
+            <p className={muted}>
               The chart leaves out {resultsSaid(unplotted)} in another unit; the
               table lists {unplotted === 1 ? "it" : "them"}.
             </p>
           )}
         </div>
       )}
-      <div className="card">
+      <div className={card}>
         <h2>Results</h2>
-        {left !== undefined && <p className="muted">{left}</p>}
-        <div className="scroll">
+        {left !== undefined && <p className={muted}>{left}</p>}
+        <div className="scroll max-h-[60vh] overflow-auto pr-3">
           <table>
             <thead>
               <tr>
@@ -196,15 +205,16 @@ export function TrendPage({
           </table>
         </div>
       </div>
-      <div className="card picker" aria-busy={busy}>
+      <div className={`${card} picker`} aria-busy={busy}>
         <h2>Show</h2>
-        <h3>Test</h3>
-        <ul>
+        <h3 className={pickerHeading}>Test</h3>
+        <ul className={pickerList}>
           {testsIn(labs).map((each) => {
             const code = each.notation ?? each.code;
             return (
               <li key={each.code}>
                 <a
+                  className={pickerLink}
                   href={link({ test: code })}
                   aria-current={code === tested ? "true" : undefined}
                 >
@@ -214,10 +224,11 @@ export function TrendPage({
             );
           })}
         </ul>
-        <h3>Medication marked</h3>
-        <ul>
+        <h3 className={pickerHeading}>Medication marked</h3>
+        <ul className={pickerList}>
           <li>
             <a
+              className={pickerLink}
               href={address.trend(pod, { test: tested })}
               aria-current={chosen === undefined ? "true" : undefined}
             >
@@ -227,6 +238,7 @@ export function TrendPage({
           {drugs.map((drug) => (
             <li key={drug.key}>
               <a
+                className={pickerLink}
                 href={link({ medication: drug.key })}
                 aria-current={drug === chosen ? "true" : undefined}
               >

@@ -44,7 +44,7 @@ bar, the sidebar and the boxes), `pod.tsx` (a pod's page), `entry.tsx`,
 `trend.tsx`, `classes.tsx`, `panel.tsx`, `tables.tsx`, `hospitals.tsx`
 (bringing in a record, the world's date) and `newpod.tsx` (a new pod, and an
 encrypted one's six words), with `parts.tsx`, `chart.tsx`, `screen.tsx`,
-`actions.tsx`, `doing.ts` and `style.css`. What they say comes from `said.ts`:
+`actions.tsx`, `doing.ts`, `look.ts` and `style.css`. What they say comes from `said.ts`:
 plain functions with no imports, from a pod's question rows to what a page
 says. `addresses.ts` makes every address; a screen never builds one. Rewrite
 any of it as you like.
@@ -67,6 +67,29 @@ To add a screen:
    `podApi(host)` in `pod-api.ts`, its input's schema in `server/inputs.ts` and
    its route in `server/api.ts`; the Node target's typed client then knows its
    input and output, and the browser target calls it in the page.
+
+Styling is Tailwind 4, set up in `src/style.css` (the plugin is in
+`vite.config.ts`). `@theme` there holds the colours, the one breakpoint (`md`,
+46rem) and the shadows; the dark colours redefine the same tokens under
+`prefers-color-scheme`, so `bg-panel` or `text-muted` follows the person's
+setting with no `dark:` variant. Preflight is not imported: the screens rely on
+the browser's own margins and lists, and `@layer base` holds the defaults every
+screen shares (the body, links, `h1` and `h2`, buttons, inputs, tables). Put
+utilities on the element; the strings several screens share are in
+`src/look.ts`. Keep a semantic class (`card`, `tile`, `change`, `dialog`,
+`chat-log`, a step's `now`) and every `data-*` beside the utilities: the tests
+and the page's own links select by them, and an element's class names are its
+address in the DOM contract. A box opens by the address's hash with `hidden
+target:grid`. `.pending`'s shimmer is the one rule left in `@layer components`.
+
+Without Preflight, what Tailwind's docs assume is not so here: every `<button>`
+starts as the accent button of `@layer base`, so a utility-styled button keeps
+a 1 px accent border unless it says `border-0` or another `border-*`; `ul` and
+`ol` keep their bullets and padding; `p`, `h3` and `dl` keep the browser's
+margins and sizes. A semantic class the tests
+select by must not be a utility's name (`grid`, `table`, `hidden`, `block`):
+`.filter` on the pod page's filter box already collides, harmlessly because
+the utility's variables are empty, and stays because the tests select it.
 
 `npm run mcp` runs `mcp.ts`, an MCP server on stdio over the pods, for
 Claude Desktop, VS Code or any MCP client (the README says how to add it);

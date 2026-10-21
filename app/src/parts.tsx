@@ -2,6 +2,7 @@
 // and a button that is a form of its own.
 import { useEffect, type ReactNode } from "react";
 import { TAGS } from "../said.ts";
+import { tag as tagLook, tagWarm } from "./look.ts";
 
 /**
  * Opens the box the address's hash names, once the screen holding it is drawn: the browser matches `:target` when it
@@ -34,19 +35,25 @@ export function Box({
 }) {
   return (
     <div
-      className="dialog"
+      className="dialog fixed inset-0 z-20 hidden place-items-center overflow-auto bg-black/45 p-4 target:grid"
       id={id}
       role="dialog"
       aria-labelledby={`${id}-title`}
     >
       <a
-        className="backdrop"
+        className="backdrop fixed inset-0"
         href={back}
         aria-label="Close the box"
         tabIndex={-1}
       ></a>
-      <div className={`box${wide ? " wide" : ""}`}>
-        <a className="close" href={back} aria-label="Close">
+      <div
+        className={`box relative w-full rounded-xl bg-panel px-7 py-6 shadow-modal ${wide ? "wide max-w-[44rem]" : "max-w-[34rem]"}`}
+      >
+        <a
+          className="close float-right text-[1.4rem] leading-none text-muted no-underline"
+          href={back}
+          aria-label="Close"
+        >
           ×
         </a>
         <h2 id={`${id}-title`}>{heading}</h2>
@@ -86,7 +93,9 @@ export function Tag({ tag }: { tag: string }) {
     <>
       {" "}
       <span
-        className={`tag${TAGS.find((each) => each.tag === tag)?.warm ? " warm" : ""}`}
+        className={
+          TAGS.find((each) => each.tag === tag)?.warm ? tagWarm : tagLook
+        }
       >
         {tag}
       </span>
@@ -103,6 +112,7 @@ export function PostButton({
   action,
   fields = {},
   className,
+  block = false,
   doing,
   onPost,
   children,
@@ -110,13 +120,14 @@ export function PostButton({
   action: string;
   fields?: Record<string, string>;
   className?: string;
+  block?: boolean;
   doing?: string;
   onPost?: (fields: FormData) => void;
   children: ReactNode;
 }) {
   return (
     <form
-      className="inline"
+      className={block ? "block" : "inline"}
       method="post"
       action={action}
       data-doing={doing}

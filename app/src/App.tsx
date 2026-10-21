@@ -50,6 +50,7 @@ import {
 import { AskProvider } from "./ask.tsx";
 import { ClassesScreen } from "./classes.tsx";
 import { ConfirmProvider } from "./confirm.tsx";
+import { button, lead } from "./look.ts";
 import {
   busy,
   failed,
@@ -142,11 +143,11 @@ function NoPods() {
   return (
     <>
       <h1>No pods yet</h1>
-      <p className="lead">
+      <p className={lead}>
         A pod keeps one person's health records, wherever they come from.
       </p>
       <p>
-        <a className="button" href="#new-pod">
+        <a className={button} href="#new-pod">
           Make your first pod
         </a>
       </p>

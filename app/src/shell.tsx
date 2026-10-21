@@ -15,6 +15,7 @@ import { ROUTED, useAddress } from "./address.tsx";
 import { useHost, type About } from "./api.tsx";
 import { useSaying } from "./doing.ts";
 import { NewPod } from "./newpod.tsx";
+import { muted, note as noteLook, quiet, warm } from "./look.ts";
 import { Box, Pending, PostButton } from "./parts.tsx";
 import { currentSource } from "./tables.tsx";
 
@@ -23,6 +24,12 @@ export interface TablesHeld {
   readonly held: readonly Series[];
   readonly read?: "read" | "failed";
 }
+
+const ASIDE_HEADING =
+  "mt-0 mr-0 mb-2 ml-[0.6rem] text-[0.72rem] tracking-[0.08em] text-muted uppercase";
+const SIDE_LIST = "m-0 mb-4 list-none p-0";
+const SIDE_LINK =
+  "block rounded-md px-[0.6rem] py-[0.4rem] text-text no-underline hover:bg-soft aria-[current]:bg-tint aria-[current]:font-semibold aria-[current]:text-accent";
 
 /**
  * Closes the menus on a click outside them and on Escape, and on Escape follows the open box's own close link, as a
@@ -61,12 +68,19 @@ function useClosing() {
 
 function Menu({ name, items }: { name: string; items: [string, string][] }) {
   return (
-    <details className="menu">
-      <summary>{name}</summary>
-      <ul>
+    <details className="menu group relative text-[0.9rem]">
+      <summary className="cursor-pointer list-none rounded-[5px] px-2 py-[0.1rem] group-open:bg-white/14 hover:bg-white/14 [&::-webkit-details-marker]:hidden">
+        {name}
+      </summary>
+      <ul className="absolute top-[calc(100%+0.35rem)] left-0 z-10 m-0 min-w-44 list-none rounded-lg border border-line bg-panel p-[0.3rem] shadow-pop">
         {items.map(([href, label]) => (
           <li key={href}>
-            <a href={href}>{label}</a>
+            <a
+              className="block rounded-[5px] px-[0.7rem] py-[0.4rem] whitespace-nowrap text-text no-underline hover:bg-soft focus:bg-soft"
+              href={href}
+            >
+              {label}
+            </a>
           </li>
         ))}
       </ul>
@@ -103,7 +117,7 @@ function MenuBoxes({ about }: { about: About }) {
         <p>Every pod in this app goes.</p>
         <PostButton
           action="delete-all"
-          className="warm"
+          className={warm}
           doing="Deleting all data…"
           onPost={deleteAll}
         >
@@ -117,7 +131,7 @@ function MenuBoxes({ about }: { about: About }) {
         </p>
         <PostButton
           action="reset-all"
-          className="warm"
+          className={warm}
           doing="Resetting all data…"
           onPost={resetAll}
         >
@@ -159,13 +173,17 @@ export function TablesNav({
       go(ROUTED.table(), checkedNote(checked, held));
     }, "Checking the feeds…");
   return (
-    <section className="tables" aria-label="Reference tables">
-      <h2>Reference tables</h2>
+    <section
+      className="tables mt-7 border-t border-line pt-5"
+      aria-label="Reference tables"
+    >
+      <h2 className={ASIDE_HEADING}>Reference tables</h2>
       {sources.length > 0 ? (
-        <ul>
+        <ul className={SIDE_LIST}>
           {sources.map((each) => (
             <li key={each.iri}>
               <a
+                className={SIDE_LINK}
                 href={address.table(tableId(each.iri))}
                 aria-current={each.iri === current ? "page" : undefined}
               >
@@ -175,7 +193,9 @@ export function TablesNav({
           ))}
         </ul>
       ) : tables.read === "failed" ? (
-        <p className="muted">The reference tables could not be read.</p>
+        <p className={`${muted} mt-0 mr-0 mb-3 ml-2.5`}>
+          The reference tables could not be read.
+        </p>
       ) : tables.read === undefined ? (
         <Pending
           lines={6}
@@ -183,11 +203,12 @@ export function TablesNav({
           said="Loading the reference tables…"
         />
       ) : (
-        <p className="muted">None yet.</p>
+        <p className={`${muted} mt-0 mr-0 mb-3 ml-2.5`}>None yet.</p>
       )}
       <PostButton
         action="check-tables"
-        className="quiet wide"
+        block
+        className={`${quiet} w-full`}
         doing="Checking the feeds…"
         onPost={checkNow}
       >
@@ -201,8 +222,15 @@ export function TablesNav({
 function Doing() {
   const said = useSaying();
   return (
-    <p className="doing" role="status" hidden={said === undefined}>
-      <span className="spinner" aria-hidden="true"></span>
+    <p
+      className="doing fixed top-2 left-1/2 z-30 m-0 flex -translate-x-1/2 items-center gap-[0.6rem] rounded-full border border-line bg-panel px-4 py-1.5 shadow-float"
+      role="status"
+      hidden={said === undefined}
+    >
+      <span
+        className="spinner size-4 animate-spin-slow rounded-full border-2 border-line border-t-accent"
+        aria-hidden="true"
+      ></span>
       <span className="said">{said}</span>
     </p>
   );
@@ -243,8 +271,13 @@ export function Layout({
   useClosing();
   return (
     <>
-      <header className="bar">
-        <a href={address.home}>Cascade</a>
+      <header className="bar flex items-center gap-4 bg-bar px-5 py-[0.6rem] text-on-bar max-md:gap-2 max-md:px-4">
+        <a
+          className="font-semibold tracking-[0.02em] text-on-bar no-underline"
+          href={address.home}
+        >
+          Cascade
+        </a>
         <Menu
           name="File"
           items={[
@@ -253,16 +286,19 @@ export function Layout({
           ]}
         />
         <Menu name="Help" items={[["#about", "About"]]} />
-        <span className="demo">Demo: every person here is made up</span>
+        <span className="demo ml-auto text-[0.8rem] opacity-75 max-md:text-right max-md:text-[0.72rem]">
+          Demo: every person here is made up
+        </span>
       </header>
-      <div className="layout">
-        <aside>
+      <div className="layout grid min-h-[calc(100vh-2.7rem)] grid-cols-[15rem_1fr] max-md:min-h-0 max-md:grid-cols-1">
+        <aside className="border-r border-line bg-panel px-4 py-5 max-md:border-r-0 max-md:border-b">
           <nav>
-            <h2>Pods</h2>
-            <ul>
+            <h2 className={ASIDE_HEADING}>Pods</h2>
+            <ul className={SIDE_LIST}>
               {pods.map((pod) => (
                 <li key={pod}>
                   <a
+                    className={SIDE_LINK}
                     href={address.pod(pod)}
                     aria-current={pod === current ? "page" : undefined}
                   >
@@ -272,7 +308,10 @@ export function Layout({
               ))}
             </ul>
           </nav>
-          <a className="button wide" href="#new-pod">
+          <a
+            className="button block cursor-pointer rounded-[7px] border border-accent bg-accent px-4 py-[0.45rem] text-center text-on-accent no-underline"
+            href="#new-pod"
+          >
             + New pod
           </a>
           <TablesNav
@@ -285,9 +324,9 @@ export function Layout({
             }
           />
         </aside>
-        <main>
+        <main className="max-w-[62rem] min-w-0 px-9 pt-7 pb-12 max-md:p-5">
           {note !== undefined && (
-            <p className="note" role="status">
+            <p className={noteLook} role="status">
               {note}
             </p>
           )}

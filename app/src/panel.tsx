@@ -19,6 +19,7 @@ import {
   versionName,
 } from "../said.ts";
 import { useAddress } from "./address.tsx";
+import { card, lead, muted, tagWarm } from "./look.ts";
 import { Back, NotFound, sourceOf, useLoaded, Wrong } from "./screen.tsx";
 
 /** What the page is drawn from: PodApi's `panel`, its pairs as `Map`s again. */
@@ -138,9 +139,9 @@ export function PanelPage({
     <>
       <Back pod={pod} titles={titles} />
       <h1>Your results in {nameOf(panel)}</h1>
-      <p className="lead">{said}</p>
+      <p className={lead}>{said}</p>
       {rows.length > 0 && (
-        <p className="muted">
+        <p className={muted}>
           {source !== undefined && notation !== undefined ? (
             <>
               LOINC{" "}
@@ -157,7 +158,7 @@ export function PanelPage({
         </p>
       )}
       {groups.map((group) => (
-        <div key={group.via} className="card">
+        <div key={group.via} className={card}>
           <h2>
             {group.via === panel
               ? "Tests in the panel's order"
@@ -170,13 +171,13 @@ export function PanelPage({
                 {requirement(line) !== undefined && (
                   <>
                     {" "}
-                    <span className="muted">{requirement(line)}</span>
+                    <span className={muted}>{requirement(line)}</span>
                   </>
                 )}
                 {line.results.length === 0 ? (
                   <>
                     {" "}
-                    <span className="tag warm">No result</span>
+                    <span className={tagWarm}>No result</span>
                   </>
                 ) : (
                   <ul>
@@ -194,7 +195,7 @@ export function PanelPage({
                           {result.performed !== undefined && (
                             <>
                               {" "}
-                              <span className="muted">
+                              <span className={muted}>
                                 {day(result.performed)}
                               </span>
                             </>
@@ -209,7 +210,7 @@ export function PanelPage({
         </div>
       ))}
       {versions.length > 0 && (
-        <p className="muted from">
+        <p className={`${muted} from`}>
           From{" "}
           {listed(
             versions.map(
@@ -222,7 +223,7 @@ export function PanelPage({
       )}
       {[...new Set(versions.flatMap(({ series }) => series.credit ?? []))].map(
         (credit) => (
-          <p key={credit} className="muted">
+          <p key={credit} className={muted}>
             {credit}
           </p>
         ),

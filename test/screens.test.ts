@@ -503,7 +503,9 @@ test("the new-pod box offers to encrypt and lists the demo people with no pod ye
   const box = (pods: string[], samples: string[] = []) =>
     drawn.newPod({ people, pods, samples });
   const buttons = (markup: string) =>
-    [...markup.matchAll(/<button>([^<]*)<span/g)].map(([, label]) => label);
+    [...markup.matchAll(/<button[^>]*>([^<]*)<span/g)].map(
+      ([, label]) => label,
+    );
   assert.match(box([]), /Encrypt this pod with six words/);
   assert.deepEqual(buttons(box([])), [
     "Abbot, Wren",
@@ -536,9 +538,9 @@ test("the six-words screen shows the words numbered, with the fields a password 
     person: "Grace Hopper",
     words,
   });
-  assert.equal(shown.match(/<li>/g)?.length, 6);
+  assert.equal(shown.match(/<li[ >]/g)?.length, 6);
   assert.deepEqual(
-    [...shown.matchAll(/<li>([^<]*)<\/li>/g)].map(([, word]) => word),
+    [...shown.matchAll(/<li[^>]*>([^<]*)<\/li>/g)].map(([, word]) => word),
     words.split(" "),
   );
   assert.match(shown, /name="username"[^>]*value="grace-hopper"/);
@@ -654,8 +656,12 @@ test("a record's person against the pod's: the box's words and button by grade",
     return {
       said: textOf(markup),
       button: textOf(/<button[^>]*>([^<]*)<\/button>/.exec(markup)?.[1] ?? ""),
-      buttonClass: /<button class="([^"]*)"/.exec(markup)?.[1],
-      note: /<p class="(note[^"]*)"/.exec(markup)?.[1],
+      buttonClass: /<button class="([^"]*)"/.exec(markup)?.[1]?.split(" ")[0],
+      note: /<p class="(note[^"]*)"/
+        .exec(markup)?.[1]
+        ?.split(" ")
+        .filter((each) => each === "note" || each === "warm")
+        .join(" "),
     };
   };
   const same = box("Rowan Ellery", "Marsh");
@@ -737,7 +743,7 @@ test("a failed connection's box speaks to a person by the failure's kind, naming
     );
     assert.match(
       markup,
-      /<p class="muted detail">https:\/\/cascade-north\.demo\.invalid refused Patient with 401/,
+      /<p class="muted detail[^"]*">https:\/\/cascade-north\.demo\.invalid refused Patient with 401/,
       kind,
     );
   }
@@ -798,7 +804,7 @@ test("a pod's page with a connection holds its tiles and the connection's box, w
     "Back to Alex Rivera",
   ])
     assert.ok(words.includes(sentence), sentence);
-  assert.equal((page.match(/<a class="tile"/g) ?? []).length, 2);
+  assert.equal((page.match(/<a class="tile[ "]/g) ?? []).length, 2);
   for (const [entry, shown] of [
     ["e1", "Penicillin"],
     ["e2", "Glucose"],
@@ -811,7 +817,7 @@ test("a pod's page with a connection holds its tiles and the connection's box, w
       ),
       `${shown}'s row does not open its entry`,
     );
-  const boxes = page.split('<div class="dialog"').slice(1);
+  const boxes = page.split(/<div class="dialog[^"]*"/).slice(1);
   assert.equal(boxes.length, 5);
   const connection = boxes.find((box) => box.startsWith(' id="connection"'));
   assert.ok(connection?.includes("3 requests answered so far"));
@@ -819,7 +825,7 @@ test("a pod's page with a connection holds its tiles and the connection's box, w
     const first = /<a [^>]*>/.exec(box)?.[0] ?? "";
     const closes = box === connection ? back : "#";
     assert.ok(first.includes(` href="${closes}"`), box.slice(0, 80));
-    assert.match(first, / class="backdrop"/, box.slice(0, 80));
+    assert.match(first, / class="backdrop[^"]*"/, box.slice(0, 80));
     assert.match(first, / aria-label="Close the box"/, box.slice(0, 80));
     assert.ok(
       box.indexOf(first) < box.indexOf('<div class="box'),
@@ -952,10 +958,10 @@ test("Find a hospital gives each hospital a card with its places, its sign-in an
     people,
   });
   const cards = page
-    .split('<div class="card">')
+    .split(/<div class="card(?: [^"]*)?">/)
     .slice(1)
     .map((card) => ({
-      heading: textOf(/<h2>(.*?)<\/h2>/.exec(card)?.[1] ?? ""),
+      heading: textOf(/<h2[^>]*>(.*?)<\/h2>/.exec(card)?.[1] ?? ""),
       people: [...card.matchAll(/<li>(.*?)<\/li>/g)].map(([, inner]) =>
         textOf(inner ?? ""),
       ),
@@ -996,7 +1002,7 @@ test("the world's date: the form shows the day it is set to, with Set and Today,
   assert.match(form, /<button>Set<\/button>/);
   assert.match(
     form,
-    /<input type="hidden" name="date" value=""\/><button class="quiet">Today<\/button>/,
+    /<input type="hidden" name="date" value=""\/><button class="quiet[^"]*">Today<\/button>/,
   );
   assert.ok(textOf(form).includes("Hospitals answer as of 1 February 2024."));
   assert.ok(
@@ -1025,7 +1031,7 @@ test("the world's date: the form shows the day it is set to, with Set and Today,
     textOf(pod),
     /Hospitals answer as of 1 February 2024\.\s*Change the world's date/,
   );
-  assert.match(pod, /<details id="world-date">[\s\S]*name="date"/);
+  assert.match(pod, /<details[^>]* id="world-date">[\s\S]*name="date"/);
   assert.ok(
     textOf(
       drawn.hospitalsPage({
@@ -1676,7 +1682,7 @@ test("the Medications tile holds a By class link to the class view, and no other
     ],
   };
   const page = podPage({ answers });
-  const boxes = [...page.matchAll(/<div class="tile-box">(.*?)<\/div>/g)];
+  const boxes = [...page.matchAll(/<div class="tile-box[^"]*">(.*?)<\/div>/g)];
   assert.equal(boxes.length, 1);
   const [, box = ""] = boxes[0] ?? [];
   assert.match(textOf(box), /^Medications 1 /);
@@ -1687,7 +1693,7 @@ test("the Medications tile holds a By class link to the class view, and no other
     [paths.classes("alex-rivera")],
   );
   assert.ok(linksOf(box).some(({ text }) => text === "By class"));
-  assert.equal((page.match(/<a class="tile"/g) ?? []).length, 2);
+  assert.equal((page.match(/<a class="tile[ "]/g) ?? []).length, 2);
 
   const noMedicines = podPage({ answers: { [ALLERGIES]: answers[ALLERGIES] } });
   assert.ok(!noMedicines.includes("By class"));
@@ -1722,7 +1728,7 @@ test("the Medications tile says each medication's L1 lifecycle, current ones fir
   });
   const [dialog = ""] = page
     .slice(page.indexOf('id="see-medications"'))
-    .split('class="dialog"');
+    .split(/class="dialog[^"]*"/);
   const cells = [...dialog.matchAll(/<tr[^>]*>(.*?)<\/tr>/g)]
     .map(([, row = ""]) =>
       [...row.matchAll(/<td[^>]*>(.*?)<\/td>/g)].map(([, cell = ""]) =>
@@ -1816,7 +1822,7 @@ test("a pod's page has a Genetic variants tile beside the others, a row for each
     [`MLH1 ${NAME} Differs 2`, "NM_000500.1:c.1A>G 1"],
   );
   assert.ok(!textOf(before).includes("ClinVar today"), "no column of its own");
-  assert.ok(!before.includes('class="card variants"'));
+  assert.ok(!/class="card [^"]*\bvariants\b/.test(before));
   assert.ok(!textOf(before).includes("counsellor"));
   assert.ok(
     !textOf(before).includes("differs from ClinVar"),
@@ -1828,7 +1834,7 @@ test("a pod's page has a Genetic variants tile beside the others, a row for each
   assert.deepEqual(said.worthALook(VARIANT_ANSWERS, new Map(), VARIANTS_SAID), [
     { sentence: differing, entry: "v1", tag: DIFFERS },
   ]);
-  const worth = /<div class="card worth">([\s\S]*?)<\/div>/.exec(
+  const worth = /<div class="card worth[^"]*">([\s\S]*?)<\/div>/.exec(
     page({ said: VARIANTS_SAID }),
   )?.[1];
   assert.equal(textOf(worth ?? ""), `Worth a look ${differing} ${DIFFERS}`);
@@ -1838,7 +1844,7 @@ test("a pod's page has a Genetic variants tile beside the others, a row for each
     "it opens the entry",
   );
   assert.ok(
-    !page({ about: new Map() }).includes('class="card worth"'),
+    !/class="card worth/.test(page({ about: new Map() })),
     "with nothing worth a look there is no such card",
   );
   assert.deepEqual(
@@ -1960,7 +1966,10 @@ test("before the tables can say, a variant's entry names each report's lab and i
   );
 });
 
-const count = (markup: string, part: string) => markup.split(part).length - 1;
+const count = (markup: string, part: string | RegExp) =>
+  typeof part === "string"
+    ? markup.split(part).length - 1
+    : (markup.match(part)?.length ?? 0);
 /** The addresses of the links on `markup` whose text is `text`. */
 const hrefsOf = (markup: string, text: string) =>
   linksOf(markup)
@@ -2003,7 +2012,7 @@ test("What changed on the statin story patient's page: one card in CHANGED's wor
   const story = (await storyPods()).get("story-statin")!;
   const [finding] = story.changes;
   const page = podOf("ines-calloway", story);
-  assert.equal(count(page, 'class="change"'), 1);
+  assert.equal(count(page, /class="change[ "]/g), 1);
   const sentence = capitalised(
     said.CHANGED["after start"].down(
       finding!.test.name,
@@ -2017,7 +2026,7 @@ test("What changed on the statin story patient's page: one card in CHANGED's wor
   );
 
   const behind = page.slice(page.indexOf('id="change-start-617310-18262-6"'));
-  const [box = ""] = behind.split('class="dialog"');
+  const [box = ""] = behind.split(/class="dialog[^"]*"/);
   assert.deepEqual(
     linksOf(box)
       .map(({ href }) => href)
@@ -2044,7 +2053,7 @@ test("a card is drawn once, by the tables' names: with the tables not yet asked 
     changes: story.changes,
   };
   const before = podPage(shown);
-  assert.equal(count(before, 'class="change"'), 0);
+  assert.equal(count(before, /class="change[ "]/g), 0);
   assert.match(textOf(before), /What changed\s*Naming what changed…/);
   assert.equal(
     count(before, 'aria-busy="true"'),
@@ -2069,11 +2078,11 @@ test("What changed says nothing stands out when no pair does, counts a pair with
   const stories = await storyPods();
   const herring = podOf("pell-hargrove", stories.get("story-red-herring")!);
   assert.match(textOf(herring), /Nothing stands out yet\./);
-  assert.equal(count(herring, 'class="change"'), 0);
+  assert.equal(count(herring, /class="change[ "]/g), 0);
 
   const little = stories.get("story-too-little")!;
   const thin = podOf("rafferty-moon", little);
-  assert.equal(count(thin, 'class="change"'), 0);
+  assert.equal(count(thin, /class="change[ "]/g), 0);
   assert.match(
     textOf(thin),
     /1 pair of a medication and a test had too few results to say anything\./,
@@ -2087,7 +2096,7 @@ test("What changed says nothing stands out when no pair does, counts a pair with
     assert.equal(
       count(
         podOf("pell-hargrove", little, { ...little.answers, [question]: [] }),
-        'class="card changes"',
+        /class="card [^"]*\bchanges\b/g,
       ),
       0,
       question,
@@ -2299,7 +2308,7 @@ test("the trend names its first date from the earliest result, and its test and 
   for (const part of ["trend", "picker"])
     assert.match(
       naming,
-      new RegExp(`<div class="card ${part}" aria-busy="true">`),
+      new RegExp(`<div class="card [^"]*\\b${part}\\b[^"]*" aria-busy="true">`),
       part,
     );
 });
@@ -2338,9 +2347,9 @@ test("the trend round-trips through its address: the state read from it draws th
   assert.deepEqual(asked, { test: "18262-6", medication: "617310" });
   const page = trendOf("ines-calloway", story, asked);
 
-  assert.equal(count(page, 'class="marker"'), 6);
-  assert.equal(count(page, 'class="mark start"'), 1);
-  assert.equal(count(page, 'class="mark stop"'), 0);
+  assert.equal(count(page, /class="marker[ "]/g), 6);
+  assert.equal(count(page, /class="mark start[ "]/g), 1);
+  assert.equal(count(page, /class="mark stop[ "]/g), 0);
   const name = story.changes[0]!.test.name!;
   assert.equal(textAt(page, "trend-chart-title"), name);
   assert.match(
@@ -2355,8 +2364,8 @@ test("the trend round-trips through its address: the state read from it draws th
     asked,
   );
   const none = trendOf("ines-calloway", story, { test: "18262-6" });
-  assert.equal(count(none, 'class="mark start"'), 0);
-  assert.equal(count(none, 'class="marker"'), 6);
+  assert.equal(count(none, /class="mark start[ "]/g), 0);
+  assert.equal(count(none, /class="marker[ "]/g), 6);
 });
 
 /** The `data-ask` contexts a page draws, in order. */
