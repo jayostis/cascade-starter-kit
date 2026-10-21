@@ -2182,6 +2182,11 @@ test("in try/, the pod shown offers the free tools of the one list to the model 
       ),
     );
     assert.deepEqual(await live(), FREE_TOOLS);
+    const total = (): Promise<number> =>
+      page.evaluate(
+        () => (globalThis as unknown as Registered).registered.length,
+      );
+    const offered = await total();
 
     await inPlace(page, () =>
       page.click('.change a:has-text("Open the trend")'),
@@ -2198,6 +2203,11 @@ test("in try/, the pod shown offers the free tools of the one list to the model 
       await page.textContent("main h1"),
     );
     assert.deepEqual(await live(), FREE_TOOLS);
+    assert.equal(
+      await total(),
+      offered,
+      "a move between the pod's screens offered the tools again",
+    );
 
     await page.evaluate(
       ([from, count]) => {
@@ -2205,9 +2215,7 @@ test("in try/, the pod shown offers the free tools of the one list to the model 
       },
       [
         await page.textContent("aside nav a[aria-current]"),
-        await page.evaluate(
-          () => (globalThis as unknown as Registered).registered.length,
-        ),
+        await total(),
       ],
     );
     await inPlace(page, () => page.click('nav a:has-text("Alex Rivera")'));
