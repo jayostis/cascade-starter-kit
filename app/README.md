@@ -132,7 +132,7 @@ has a consent tier:
 
 - **free**, reads: `list_pods`, `find_changes`, `finding_rows`, `lab_series`,
   `timeline`, `worth_a_look` and `ask`; and moving the app: `open_pod`,
-  `open_trend` and `open_entry`.
+  `open_trend`, `open_entry`, `open_classes`, `open_panel` and `open_table`.
 - **ask**, writes the person confirms first: `make_pod` (never encrypted),
   `check_tables` and `set_world_date`.
 - **never**, what no tool calls: making an encrypted pod, its six words and
@@ -140,8 +140,9 @@ has a consent tier:
   (`connect`), bringing a record in (`bring`: the person does it from its box),
   and Delete all and Reset all.
 
-The MCP server offers the free reads, and `npm run browser`'s WebMCP the free
-tools of the pod shown. `npm start`'s chat runs on the AI SDK: its server runs
+The MCP server offers the free reads. WebMCP, where the browser has
+`document.modelContext`, offers every tool on every screen of both targets, an
+`ask` write only after the page's own Allow. `npm start`'s chat runs on the AI SDK: its server runs
 the free reads, and offers the moves and the `ask` writes as tools the page
 runs, so a write waits for the person.
 

@@ -1,5 +1,5 @@
 // What each PodApi operation may be sent over `/api`: its fields' types, checked at the route before PodApi runs. The
-// route checks shape only; PodApi still checks meaning, and `typed` in `pod-api.mjs` for the browser, which has no
+// route checks shape only; PodApi still checks meaning, and `typed` in `pod-api.ts` for the browser, which has no
 // route. A refusal reads as PodApi's own: `<field> must be <what>`.
 import { z } from "zod";
 

@@ -166,11 +166,8 @@ export interface Host {
   engine(): Promise<void>;
   /** Resolves once the tables are kept up to date. */
   tables(): Promise<void>;
-  /**
-   * Offers a model the free tools for the pod shown, `open` moving the app to an address; the function it returns takes
-   * them away. A host with no model context offers none.
-   */
-  offer?(pod: string, open: (address: string) => Promise<void>): () => void;
+  /** The reads of the one list of tools that a model reaches by this host. */
+  readonly reads: HostReads;
   /**
    * Opens the window a sign-in at a hospital goes on, in the click that asks for it, where the host signs in in one;
    * a host without it signs in on the hospital's own page in place of the app, which `connect`'s `authorize` names.
@@ -181,6 +178,21 @@ export interface Host {
   readonly failures?: Readonly<Record<string, Failure>>;
   /** The chat with a model, on a host that has one: the Node target's. */
   readonly chat?: HostChat;
+}
+
+/** A read of the one list of tools (`tools.ts`) as a host names it; `ofPod` for one that takes the pod's name. */
+export interface ReadTool {
+  readonly name: string;
+  readonly description: string;
+  readonly inputSchema: object;
+  readonly ofPod: boolean;
+}
+
+/** The reads a host runs for a model, where the host runs them: in the page, or at its server. */
+export interface HostReads {
+  list(): Promise<readonly ReadTool[]>;
+  /** Runs the read `name` on `input`, which carries `pod` for one that takes it; a refusal rejects by name. */
+  run(name: string, input: object): Promise<unknown>;
 }
 
 /** The model a chat talks to, as the host names it: never its address or key. */

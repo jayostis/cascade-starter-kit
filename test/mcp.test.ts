@@ -122,6 +122,9 @@ test("every tool is free or ask, and its run calls only the PodApi operations it
     open_pod: [{ pod }, ["pod"], "free"],
     open_trend: [{ pod, test: "t", medication: "m" }, ["trend"], "free"],
     open_entry: [{ pod, entry: "e" }, ["ask"], "free"],
+    open_classes: [{ pod }, ["pod"], "free"],
+    open_panel: [{ pod, panel: "24326-1" }, ["pod"], "free"],
+    open_table: [{ table: "t" }, ["table"], "free"],
     make_pod: [{ person: "Ann", encrypt: true }, ["makePod"], "ask"],
     check_tables: [{}, ["checkTables"], "ask"],
     set_world_date: [{ date: "2026-01-01" }, ["setWorldDate"], "ask"],
@@ -169,7 +172,14 @@ test("every tool is free or ask, and its run calls only the PodApi operations it
     );
     await tool.run(recording, input, {
       open: async () => {},
-      address: { pod: () => "/", trend: () => "/", entry: () => "/" },
+      address: {
+        pod: () => "/",
+        trend: () => "/",
+        entry: () => "/",
+        classes: () => "/",
+        panel: () => "/",
+        table: () => "/",
+      },
     });
     assert.deepEqual(
       called.map(([op]) => op),

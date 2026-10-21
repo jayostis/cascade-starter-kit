@@ -1103,6 +1103,43 @@ test("over HTTP, a request the route cannot take gets its status, and a broken r
   assert.ok(!text.includes("/secret/path"));
 });
 
+test("over HTTP, /tools lists the reads of the one list and runs one by name on its input; a refusal is a 400, and a tool that moves the app or writes is not found", async () => {
+  const origin = "http://app.test";
+  const [app] = served(apis.get("in-process")!, () => ({
+    hosts: new Set(["app.test"]),
+    origins: new Set([origin]),
+  }));
+  const listed = (await (await app.request(`${origin}/tools`)).json()) as {
+    name: string;
+  }[];
+  assert.deepEqual(listed.map(({ name }) => name).sort(), [
+    "ask",
+    "find_changes",
+    "finding_rows",
+    "lab_series",
+    "list_pods",
+    "timeline",
+    "worth_a_look",
+  ]);
+  const run = (name: string, input: object) =>
+    app.request(`${origin}/tools/${name}`, {
+      method: "POST",
+      headers: { origin, "content-type": "application/json" },
+      body: JSON.stringify(input),
+    });
+  const pods = await run("list_pods", {});
+  assert.equal(pods.status, 200);
+  assert.ok(Array.isArray(await pods.json()));
+  const wrong = await run("ask", { pod: "x", question: "SELECT * WHERE {}" });
+  assert.equal(wrong.status, 400);
+  assert.match(
+    ((await wrong.json()) as { refused: string }).refused,
+    /must be one of/,
+  );
+  for (const name of ["make_pod", "open_pod", "nothing"])
+    assert.equal((await run(name, {})).status, 404, name);
+});
+
 test("the server answers its page to an address a person opens, even with a dot in it, and a missing file with a 404", async () => {
   const pages = await mkdtemp(join(tmpdir(), "pages-"));
   await writeFile(join(pages, "index.html"), "<h1>the app</h1>");

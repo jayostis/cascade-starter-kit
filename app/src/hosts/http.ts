@@ -1,8 +1,8 @@
 // The Node target's host: PodApi at the server's `/api/`, beside the app, and the chat at its `/chat`. The bundle
 // carries the typed client only: no server code and no runtime.
 import { lazy } from "react";
-import type { Person } from "../../said.ts";
-import type { ChatModel, Host, PodApi } from "../api.tsx";
+import { type Person, refusal } from "../../said.ts";
+import type { ChatModel, Host, PodApi, ReadTool } from "../api.tsx";
 import { remoteApi } from "./remote.ts";
 
 const BASE = new URL(import.meta.env.BASE_URL, location.href);
@@ -15,6 +15,30 @@ async function model(): Promise<ChatModel | undefined> {
   const named = (await response.json()) as Partial<ChatModel>;
   return typeof named.name === "string" ? (named as ChatModel) : undefined;
 }
+
+/** The reads of the one list, which the server runs at `/tools`: the bundle carries no runtime to run them. */
+const reads: Host["reads"] = {
+  async list() {
+    const response = await fetch(new URL("tools", BASE));
+    if (!response.ok)
+      throw new Error(`the tool list answered ${response.status}`);
+    return (await response.json()) as ReadTool[];
+  },
+  async run(name, input) {
+    const response = await fetch(new URL(`tools/${name}`, BASE), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(input),
+    });
+    if (response.ok) return response.json();
+    const body = (await response.json().catch(() => ({}))) as {
+      refused?: string;
+    };
+    throw body.refused === undefined
+      ? new Error(`the tool ${name} answered ${response.status}`)
+      : refusal(body.refused);
+  },
+};
 
 /** The demo people the server's hospitals hold; none when they cannot be read. */
 async function people(): Promise<Person[]> {
@@ -35,6 +59,7 @@ const { dataset } = document.body;
 
 export const host: Host = {
   api,
+  reads,
   about: {
     name: dataset.name ?? "",
     version: dataset.version ?? "",

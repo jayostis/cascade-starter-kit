@@ -83,11 +83,11 @@ at `/encrypted-pods/<name>`), and `mcp.ts` and `npm run ask` refuse it, as their
 `tools.ts` holds the one list of tools a model reaches the app by (`TOOLS`), each
 calling `podApi`'s operations only, with its consent `tier`: `free` reads
 (`list_pods`, `changeTools` of `cascade-runtime` run by `podApi`'s `tool`, `worth_a_look`, `ask`) and moves the app
-(`open_pod`, `open_trend`, `open_entry`, through the door's `open` and its own addresses), and `ask` writes,
+(`open_pod`, `open_trend`, `open_entry`, `open_classes`, `open_panel`, `open_table`, through the door's `open` and its own addresses), and `ask` writes,
 which the person confirms first (`make_pod`, never encrypted; `check_tables`; `set_world_date`). `NEVER` is what
 no tool calls: `makePod` with `encrypt`, `waitingWords`, `confirmWords`, `unlock`, `connect`, `bring`,
-`deleteAll` and `resetAll`. The MCP server offers the free reads; the browser target's WebMCP
-(`src/tools.ts`) the free tools for the pod shown. The chat is the Node target's only. `server/chat.ts`, `npm start`'s
+`deleteAll` and `resetAll`. The MCP server offers the free reads; WebMCP (`src/tools.ts`), on both
+targets and every screen, every tool by its tier (the last section says how). The chat is the Node target's only. `server/chat.ts`, `npm start`'s
 `/chat`, runs on the Vercel AI SDK (`ai`): `chatTools(api)` offers
 every tool of the list, the free reads with a server `execute` and the navigation and `ask` tools with none, so a
 call to one ends the server's turn and the page runs it. `POST /chat` takes the SDK's
@@ -271,3 +271,36 @@ keeping the package and the pods, under `pods/<name>/`. It is made with four,
   `MedicationStatement` or a `Condition` with `stopped` becomes two versions,
   and an entry without `shorthand` is placed at its own clinical date. It
   refuses a stop it cannot date, and a patient already there.
+
+## WebMCP, the doors and the tiers
+
+On both targets the page offers a browser agent the same tools on every screen, through the browser's
+`document.modelContext` where it has one (`useTools` in `src/tools.ts`, mounted once in `App.tsx`; with none, the page
+offers nothing). The tools are the whole of `TOOLS`, every tool by its tier:
+
+- **free** tools run at once: the reads, and the `open_*` tools, which move the app in place through a step, as a click
+  does.
+- **ask** tools (`make_pod`, `check_tables`, `set_world_date`) show the page's own box, the one the chat's writes use
+  (`useConfirm` in `src/confirm.tsx`), one at a time with the chat's. Allow runs the write; Cancel, or leaving the pod,
+  rejects the call with `Refusal` and the sentence "The person said no", and writes nothing.
+- the **never** list (`NEVER` in `tools.ts`) is no tool in any door.
+
+With a pod shown, a tool of one pod takes it as given; on a screen with none (the tables, a locked pod) it takes the
+pod's name as `pod`. `open_pod` always takes the name. The tools are offered again only when the pod shown changes, and
+taken away in the commit that draws the next one.
+
+There are three doors, one list: MCP (`mcp-server.ts`) offers the free reads; the chat (`server/chat.ts`) offers every
+tool, the page running the ones with no server `execute`; WebMCP (`src/tools.ts`) offers every tool. The Node bundle
+carries no runtime, so its page gets the reads from the server: `GET /tools` lists them and `POST /tools/<name>` runs
+one (`server/tools.ts`), while the browser target runs them in the page (`reads` of `src/hosts/browser.ts`).
+
+To add a tool:
+
+- one the page runs itself (it moves the app, or writes after the person's Allow): one entry in `PAGE_TOOLS` in
+  `said.ts`, with `run(api, input, door)` calling only PodApi's operations and moving through `door.open`. A write
+  also needs an entry in `ACTIONS` in `src/confirm.tsx`, and every move needs an output in `CLIENT_OUTPUTS` in
+  `server/chat.ts`. Every door then offers it.
+- one the server runs (a read): one entry in `TOOLS` in `tools.ts`, with `tier: "free"`. The MCP server, the chat and
+  both targets' WebMCP offer it, the Node page through `/tools`.
+
+Either way, add its row to the `runs` table in `test/mcp.test.ts`, which fails for a tool with none.

@@ -3018,6 +3018,7 @@ export interface PageToolsApi {
     named?: boolean;
   }): Promise<unknown>;
   ask(input: { pod: string; question: string }): Promise<unknown>;
+  table(input: { id: string }): Promise<unknown>;
   makePod(input: { person: string }): Promise<unknown>;
   checkTables(input: object): Promise<unknown>;
   setWorldDate(input: { date: string }): Promise<unknown>;
@@ -3032,6 +3033,15 @@ export interface PageDoor {
       trend: { test: string; medication?: string | undefined },
     ): string;
     entry(name: string, entry: string): string;
+    classes(name: string, picked?: string): string;
+    panel(name: string, panel: string): string;
+    table(
+      id?: string,
+      asked?: {
+        q?: string | undefined;
+        code?: string | undefined;
+      },
+    ): string;
   };
   open(address: string): Promise<void>;
 }
@@ -3064,7 +3074,7 @@ async function going(address: string, { open }: PageDoor) {
 }
 
 /**
- * The tools a page runs itself, the last six of `TOOLS` in `tools.mjs`: the three that move the app, each giving
+ * The tools a page runs itself, the last nine of `TOOLS` in `tools.ts`: the six that move the app, each giving
  * `{ opened }`, and the three writes the person confirms first, each giving PodApi's answer. They need no runtime, so
  * the Node target's chat runs them in the page.
  */
@@ -3148,6 +3158,87 @@ export const PAGE_TOOLS: readonly PageTool[] = [
           `the pod ${pod} holds no entry ${entry}; ask's rows give each entry's ID in their entry column`,
         );
       return going(door.address.entry(pod, entry), door);
+    },
+  },
+  {
+    name: "open_classes",
+    description:
+      "Opens the page of a pod's medications by the classes they belong to, or with a class named, that class.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        class: {
+          type: "string",
+          description: "A class's name, to open it; left out for all of them.",
+        },
+      },
+      additionalProperties: false,
+    },
+    tier: "free",
+    ofPod: true,
+    opens: true,
+    async run(api, { pod = "", class: picked }, door) {
+      await api.pod({ pod });
+      return going(
+        door.address.classes(pod, picked === "" ? undefined : picked),
+        door,
+      );
+    },
+  },
+  {
+    name: "open_panel",
+    description:
+      "Opens the page of a pod's results in one LOINC panel, with the tests the panel names that it has no result for.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        panel: {
+          type: "string",
+          description: "The panel's LOINC code, such as 24326-1.",
+        },
+      },
+      required: ["panel"],
+      additionalProperties: false,
+    },
+    tier: "free",
+    ofPod: true,
+    opens: true,
+    async run(api, { pod = "", panel = "" }, door) {
+      if (panel === "") throw refusal("a panel is a LOINC code: name one");
+      await api.pod({ pod });
+      return going(door.address.panel(pod, panel), door);
+    },
+  },
+  {
+    name: "open_table",
+    description:
+      "Opens a reference table, a search in it or one code of it; with none named, the list of the tables the app holds.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        table: {
+          type: "string",
+          description: "The table's ID, as its address names it.",
+        },
+        q: { type: "string", description: "Words to search the table for." },
+        code: {
+          type: "string",
+          description: "One code, to open what the tables say of it.",
+        },
+      },
+      additionalProperties: false,
+    },
+    tier: "free",
+    opens: true,
+    async run(api, { table, q, code }, door) {
+      if (table !== undefined && table !== "") await api.table({ id: table });
+      return going(
+        door.address.table(table === "" ? undefined : table, {
+          q: q === "" ? undefined : q,
+          code: code === "" ? undefined : code,
+        }),
+        door,
+      );
     },
   },
   {

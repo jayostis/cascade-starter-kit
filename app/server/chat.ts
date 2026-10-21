@@ -1,5 +1,5 @@
 // `/chat`: a person's question goes to the model the app was set up with (`models.ts`) through the AI SDK. The server
-// runs the free reads of `tools.mjs` for up to `MAX_ROUNDS` rounds; every other tool it offers goes to the page with
+// runs the free reads of `tools.ts` for up to `MAX_ROUNDS` rounds; every other tool it offers goes to the page with
 // no server `execute`, so the page moves itself and asks the person before a write. `POST /chat` answers with the
 // AI SDK's UI message stream; `GET /chat` names the model.
 import {
@@ -97,7 +97,7 @@ const ADDRESS = { pod: podPath, trend: trendPath, entry: addresses().entry };
 
 type Input = Record<string, unknown> & { pod: string };
 
-/** A tool of `tools.mjs`, as this route reads it. */
+/** A tool of `tools.ts`, as this route reads it. */
 interface Listed {
   readonly name: string;
   readonly description: string;
@@ -133,13 +133,16 @@ function checked(schema: JSONSchema7) {
 const opened = z.object({ opened: z.string() });
 
 /**
- * What the page answers each tool it runs with, which is what `run` in `tools.mjs` gives: `validateUIMessages` holds
+ * What the page answers each tool it runs with, which is what `run` in `tools.ts` gives: `validateUIMessages` holds
  * a client's answer to the model to these before the model sees it.
  */
 export const CLIENT_OUTPUTS = {
   open_pod: opened,
   open_trend: opened,
   open_entry: opened,
+  open_classes: opened,
+  open_panel: opened,
+  open_table: opened,
   make_pod: z.object({
     pod: z.string(),
     made: z.boolean().optional(),
