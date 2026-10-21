@@ -4,4 +4,5 @@ dist/
 dist-browser/
 *.tsbuildinfo
 /app/pods/
+/app/test-results/
 /app/.env
