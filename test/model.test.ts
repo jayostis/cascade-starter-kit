@@ -802,7 +802,7 @@ test("the check passes only when the model calls the tool with arguments its sch
 test("a rejected key or a busy model is said plainly, with what to do, and no reply shows the key", async () => {
   const rejected =
     /^Google Gemini rejected the key: check CASCADE_MODEL_KEY in \.env, or run `npm run model` again\./;
-  const cases: [string, number, string, RegExp, string?][] = [
+  const cases: [string, number, string, RegExp, string?, true?][] = [
     ["401", 401, "Incorrect API key", rejected],
     ["403", 403, "Permission denied", rejected],
     ["a 400 naming the key", 400, "API key not valid", rejected],
@@ -840,12 +840,54 @@ test("a rejected key or a busy model is said plainly, with what to do, and no re
       /^m is busy at The model server \(503\): try again/,
       "local",
     ],
+    [
+      "429 sent mid-stream by an OpenAI-compatible server",
+      429,
+      "Quota",
+      /^m is busy at Google Gemini \(429\): try again/,
+      undefined,
+      true,
+    ],
+    [
+      "overloaded_error sent mid-stream by Anthropic",
+      529,
+      "Overloaded",
+      /^m is busy at Anthropic \(529\): try again/,
+      "anthropic",
+      true,
+    ],
   ];
-  for (const [what, status, message, expected, provider] of cases) {
-    const { url } = await serving(() => ({
-      status,
-      json: { error: { message: `${message} ${KEY}` } },
-    }));
+  for (const [what, status, message, expected, provider, streamed] of cases) {
+    const text = `${message} ${KEY}`;
+    const { url } = await serving(() =>
+      streamed
+        ? {
+            events:
+              provider === "anthropic"
+                ? [
+                    [
+                      "error",
+                      {
+                        type: "error",
+                        error: { type: "overloaded_error", message: text },
+                      },
+                    ],
+                  ]
+                : [
+                    [
+                      "message",
+                      {
+                        error: {
+                          message: text,
+                          type: "rate_limit",
+                          code: status,
+                        },
+                      },
+                    ],
+                  ],
+          }
+        : { status, json: { error: { message: text } } },
+    );
     const { ok, reason } = await check(
       modelOf({
         provider: provider ?? "gemini",

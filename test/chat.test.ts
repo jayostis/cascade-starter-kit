@@ -425,18 +425,60 @@ test("a tool call that cannot be run is reported to the model as a tool error, a
   assert.equal(fed.length, table.length);
 });
 
-test("a round of tool calls past the sixth ends the chat with an error", async () => {
+test("a round of tool calls past the sixth ends the chat with an error, and no tool of the page runs past it, in one request or across the page's automatic re-sends", async () => {
   const rounds = Array.from({ length: MAX_ROUNDS + 1 }, (_, at) =>
-    calling(call(`c${at}`, "list_pods", {})),
+    calling(
+      at < MAX_ROUNDS
+        ? call(`c${at}`, "list_pods", {})
+        : call(`c${at}`, "open_pod", { pod: STATIN }),
+    ),
   );
   const { model, calls } = fakeModel(rounds);
   const chunks = await chat(model, said("again"));
   assert.equal(calls.length, MAX_ROUNDS + 1);
+  const rounding = new RegExp(`after ${MAX_ROUNDS} rounds`);
   const [error] = ofType(chunks, "error");
-  assert.match(
-    String(error!.errorText),
-    new RegExp(`after ${MAX_ROUNDS} rounds`),
+  assert.match(String(error!.errorText), rounding);
+  assert.deepEqual(
+    ofType(chunks, "tool-input-available").filter(
+      ({ toolName }) => toolName === "open_pod",
+    ),
+    [],
   );
+
+  const earlier = (steps: number) => ({
+    id: "a1",
+    role: "assistant",
+    parts: Array.from({ length: steps }, (_, at) => [
+      { type: "step-start" },
+      {
+        type: "tool-open_pod",
+        toolCallId: `e${at}`,
+        state: "output-available",
+        input: { pod: STATIN },
+        output: { opened: `/pods/${STATIN}/` },
+      },
+    ]).flat(),
+  });
+  const resent = (steps: number) => ({
+    pod: STATIN,
+    page: "/",
+    messages: [user("again"), earlier(steps)],
+  });
+  const last = fakeModel([calling(call("n", "open_pod", { pod: STATIN }))]);
+  const lastOne = await chunksOf(
+    await post(chatRoutes({ api, model: last.model }), resent(MAX_ROUNDS)),
+  );
+  assert.equal(last.calls.length, 1);
+  assert.deepEqual(ofType(lastOne, "tool-input-available"), []);
+  assert.match(String(ofType(lastOne, "error")[0]!.errorText), rounding);
+
+  const spent = fakeModel([]);
+  const none = await chunksOf(
+    await post(chatRoutes({ api, model: spent.model }), resent(MAX_ROUNDS + 1)),
+  );
+  assert.equal(spent.calls.length, 0);
+  assert.match(String(ofType(none, "error")[0]!.errorText), rounding);
 });
 
 test("the model's refusal and its error each end the chat as a part of its own, apart from an answer", async () => {
@@ -474,6 +516,30 @@ test("the model's refusal and its error each end the chat as a part of its own, 
     ["text-delta", "error"],
   );
   assert.equal(ofType(failed, "error")[0]!.errorText, "rate limited");
+
+  const midStream = fakeModel([
+    [
+      {
+        type: "error",
+        error: { message: `Quota ${KEY}`, type: "rate_limit", code: 429 },
+      },
+    ],
+  ]);
+  const plain = await chat(
+    {
+      ...modelOf({
+        provider: "gemini",
+        url: "http://127.0.0.1:1/v1",
+        name: "m",
+        key: KEY,
+      }),
+      language: midStream.model.language,
+    },
+    said("hello"),
+  );
+  const [busy] = ofType(plain, "error");
+  assert.match(String(busy!.errorText), /^m is busy at Google Gemini \(429\)/);
+  assert.doesNotMatch(JSON.stringify(plain), new RegExp(KEY));
 });
 
 test("a body the rules refuse is 400 with the reason, and so is a pod there is none of; the model is not called and nothing is streamed", async () => {
@@ -548,6 +614,55 @@ test("a body the rules refuse is 400 with the reason, and so is a pod there is n
         ],
       },
       /messages/,
+    ],
+    [
+      {
+        ...good,
+        messages: [
+          {
+            ...answered,
+            parts: [{ ...answered.parts[0], output: { opened: 3 } }],
+          },
+        ],
+      },
+      /messages/,
+    ],
+    [
+      {
+        ...good,
+        messages: [
+          {
+            ...answered,
+            parts: [
+              {
+                ...answered.parts[0],
+                output: { opened: "x".repeat(100_001) },
+              },
+            ],
+          },
+        ],
+      },
+      /characters in all/,
+    ],
+    [
+      {
+        ...good,
+        messages: [
+          {
+            ...answered,
+            parts: [
+              {
+                type: "tool-open_pod",
+                toolCallId: "c1",
+                state: "output-error",
+                input: { pod: STATIN },
+                errorText: "x".repeat(100_001),
+              },
+            ],
+          },
+        ],
+      },
+      /characters in all/,
     ],
     [{ ...good, messages: [user("x".repeat(100_001))] }, /characters in all/],
     [{ ...good, context: "text" }, /context must be/],
@@ -722,41 +837,47 @@ test("POST /chat answers with the UI message stream, holding the tool's part and
   assert.ok(logged.mock.callCount() > 0);
 });
 
-test("a request that closes before the answer ends aborts the call to the model", async () => {
-  let aborted!: () => void;
-  const sawAbort = new Promise<void>((resolve) => (aborted = resolve));
-  const waiting = fakeModel([], async ({ abortSignal }) => ({
-    stream: new ReadableStream<LanguageModelV4StreamPart>({
-      start(controller) {
-        controller.enqueue({ type: "stream-start", warnings: [] });
-        controller.enqueue({ type: "text-start", id: "t" });
-        controller.enqueue({ type: "text-delta", id: "t", delta: "Let me" });
-        abortSignal!.addEventListener("abort", () => aborted(), {
-          once: true,
-        });
-      },
-    }),
-  }));
-  const routes = chatRoutes({ api, model: waiting.model });
-  const server = createServer(getRequestListener(routes.fetch));
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-  const { port } = server.address() as AddressInfo;
-  const stop = new AbortController();
-  const response = await fetch(`http://127.0.0.1:${port}/chat`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ pod: STATIN, page: "/", ...said("hello") }),
-    signal: stop.signal,
-  });
-  const reader = response.body!.getReader();
-  await reader.read();
-  stop.abort();
-  await sawAbort;
-  await new Promise((resolve) => {
-    server.close(resolve);
-    server.closeAllConnections();
-  });
-});
+test(
+  "a request that closes before the answer ends aborts the call to the model",
+  { timeout: 15_000 },
+  async () => {
+    let aborted!: () => void;
+    const sawAbort = new Promise<void>((resolve) => (aborted = resolve));
+    const waiting = fakeModel([], async ({ abortSignal }) => ({
+      stream: new ReadableStream<LanguageModelV4StreamPart>({
+        start(controller) {
+          controller.enqueue({ type: "stream-start", warnings: [] });
+          controller.enqueue({ type: "text-start", id: "t" });
+          controller.enqueue({ type: "text-delta", id: "t", delta: "Let me" });
+          abortSignal!.addEventListener("abort", () => aborted(), {
+            once: true,
+          });
+        },
+      }),
+    }));
+    const routes = chatRoutes({ api, model: waiting.model });
+    const server = createServer(getRequestListener(routes.fetch));
+    await new Promise<void>((resolve) =>
+      server.listen(0, "127.0.0.1", resolve),
+    );
+    const { port } = server.address() as AddressInfo;
+    const stop = new AbortController();
+    const response = await fetch(`http://127.0.0.1:${port}/chat`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ pod: STATIN, page: "/", ...said("hello") }),
+      signal: stop.signal,
+    });
+    const reader = response.body!.getReader();
+    await reader.read();
+    stop.abort();
+    await sawAbort;
+    await new Promise((resolve) => {
+      server.close(resolve);
+      server.closeAllConnections();
+    });
+  },
+);
 
 test("a chat that began with Ask about this tells the model the thing it asked about and to explain the thing, never the person; a chat with no context is told neither", async () => {
   const context = { kind: "finding", key: "start:617310:18262-6" };
