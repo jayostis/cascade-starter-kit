@@ -3,16 +3,16 @@
 import { chdir, exit, stderr, stdin } from "node:process";
 import { fileURLToPath, URL } from "node:url";
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
-import { podServer } from "./mcp-server.mjs";
-import { nodeHost } from "./node-host.mjs";
-import { podApi } from "./pod-api.mjs";
-import { PODS, trendUrl } from "./pods.mjs";
+import { podServer } from "./mcp-server.ts";
+import { nodeHost } from "./node-host.ts";
+import { podApi } from "./pod-api.ts";
+import { PODS, trendUrl } from "./pods.ts";
 
 chdir(fileURLToPath(new URL(".", import.meta.url)));
 
 /** Tells stderr once that what the tables kept in `pods/.tables/` say is not used, as they cannot say it. */
 let told = false;
-function unsaid(_kind, error) {
+function unsaid(_kind: string, error: Error) {
   if (!told)
     stderr.write(`What the tables say is not used: ${error.message}\n`);
   told = true;

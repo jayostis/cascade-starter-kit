@@ -1,9 +1,39 @@
-// The one list of tools a model reaches the app by, over PodApi alone: the MCP server (`mcp-server.mjs`), the chat
+// The one list of tools a model reaches the app by, over PodApi alone: the MCP server (`mcp-server.ts`), the chat
 // (`server/chat.ts`) and the browser target's WebMCP each offer those their door may. A tool's `tier` is the person's consent: `free`
 // reads or moves the app, `ask` writes once the person has said yes. What no tool ever calls is `NEVER`.
-import { Refusal } from "cascade-runtime";
-import { POD_TOOLS, trendOf } from "./pod-api.mjs";
-import { NO_INPUT, PAGE_TOOLS } from "./said.ts";
+import {
+  type CompactFinding,
+  type Finding,
+  type InputSchema,
+  Refusal,
+} from "cascade-runtime";
+import { POD_TOOLS, type PodApi, trendOf } from "./pod-api.ts";
+import { NO_INPUT, PAGE_TOOLS, type PageDoor, type PageTool } from "./said.ts";
+
+/** A tool's input, as its door checked it against the tool's schema: `pod` beside it for a tool with `ofPod`. */
+export type ToolInput = Readonly<Record<string, unknown>>;
+
+/** What a door gives the tools: the builders of its own addresses it has, and `open`, where it moves its app. */
+export interface Door {
+  readonly address?: Partial<PageDoor["address"]>;
+  open?(address: string): Promise<void>;
+}
+
+/** A tool of the list. */
+export interface Tool {
+  readonly name: string;
+  readonly description: string;
+  readonly inputSchema: InputSchema;
+  readonly tier: "free" | "ask";
+  readonly ofPod?: true;
+  readonly opens?: true;
+  run(api: PodApi, input: ToolInput, door: Door): Promise<unknown>;
+  findings?(
+    api: PodApi,
+    input: ToolInput,
+    door?: Door,
+  ): Promise<{ value: unknown[]; found: Finding[] }>;
+}
 
 /** The questions `ask` offers: the person's own records, who they are and where an entry came from. Never free SPARQL. */
 export const QUESTIONS = [
@@ -26,7 +56,11 @@ export const MAXIMUM_ROWS = 500;
  * The PodApi operations no tool calls, whatever the person says; `with` names the input that makes a call one of
  * them, where only some calls are.
  */
-export const NEVER = [
+export const NEVER: readonly {
+  readonly op: keyof PodApi;
+  readonly with?: string;
+  readonly why: string;
+}[] = [
   {
     op: "makePod",
     with: "encrypt",
@@ -48,7 +82,7 @@ export const NEVER = [
 ];
 
 /** `schema` with the pod's name beside its own properties: a tool of one pod as MCP and the chat take its input. */
-export function withPod(schema) {
+export function withPod(schema: InputSchema): InputSchema {
   const { properties = {}, required = [] } = schema;
   return {
     ...schema,
@@ -67,44 +101,60 @@ export function withPod(schema) {
  * `find_changes` as `run` gives it, with `found`, the findings with their rows, beside `value`; with `address.trend`,
  * each finding of `value` carries `view`, the address of the page that draws its results.
  */
-async function findings(api, { pod, ...input }, { address } = {}) {
-  const { value, found } = await api.tool({ pod, tool: "find_changes", input });
+async function findings(
+  api: PodApi,
+  { pod, ...input }: ToolInput,
+  { address }: Door = {},
+) {
+  const { value, found } = (await api.tool({
+    pod: pod as string,
+    tool: "find_changes",
+    input,
+  })) as { value: CompactFinding[]; found: Finding[] };
+  const trend = address?.trend;
   return {
     found,
     value:
-      address?.trend === undefined
+      trend === undefined
         ? value
         : value.map((finding) => ({
             ...finding,
-            view: address.trend(pod, trendOf(finding)),
+            view: trend(pod as string, trendOf(finding)),
           })),
   };
 }
 
-const ofPod = POD_TOOLS.map(({ name, description, inputSchema }) => ({
-  name,
-  description,
-  inputSchema,
-  tier: "free",
-  ofPod: true,
-  ...(name === "find_changes"
-    ? {
-        findings,
-        run: async (api, input, door) =>
-          (await findings(api, input, door)).value,
-      }
-    : {
-        run: async (api, { pod, ...input }) =>
-          (await api.tool({ pod, tool: name, input })).value,
-      }),
-}));
+const ofPod = POD_TOOLS.map(
+  ({ name, description, inputSchema }): Tool => ({
+    name,
+    description,
+    inputSchema,
+    tier: "free",
+    ofPod: true,
+    ...(name === "find_changes"
+      ? {
+          findings,
+          run: async (api, input, door) =>
+            (await findings(api, input, door)).value,
+        }
+      : {
+          run: async (api, { pod, ...input }) =>
+            (await api.tool({ pod: pod as string, tool: name, input })).value,
+        }),
+  }),
+);
 
 /** A tool of `PAGE_TOOLS`, which refuses by an error's name, refusing with the runtime's `Refusal` as every door here tells one. */
-const refusing = (tool) => ({
+const refusing = (tool: PageTool): Tool => ({
   ...tool,
+  inputSchema: tool.inputSchema as InputSchema,
   async run(api, input, door) {
     try {
-      return await tool.run(api, input, door);
+      return await tool.run(
+        api,
+        input as Parameters<PageTool["run"]>[1],
+        door as PageDoor,
+      );
     } catch (error) {
       if (
         error instanceof Error &&
@@ -124,11 +174,11 @@ const refusing = (tool) => ({
  * with `ofPod` takes the pod's name in `input.pod`, which `inputSchema` leaves out (`withPod` adds it); one with `opens`
  * moves the app.
  */
-export const TOOLS = [
+export const TOOLS: readonly Tool[] = [
   {
     name: "list_pods",
     description: "The names of the pods there are.",
-    inputSchema: NO_INPUT,
+    inputSchema: NO_INPUT as InputSchema,
     tier: "free",
     run: async (api) => (await api.pods({})).pods.map(({ name }) => name),
   },
@@ -158,7 +208,11 @@ export const TOOLS = [
     tier: "free",
     ofPod: true,
     run: (api, { pod, question, limit }) =>
-      api.ask({ pod, question, limit: limit ?? DEFAULT_ROWS }),
+      api.ask({
+        pod: pod as string,
+        question: question as string,
+        limit: (limit as number | undefined) ?? DEFAULT_ROWS,
+      }),
   },
   ...PAGE_TOOLS.map(refusing),
 ];

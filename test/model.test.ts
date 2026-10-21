@@ -8,21 +8,6 @@ import { parseEnv } from "node:util";
 import { after, before, test } from "node:test";
 import { Refusal } from "cascade-runtime";
 
-interface Event {
-  type: string;
-  [field: string]: unknown;
-}
-interface Model {
-  provider: string;
-  name: string;
-  local: boolean;
-  turn(input: {
-    system: string[];
-    messages: object[];
-    tools: object[];
-    signal?: AbortSignal;
-  }): AsyncIterable<Event>;
-}
 interface Settings {
   provider: string;
   url?: string;
@@ -50,9 +35,6 @@ interface Chosen {
   local: boolean;
 }
 
-const { modelClient } = (await import(
-  new URL("../../app/model-client.mjs", import.meta.url).href
-)) as { modelClient(settings: Settings): Model };
 const { modelFrom, modelOf } = (await import(
   new URL("../../app/models.ts", import.meta.url).href
 )) as {
@@ -83,7 +65,6 @@ type Reply = {
   status?: number;
   json?: object;
   events?: [string, object][];
-  stall?: boolean;
 };
 
 /** A loopback stub of a provider's API: answers every request with what `reply` says and keeps each request's body. */
@@ -101,7 +82,7 @@ async function stub(reply: () => Reply): Promise<{
     request.on("end", () => {
       bodies.push(JSON.parse(text) as Record<string, unknown>);
       headers.push(request.headers);
-      const { status = 200, json, events, stall } = reply();
+      const { status = 200, json, events } = reply();
       if (json) {
         response.writeHead(status, { "content-type": "application/json" });
         response.end(JSON.stringify(json));
@@ -110,7 +91,7 @@ async function stub(reply: () => Reply): Promise<{
       response.writeHead(status, { "content-type": "text/event-stream" });
       for (const [name, data] of events ?? [])
         response.write(`event: ${name}\ndata: ${JSON.stringify(data)}\n\n`);
-      if (!stall) response.end();
+      response.end();
     });
   });
   await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
@@ -167,12 +148,6 @@ const openai = {
       delta({ content: "lo" }),
       delta({}, "stop"),
     ],
-  }),
-  length: (): Reply => ({
-    events: [delta({ content: "Hel" }), delta({}, "length")],
-  }),
-  refusal: (): Reply => ({
-    events: [delta({ refusal: "No." }), delta({}, "stop")],
   }),
   unauthorized: (): Reply => ({
     status: 401,
@@ -271,19 +246,6 @@ const anthropic = {
   }),
 };
 
-/** Every event of one turn. */
-async function events(model: Model, signal?: AbortSignal): Promise<Event[]> {
-  const seen: Event[] = [];
-  for await (const event of model.turn({
-    system: ["rules", "context"],
-    messages: [{ role: "user", content: "hi" }],
-    tools: [],
-    signal,
-  }))
-    seen.push(event);
-  return seen;
-}
-
 const stubs: Server[] = [];
 let folder: string;
 
@@ -300,373 +262,6 @@ before(async () => {
 after(async () => {
   for (const server of stubs) server.close();
   await rm(folder, { recursive: true, force: true });
-});
-
-test("an OpenAI-compatible turn streams text, assembles a call from its fragments and says why it stopped", async () => {
-  const cases: [string, () => Reply, Event[]][] = [
-    [
-      "a call",
-      openai.call,
-      [
-        {
-          type: "call",
-          id: "c1",
-          name: "note_word",
-          arguments: '{"word":"ready"}',
-        },
-        { type: "done", stop: "calls" },
-      ],
-    ],
-    [
-      "a call the server gave no ID",
-      () => openai.call(false),
-      [
-        {
-          type: "call",
-          id: "call_0",
-          name: "note_word",
-          arguments: '{"word":"ready"}',
-        },
-        { type: "done", stop: "calls" },
-      ],
-    ],
-    [
-      "text",
-      openai.text,
-      [
-        { type: "text", text: "Hel" },
-        { type: "text", text: "lo" },
-        { type: "done", stop: "end" },
-      ],
-    ],
-    [
-      "a cut-off answer",
-      openai.length,
-      [
-        { type: "text", text: "Hel" },
-        { type: "done", stop: "length" },
-      ],
-    ],
-    [
-      "two calls the server gave no index, the first with Gemini's thought signature",
-      () => ({
-        events: [
-          delta({
-            tool_calls: [
-              {
-                id: "a",
-                type: "function",
-                function: { name: "one", arguments: "{}" },
-                extra_content: { google: { thought_signature: "sig" } },
-              },
-              {
-                id: "b",
-                type: "function",
-                function: { name: "two", arguments: '{"x":1}' },
-              },
-            ],
-          }),
-          delta({}, "tool_calls"),
-        ],
-      }),
-      [
-        {
-          type: "call",
-          id: "a",
-          name: "one",
-          arguments: "{}",
-          extra: { google: { thought_signature: "sig" } },
-        },
-        { type: "call", id: "b", name: "two", arguments: '{"x":1}' },
-        { type: "done", stop: "calls" },
-      ],
-    ],
-    ["a refusal", openai.refusal, [{ type: "refused", text: "No." }]],
-    [
-      "a bad key, which the provider echoes back",
-      openai.unauthorized,
-      [{ type: "error", status: 401, message: "" }],
-    ],
-  ];
-  for (const [what, reply, expected] of cases) {
-    const { url } = await serving(reply);
-    const model = modelClient({
-      provider: "groq",
-      url: `${url}/v1`,
-      name: "m",
-      key: KEY,
-    });
-    const seen = await events(model);
-    if (expected[0]!.type === "error") {
-      assert.equal(seen.length, 1, what);
-      assert.equal(seen[0]!.status, 401, what);
-      assert.ok(
-        !String(seen[0]!.message).includes(KEY),
-        "the error shows the key",
-      );
-      assert.match(String(seen[0]!.message), /Incorrect API key/, what);
-    } else assert.deepEqual(seen, expected, what);
-  }
-});
-
-test("no server at the address is an error event, and an aborted turn ends with no event", async () => {
-  const { url, server } = await serving(openai.text);
-  const address = `${url}/v1`;
-  await new Promise((done) => server.close(done));
-  const down = modelClient({ provider: "local", url: address, name: "m" });
-  const [error, ...rest] = await events(down);
-  assert.equal(error!.type, "error");
-  assert.match(String(error!.message), /ECONNREFUSED|onnection/);
-  assert.deepEqual(rest, []);
-
-  const live = await serving(openai.text);
-  const model = modelClient({
-    provider: "local",
-    url: `${live.url}/v1`,
-    name: "m",
-  });
-  assert.deepEqual(await events(model, AbortSignal.abort()), []);
-
-  const cut = (full: Reply): Reply => ({
-    events: full.events!.slice(0, -1),
-    stall: true,
-  });
-  for (const [provider, reply, path] of [
-    ["local", cut(openai.call()), "/v1"],
-    ["anthropic", cut(anthropic.call()), ""],
-  ] as const) {
-    const stalled = await serving(() => reply);
-    const controller = new AbortController();
-    setTimeout(() => controller.abort(), 400);
-    const model = modelClient({
-      provider,
-      url: `${stalled.url}${path}`,
-      name: "m",
-      key: KEY,
-    });
-    assert.deepEqual(
-      await events(model, controller.signal),
-      [],
-      `${provider}: an abort in mid-stream ends the turn with no event`,
-    );
-  }
-});
-
-test("an OpenAI-compatible request carries the system parts as one message, the tools, the calls and their results; only a model on this computer or another address is told not to think", async () => {
-  const messages = [
-    { role: "user", content: "hi" },
-    {
-      role: "assistant",
-      content: "",
-      calls: [
-        { id: "c1", name: "list_pods", arguments: "{}" },
-        {
-          id: "c2",
-          name: "list_pods",
-          arguments: "{}",
-          extra: { google: { thought_signature: "sig" } },
-        },
-      ],
-    },
-    { role: "tool", id: "c1", content: "[]" },
-    { role: "tool", id: "c2", content: "[]" },
-  ];
-  const tools = [
-    {
-      name: "list_pods",
-      description: "Lists.",
-      inputSchema: { type: "object" },
-    },
-  ];
-  const sent = new Map<string, Record<string, unknown>>();
-  for (const provider of ["groq", "local", "other"]) {
-    const { url, bodies } = await serving(openai.text);
-    const model = modelClient({
-      provider,
-      url: `${url}/v1`,
-      name: "m",
-      key: KEY,
-    });
-    for await (const event of model.turn({
-      system: ["rules", "context"],
-      messages,
-      tools,
-    }))
-      void event;
-    sent.set(provider, bodies[0]!);
-  }
-  const groq = sent.get("groq")!;
-  assert.equal(groq.model, "m");
-  assert.deepEqual(groq.messages, [
-    { role: "system", content: "rules\n\ncontext" },
-    { role: "user", content: "hi" },
-    {
-      role: "assistant",
-      content: null,
-      tool_calls: [
-        {
-          id: "c1",
-          type: "function",
-          function: { name: "list_pods", arguments: "{}" },
-        },
-        {
-          id: "c2",
-          type: "function",
-          function: { name: "list_pods", arguments: "{}" },
-          extra_content: { google: { thought_signature: "sig" } },
-        },
-      ],
-    },
-    { role: "tool", tool_call_id: "c1", content: "[]" },
-    { role: "tool", tool_call_id: "c2", content: "[]" },
-  ]);
-  assert.deepEqual(groq.tools, [
-    {
-      type: "function",
-      function: {
-        name: "list_pods",
-        description: "Lists.",
-        parameters: { type: "object" },
-      },
-    },
-  ]);
-  const thinking = (provider: string) =>
-    (sent.get(provider)!.chat_template_kwargs as object | undefined) ?? null;
-  assert.equal(thinking("groq"), null);
-  assert.deepEqual(thinking("local"), { enable_thinking: false });
-  assert.deepEqual(thinking("other"), { enable_thinking: false });
-});
-
-test("an Anthropic turn streams text, assembles a call, and reports a refusal and an error", async () => {
-  const cases: [string, () => Reply, Event[]][] = [
-    [
-      "a call",
-      anthropic.call,
-      [
-        {
-          type: "call",
-          id: "tu1",
-          name: "note_word",
-          arguments: '{"word":"ready"}',
-        },
-        { type: "done", stop: "calls" },
-      ],
-    ],
-    [
-      "text",
-      anthropic.text,
-      [
-        { type: "text", text: "Hello" },
-        { type: "done", stop: "end" },
-      ],
-    ],
-    [
-      "a cut-off answer",
-      () => anthropic.text("max_tokens"),
-      [
-        { type: "text", text: "Hello" },
-        { type: "done", stop: "length" },
-      ],
-    ],
-    [
-      "a refusal",
-      () => anthropic.text("refusal"),
-      [
-        { type: "text", text: "Hello" },
-        { type: "refused", text: "The model declined to answer." },
-      ],
-    ],
-  ];
-  for (const [what, reply, expected] of cases) {
-    const { url } = await serving(reply);
-    const model = modelClient({
-      provider: "anthropic",
-      url,
-      name: "m",
-      key: KEY,
-    });
-    assert.deepEqual(await events(model), expected, what);
-  }
-  const { url } = await serving(anthropic.unauthorized);
-  const [error, ...rest] = await events(
-    modelClient({ provider: "anthropic", url, name: "m", key: KEY }),
-  );
-  assert.equal(error!.status, 401);
-  assert.ok(!String(error!.message).includes(KEY), "the error shows the key");
-  assert.deepEqual(rest, []);
-});
-
-test("an Anthropic request carries system text blocks, the tools, and consecutive tool results as one user message", async () => {
-  const { url, bodies, headers } = await serving(anthropic.text);
-  const model = modelClient({
-    provider: "anthropic",
-    url,
-    name: "m",
-    key: KEY,
-  });
-  process.env.ANTHROPIC_AUTH_TOKEN = "OTHER-CREDENTIAL";
-  for await (const event of model.turn({
-    system: ["rules", "context"],
-    messages: [
-      { role: "user", content: "hi" },
-      {
-        role: "assistant",
-        content: "Looking.",
-        calls: [
-          { id: "a", name: "list_pods", arguments: "{}" },
-          { id: "b", name: "list_pods", arguments: '{"x":1}' },
-        ],
-      },
-      { role: "tool", id: "a", content: "[]" },
-      { role: "tool", id: "b", content: "boom", isError: true },
-    ],
-    tools: [
-      {
-        name: "list_pods",
-        description: "Lists.",
-        inputSchema: { type: "object" },
-      },
-    ],
-  }))
-    void event;
-  const body = bodies[0]!;
-  assert.deepEqual(body.system, [
-    { type: "text", text: "rules" },
-    { type: "text", text: "context" },
-  ]);
-  assert.deepEqual(body.tools, [
-    {
-      name: "list_pods",
-      description: "Lists.",
-      input_schema: { type: "object" },
-    },
-  ]);
-  assert.deepEqual(body.messages, [
-    { role: "user", content: "hi" },
-    {
-      role: "assistant",
-      content: [
-        { type: "text", text: "Looking." },
-        { type: "tool_use", id: "a", name: "list_pods", input: {} },
-        { type: "tool_use", id: "b", name: "list_pods", input: { x: 1 } },
-      ],
-    },
-    {
-      role: "user",
-      content: [
-        { type: "tool_result", tool_use_id: "a", content: "[]" },
-        {
-          type: "tool_result",
-          tool_use_id: "b",
-          content: "boom",
-          is_error: true,
-        },
-      ],
-    },
-  ]);
-  assert.equal(headers[0]!["x-api-key"], KEY);
-  assert.equal(headers[0]!.authorization, undefined);
-  delete process.env.ANTHROPIC_AUTH_TOKEN;
 });
 
 test("the settings make a model, none make nothing, and no property of a model shows its key", () => {

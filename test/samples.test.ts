@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Pod, Tables } from "cascade-runtime/published";
-import { tryLooks } from "../try/build/try.js";
+
+const { looks } = (await import(
+  new URL("../../app/server/samples.ts", import.meta.url).href
+)) as { looks(pod: Pod, tables: Tables): Promise<void> };
 
 test("a first-paint lookup that fails at the site build fails the build, naming each failure", async () => {
   const down = new Error("the tables are down");
@@ -12,7 +15,7 @@ test("a first-paint lookup that fails at the site build fails the build, naming 
     },
     held: async () => [],
   } as unknown as Tables;
-  await assert.rejects(tryLooks(pod, tables), (error: unknown) => {
+  await assert.rejects(looks(pod, tables), (error: unknown) => {
     assert.ok(error instanceof AggregateError);
     assert.deepEqual(error.errors, [down]);
     return true;

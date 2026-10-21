@@ -10,10 +10,11 @@
     "declaration": false,
     "sourceMap": false,
     "strict": false,
-    "noUncheckedIndexedAccess": false
+    "noUncheckedIndexedAccess": false,
+    "erasableSyntaxOnly": true
   },
   "include": [
-    "check/*.mjs",
+    "check/*.ts",
     "create/*.mjs",
     "scripts/pin.mjs",
     "scripts/pin-lib.mjs"

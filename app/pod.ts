@@ -9,10 +9,11 @@ import {
   argumentsOf,
   checkName,
   deletePod,
+  messageOf,
   podFolder,
   refuse,
   resetAll,
-} from "./pods.mjs";
+} from "./pods.ts";
 
 const [command, ...args] = argv.slice(2);
 
@@ -40,7 +41,7 @@ async function load() {
       values.through === undefined ? {} : { through: values.through },
     );
   } catch (error) {
-    refuse(error.message);
+    refuse(messageOf(error));
   }
   for (const { step, kind, wrote, refused } of steps) {
     const files = wrote.length === 0 ? "nothing" : wrote.join(", ");
@@ -79,14 +80,23 @@ async function everything() {
   try {
     removed = await resetAll((text) => stdout.write(text));
   } catch (error) {
-    refuse(error.message);
+    refuse(messageOf(error));
   }
   stdout.write(
     `Removed ${removed.length === 0 ? "no pod" : removed.join(", ")}, and loaded the app's pods again. If the app is running, restart it.\n`,
   );
 }
 
-const commands = { load, new: create, reset, everything };
-if (!Object.hasOwn(commands, command))
-  refuse("usage: node pod.mjs load|new|reset|everything ...");
-await commands[command]();
+const commands: Readonly<Record<string, () => Promise<void>>> = {
+  load,
+  new: create,
+  reset,
+  everything,
+};
+const run =
+  command !== undefined && Object.hasOwn(commands, command)
+    ? commands[command]
+    : undefined;
+if (run === undefined)
+  refuse("usage: node pod.ts load|new|reset|everything ...");
+await run();

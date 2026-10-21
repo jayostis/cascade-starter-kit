@@ -1,15 +1,16 @@
 // PodApi called at a server's `/api/`, through Hono's client typed by the server's routes; only their types come from
 // the server. What the server refuses is thrown as PodApi throws it in-process, by name.
-import { hc, type ClientRequestOptions } from "hono/client";
-import type { z } from "zod";
+import {
+  hc,
+  type ClientRequestOptions,
+  type ClientResponse,
+} from "hono/client";
 import type { ApiRoutes, Output } from "../../server/api.ts";
-import type { INPUTS, Operation } from "../../server/inputs.ts";
+import type { Input as In, Operation } from "../../server/inputs.ts";
 
-/** Only the fields a schema names: its `looseObject` lets the server take others, but a caller may not send them. */
-type Named<T> = { [P in keyof T as string extends P ? never : P]: T[P] };
-
-/** What `operation` may be sent, as its route's schema says. */
-type In<K extends Operation> = Named<z.input<(typeof INPUTS)[K]>>;
+/** What a route answers with 200: its operation's output, as JSON. */
+type Ok<R> =
+  R extends ClientResponse<infer T, infer S> ? (S extends 200 ? T : never) : never;
 
 /** PodApi's own errors, by the names the runtime's carry: the screens tell them apart by `name`. */
 class Refusal extends Error {
@@ -25,10 +26,10 @@ class Unopened extends Error {
 }
 
 /** What the server answered `operation`, or what it refused: 400 a `Refusal`, 423 an `Unopened`, else an `Error`. */
-async function answer(
+async function answer<R extends ClientResponse<unknown, number>>(
   operation: Operation,
-  sent: Promise<Response>,
-): Promise<Output> {
+  sent: Promise<R>,
+): Promise<Ok<R>> {
   const response = await sent;
   const parsed: unknown = await response.json().catch(() => undefined);
   if (response.ok) {
@@ -36,7 +37,7 @@ async function answer(
       throw new Error(
         `${operation}: the server answered ${response.status} with ${response.headers.get("content-type") ?? "no content type"}, not JSON`,
       );
-    return parsed as Output;
+    return parsed as Ok<R>;
   }
   const body = (parsed ?? {}) as Output;
   if (typeof body.refused === "string") {

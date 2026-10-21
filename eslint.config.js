@@ -8,37 +8,6 @@ export default tseslint.config(
   tseslint.configs.recommended,
   prettier,
   {
-    files: ["try/**/*.js"],
-    languageOptions: {
-      globals: {
-        AbortController: "readonly",
-        document: "readonly",
-        fetch: "readonly",
-        FormData: "readonly",
-        history: "readonly",
-        indexedDB: "readonly",
-        location: "readonly",
-        URL: "readonly",
-        URLSearchParams: "readonly",
-        window: "readonly",
-      },
-    },
-  },
-  {
-    files: ["app/summary.mjs"],
-    rules: {
-      "no-restricted-syntax": [
-        "error",
-        {
-          selector:
-            "ImportDeclaration[source.value!=/^(preact|preact\\/hooks|htm|preact-render-to-string|\\.\\/said\\.ts)$/], ImportExpression",
-          message:
-            "The view runs in a browser too: it imports only preact, preact/hooks, htm, preact-render-to-string and ./said.ts.",
-        },
-      ],
-    },
-  },
-  {
     files: ["app/said.ts"],
     rules: {
       "no-restricted-syntax": [
@@ -53,15 +22,15 @@ export default tseslint.config(
     },
   },
   {
-    files: ["app/pod-api.mjs"],
+    files: ["app/pod-api.ts"],
     rules: {
       "no-restricted-syntax": [
         "error",
         {
           selector:
-            "ImportDeclaration[source.value!=/^(cascade-runtime|\\.\\/said\\.ts)$/], ImportExpression, ExportNamedDeclaration[source], ExportAllDeclaration",
+            "ImportDeclaration[source.value!=/^(cascade-runtime|\\.\\/said\\.ts|\\.\\/server\\/inputs\\.ts)$/], ImportDeclaration[source.value='./server/inputs.ts'][importKind!='type'], ImportExpression, ExportNamedDeclaration[source], ExportAllDeclaration",
           message:
-            "PodApi runs in a browser too: it imports only cascade-runtime and ./said.ts, and re-exports nothing.",
+            "PodApi runs in a browser too: it imports only cascade-runtime and ./said.ts, the types of its inputs from ./server/inputs.ts, and re-exports nothing.",
         },
         {
           selector:
@@ -80,7 +49,7 @@ export default tseslint.config(
         "error",
         {
           selector:
-            "ImportDeclaration[source.value=/(^cascade-runtime$|pod-api\\.mjs$|summary\\.mjs$)/], ImportExpression[source.value=/(^cascade-runtime$|pod-api\\.mjs$|summary\\.mjs$)/]",
+            "ImportDeclaration[source.value=/(^cascade-runtime$|pod-api\\.ts$)/][importKind!='type'], ImportExpression[source.value=/(^cascade-runtime$|pod-api\\.ts$)/]",
           message:
             "The Node target's bundle carries no runtime: only src/hosts/browser.ts reaches cascade-runtime and PodApi in the page.",
         },

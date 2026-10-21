@@ -17,14 +17,13 @@ import {
 } from "@the-cascade-protocol/sandbox/node";
 import { Refusal } from "cascade-runtime";
 import { modelFrom } from "../models.ts";
-import { nodeHospitals, nodeHost } from "../node-host.mjs";
-import { podApi } from "../pod-api.mjs";
-import { PODS } from "../pods.mjs";
+import { nodeHospitals, nodeHost } from "../node-host.ts";
+import { podApi } from "../pod-api.ts";
+import { PODS } from "../pods.ts";
 import { demoPeople, worldInstant } from "../said.ts";
-import type { Operations } from "./api.ts";
 import { appServer, type Served } from "./app.ts";
 import { builtPages } from "./built.ts";
-import { chatRoutes, type PodApi } from "./chat.ts";
+import { chatRoutes } from "./chat.ts";
 import type { Own } from "./guard.ts";
 
 const APP = fileURLToPath(new URL("../", import.meta.url));
@@ -124,9 +123,9 @@ const vite = dev
   : undefined;
 
 const app = appServer({
-  api: api as unknown as Operations,
+  api,
   own: () => own,
-  chat: chatRoutes({ api: api as unknown as PodApi, model }),
+  chat: chatRoutes({ api, model }),
   back: (url) => back(url),
   people: () => people,
   pages:

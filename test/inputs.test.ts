@@ -3,7 +3,7 @@ import { test } from "node:test";
 import type { z } from "zod";
 
 const { INPUTS: CHECKED, inputRefusal } = (await import(
-  new URL("../../app/pod-api.mjs", import.meta.url).href
+  new URL("../../app/pod-api.ts", import.meta.url).href
 )) as {
   INPUTS: Record<string, Record<string, unknown>>;
   inputRefusal: (operation: string, input: unknown) => string | undefined;

@@ -179,7 +179,7 @@ const view = (await import(
 )) as View;
 /** The names of the free tools of the one list, which try/ offers for the pod shown. */
 const FREE_TOOLS = (
-  (await import(pathToFileURL(join(ROOT, "app", "tools.mjs")).href)) as {
+  (await import(pathToFileURL(join(ROOT, "app", "tools.ts")).href)) as {
     TOOLS: { name: string; tier: string }[];
   }
 ).TOOLS.filter(({ tier }) => tier === "free")
@@ -478,7 +478,7 @@ interface Leaving {
  * Looks, in every page of the context, at the tools of the pod left at the first change of the page that follows from
  * `globalThis.leaving = { count, from }` being set: the title bar marking another pod than `from`. A mutation observer
  * calls back in the microtask after the commit that made the change, before the macrotask in which a passive effect
- * (React's scheduler) or a post-paint timer (Preact's) runs, so a tool taken away from one of those is still on. It
+ * (React's scheduler) runs, so a tool taken away from one is still on. It
  * sets `leaving.still` to how many of the first `count` tools registered are still on. No timer and no machine's speed
  * decides it.
  */

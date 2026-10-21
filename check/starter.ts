@@ -1,7 +1,8 @@
 // The starter, made by the command from create-cascade-app's tarball and used as a person would, in a new folder under
-// the current one. `node starter.mjs <tarball> [--runtime <cascade-runtime tarball>]` before a merge, the made app on
-// the template's pinned runtime unless another is given; `node starter.mjs --release <commit>` once that commit's
-// release exists. Run from the repository after `npm ci` and `npm run build`.
+// the current one. `node starter.ts <tarball> [--runtime <cascade-runtime tarball>]` before a merge, the made app on
+// the template's pinned runtime unless another is given; `node starter.ts --release <commit>` once that commit's
+// release exists. Run from the repository after `npm ci` and `npm run build`. `--only <behaviour>` runs only the
+// behaviours whose name holds that text, after making the app.
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -31,10 +32,9 @@ import {
 } from "../dist/test-browser/shown.js";
 
 /** What the tables the app holds now name each code, set once the app is installed. */
-/** @type {(codes: readonly string[]) => Promise<Map<string, any>>} */
-let heldNames = async () => new Map();
-/** @type {() => Promise<any[]>} */
-let heldSeries = async () => [];
+let heldNames: (codes: readonly string[]) => Promise<Map<string, any>> =
+  async () => new Map();
+let heldSeries: () => Promise<any[]> = async () => [];
 
 /** A Turtle file's triples, each as its subject, predicate and object. */
 const turtle = (bytes, base) =>
@@ -102,10 +102,15 @@ const { fetch } = globalThis;
 
 const { values, positionals } = parseArgs({
   args: argv.slice(2),
-  options: { release: { type: "string" }, runtime: { type: "string" } },
+  options: {
+    release: { type: "string" },
+    runtime: { type: "string" },
+    only: { type: "string" },
+  },
   allowPositionals: true,
 });
 const release = values.release;
+const only = values.only;
 const tarball =
   positionals[0] === undefined ? undefined : resolve(positionals[0]);
 const runtime =
@@ -115,7 +120,7 @@ if (
   (release !== undefined && runtime !== undefined)
 )
   throw new Error(
-    "usage: node starter.mjs <tarball> [--runtime <tarball>] | node starter.mjs --release <commit>",
+    "usage: node starter.ts <tarball> [--runtime <tarball>] [--only <behaviour>] | node starter.ts --release <commit> [--only <behaviour>]",
   );
 const PIN = JSON.parse(
   await readFile(new URL("../app/package.json", import.meta.url), "utf8"),
@@ -135,8 +140,19 @@ function npmScript(name) {
 const NPM = npmScript("npm-cli.js");
 const NPX = npmScript("npx-cli.js");
 
+/** How a command ended, and all it wrote. */
+interface Ran {
+  code: number | null;
+  out: string;
+  err: string;
+}
+
 /** A command run to its end, its standard input a pipe never written, its output logged. */
-function run(command, args, options = {}) {
+function run(
+  command: string,
+  args: readonly string[],
+  options: object = {},
+): Promise<Ran> {
   stdout.write(`\n$ ${[command, ...args].join(" ")}\n`);
   return new Promise((done, failed) => {
     const child = spawn(command, args, {
@@ -158,7 +174,7 @@ function run(command, args, options = {}) {
   });
 }
 
-const npm = (...args) => run(execPath, [NPM, ...args]);
+const npm = (...args: string[]) => run(execPath, [NPM, ...args]);
 
 /** The question's rows as `npm run ask` prints them. */
 async function asked(question, pod) {
@@ -216,8 +232,10 @@ async function started(settings = {}, script = "start") {
   });
   let out = "";
   child.stderr.on("data", (chunk) => stdout.write(`[server] ${chunk}`));
-  const { app: address, demo: listenerAddress } = await new Promise(
-    (done, failed) => {
+  const { app: address, demo: listenerAddress } = await new Promise<{
+    app: string;
+    demo?: string;
+  }>((done, failed) => {
       child.stdout.on("data", (chunk) => {
         out += chunk;
         const app = /^(http:\/\/127\.0\.0\.1:\d+\/)$/m.exec(out);
@@ -582,8 +600,20 @@ console.log(JSON.stringify({ row, patient, patients: Object.keys(north.patients)
   return JSON.parse(out.trim().split(/\r?\n/).at(-1));
 }
 
-async function behaviour(name, check) {
+/**
+ * Checks the behaviour `name`. With `--only`, a behaviour whose name does not hold its text is skipped, unless the
+ * behaviours after it need what it `sets up`.
+ */
+async function behaviour(
+  name: string,
+  check: () => Promise<void>,
+  { setsUp = false } = {},
+) {
   stdout.write(`\n# ${name}\n`);
+  if (only !== undefined && !setsUp && !name.includes(only)) {
+    stdout.write(`skip - not ${only}\n`);
+    return;
+  }
   await check();
   stdout.write(`ok - ${name}\n`);
 }
@@ -643,7 +673,7 @@ await behaviour("the command makes the app", async () => {
     "..",
     "..",
   );
-  const kit = (through) =>
+  const kit = (through?: string) =>
     fixtures.kitStory("alex-rivera", through === undefined ? {} : { through });
   const whole = await kit();
   const e15 = whole.steps.findIndex(({ name }) => name === "E15");
@@ -670,7 +700,7 @@ await behaviour("the command makes the app", async () => {
       .map(([, , o]) => o.value)
       .sort(),
   };
-});
+}, { setsUp: true });
 
 await behaviour(
   "the app runs on the pinned runtime, or the one given, and installs with no git: each package is the runtime or bundled in it, the demo hospital beside the app, or from npm's registry",
@@ -688,7 +718,12 @@ await behaviour(
     );
     const { packages } = JSON.parse(
       await readFile(join(app, "package-lock.json"), "utf8"),
-    );
+    ) as {
+      packages: Record<
+        string,
+        { inBundle?: boolean; resolved?: string; link?: boolean }
+      >;
+    };
     const sandbox = packages["node_modules/@the-cascade-protocol/sandbox"];
     assert.deepEqual(
       [sandbox?.link, sandbox?.resolved],
@@ -739,8 +774,7 @@ await behaviour("help lists every command", async () => {
 });
 
 const server = await (async () => {
-  /** @type {Awaited<ReturnType<typeof started>>} */
-  let server;
+  let server: Awaited<ReturnType<typeof started>>;
   await behaviour("a loaded pod is shown", async () => {
     server = await started();
     const page = await tab();
@@ -889,7 +923,7 @@ const server = await (async () => {
     );
     assert.ok((await readable(missing)).includes("no longer in this pod"));
     await page.close();
-  });
+  }, { setsUp: true });
   return server;
 })();
 
@@ -1649,7 +1683,7 @@ if (release === undefined) {
      * Signs the pod's person in at `fhirBase` through the pod API, answering the hospital's own page with `decision` as
      * `patient`, and hands its answer to the app's `/callback`; gives the connection's number.
      */
-    const signIn = async (pod, fhirBase, patient, decision, simulate) => {
+    const signIn = async (pod, fhirBase, patient, decision, simulate?) => {
       const { connection, authorize: to } = await api(server, "connect", {
         pod,
         fhirBase,
@@ -2484,8 +2518,8 @@ if (release === undefined) {
     });
     child.stderr.on("data", (chunk) => stdout.write(`[console] ${chunk}`));
     const exited = new Promise((done) => child.on("close", done));
-    const promptAfter = (from) =>
-      new Promise((done) => {
+    const promptAfter = (from: number) =>
+      new Promise<number>((done) => {
         waiting = () => {
           const at = out.indexOf(prompt, from);
           if (at >= 0) done(at);
@@ -2545,7 +2579,7 @@ await behaviour(
       );
       const page = await tab();
       const held = [];
-      const requested = Promise.withResolvers();
+      const requested = Promise.withResolvers<void>();
       await page.route(/\/web_bg\.wasm$/, (route) => {
         held.push(route);
         requested.resolve();
@@ -2581,7 +2615,7 @@ await behaviour(
       );
       const shown = await tiles(page);
       for (const [kind, question] of Object.entries(TILES)) {
-        const rows = await asked(question, "alex-rivera");
+        const rows = alex?.[question] ?? (await asked(question, "alex-rivera"));
         assert.equal(
           shown.get(kind),
           rows.length === 0 ? undefined : rows.length,

@@ -5,12 +5,19 @@ import { dirname, join } from "node:path";
 import { env } from "node:process";
 import { fileURLToPath } from "node:url";
 import { parseArgs, promisify } from "node:util";
-import { publishedSamples } from "cascade-runtime/published";
+import {
+  publishedSamples,
+  type Pod,
+  type Tables,
+} from "cascade-runtime/published";
 import { build } from "vite";
 import { servePages } from "./serve.js";
-import { tryLooks } from "./try.js";
 
 const ROOT = fileURLToPath(new URL("../../../", import.meta.url));
+/** What the samples carry for a first paint, as the app's own `npm run browser` makes them. */
+const { looks } = (await import(
+  new URL("../../../app/server/samples.ts", import.meta.url).href
+)) as { looks(pod: Pod, tables: Tables): Promise<void> };
 const PAGES = join(ROOT, "build", "pages");
 /** The app's browser target, at the base Pages serves it under, which `CASCADE_TRY_BASE` sets. */
 const TRY = "try";
@@ -67,7 +74,7 @@ async function buildTry(samples: readonly string[], version: string) {
 
 /** Writes build/pages: each kit's sample where try/ copies it from, the app's browser build in try/, and a root page that sends a visitor to try/. */
 async function buildPages(): Promise<number> {
-  const samples = await publishedSamples({ look: tryLooks });
+  const samples = await publishedSamples({ look: looks });
   const version = await builtFrom();
   const tree = new Map<string, Uint8Array>(samples.files);
   tree.set("index.html", new TextEncoder().encode(REDIRECT));

@@ -64,12 +64,9 @@ test("the app's AGENTS.md lists the starter's scripts and the variables its serv
   );
   const server = (
     await Promise.all(
-      [
-        "server.mjs",
-        ...(await readdir(join(APP, "server"))).map((name) =>
-          join("server", name),
-        ),
-      ].map((path) => readFile(join(APP, path), "utf8")),
+      (await readdir(join(APP, "server"))).map((name) =>
+        readFile(join(APP, "server", name), "utf8"),
+      ),
     )
   ).join("\n");
   assert.match(server, /CASCADE_WORLD_DATE/);

@@ -5,7 +5,7 @@ import { basename, dirname, join } from "node:path";
 import { argv, stdout } from "node:process";
 import { fileURLToPath } from "node:url";
 import { kitDownload } from "cascade-runtime/fixtures";
-import { argumentsOf, refuse } from "./pods.mjs";
+import { argumentsOf, messageOf, refuse } from "./pods.ts";
 
 const EXPORT = "apple_health_export";
 const APP = dirname(fileURLToPath(import.meta.url));
@@ -21,7 +21,7 @@ let found;
 try {
   found = await kitDownload(kit, download);
 } catch (error) {
-  refuse(error.message);
+  refuse(messageOf(error));
 }
 const file = statSync(found).isFile();
 const source = file ? found : join(found, EXPORT);
@@ -35,6 +35,6 @@ try {
   cpSync(source, target, { recursive: true });
 } catch (error) {
   rmSync(target, { recursive: true, force: true });
-  refuse(`${name} could not be copied: ${error.message}`);
+  refuse(`${name} could not be copied: ${messageOf(error)}`);
 }
 stdout.write(`Copied ${kit}'s ${download} into ${name}${file ? "" : "/"}.\n`);

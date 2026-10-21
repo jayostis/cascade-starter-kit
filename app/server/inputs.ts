@@ -63,6 +63,12 @@ export const INPUTS = {
 
 export type Operation = keyof typeof INPUTS;
 
+/** Only the fields a schema names: its `looseObject` lets the server take others, but a caller may not send them. */
+type Named<T> = { [P in keyof T as string extends P ? never : P]: T[P] };
+
+/** What `operation` may be sent, as its route's schema says. */
+export type Input<K extends Operation> = Named<z.input<(typeof INPUTS)[K]>>;
+
 /** The sentence an input the schema refused is refused with, PodApi's own for the same input. */
 export function refusalOf(error: {
   readonly issues: readonly {

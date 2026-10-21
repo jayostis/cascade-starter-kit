@@ -4,18 +4,14 @@ import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { HTTPException } from "hono/http-exception";
-import type { z } from "zod";
+import type { PodApi } from "../pod-api.ts";
 import { INPUTS, type Operation, refusalOf } from "./inputs.ts";
 
-/** What an operation answers: JSON, as PodApi gives it; `pod-api.mjs` is untyped until it is TypeScript. */
+/** What the server answers when it does not answer an operation's output: why it refused, or that it failed. */
 export type Output = Record<string, unknown>;
 
 /** The operations the routes call: PodApi, as `podApi(host)` gives it. */
-export type Operations = {
-  readonly [K in Operation]: (
-    input: z.output<(typeof INPUTS)[K]>,
-  ) => Promise<unknown>;
-};
+export type Operations = Omit<PodApi, "close">;
 
 const MAX_BODY_BYTES = 1024 * 1024;
 const FAILED = "the server failed; its log says why";
@@ -38,8 +34,6 @@ const checked = <K extends Operation>(operation: K) =>
       : c.json({ refused: refusalOf(result.error) }, 400),
   );
 
-const out = (value: unknown) => value as Output;
-
 /**
  * The routes over `api`: 200 with the output; 400 `{ refused }` for an input its schema refuses, a `Refusal`, a body
  * that is no JSON or over 1 MiB; 423 `{ unopened, refused }` for an `Unopened` (an error with `outcome`); and 500 with
@@ -59,73 +53,73 @@ export function apiRoutes(api: Operations) {
       }),
     )
     .post("/api/pods", checked("pods"), async (c) =>
-      c.json(out(await api.pods(c.req.valid("json")))),
+      c.json(await api.pods(c.req.valid("json"))),
     )
     .post("/api/held", checked("held"), async (c) =>
-      c.json(out(await api.held(c.req.valid("json")))),
+      c.json(await api.held(c.req.valid("json"))),
     )
     .post("/api/pod", checked("pod"), async (c) =>
-      c.json(out(await api.pod(c.req.valid("json")))),
+      c.json(await api.pod(c.req.valid("json"))),
     )
     .post("/api/answers", checked("answers"), async (c) =>
-      c.json(out(await api.answers(c.req.valid("json")))),
+      c.json(await api.answers(c.req.valid("json"))),
     )
     .post("/api/said", checked("said"), async (c) =>
-      c.json(out(await api.said(c.req.valid("json")))),
+      c.json(await api.said(c.req.valid("json"))),
     )
     .post("/api/trend", checked("trend"), async (c) =>
-      c.json(out(await api.trend(c.req.valid("json")))),
+      c.json(await api.trend(c.req.valid("json"))),
     )
     .post("/api/classes", checked("classes"), async (c) =>
-      c.json(out(await api.classes(c.req.valid("json")))),
+      c.json(await api.classes(c.req.valid("json"))),
     )
     .post("/api/panel", checked("panel"), async (c) =>
-      c.json(out(await api.panel(c.req.valid("json")))),
+      c.json(await api.panel(c.req.valid("json"))),
     )
     .post("/api/table", checked("table"), async (c) =>
-      c.json(out(await api.table(c.req.valid("json")))),
+      c.json(await api.table(c.req.valid("json"))),
     )
     .post("/api/ask", checked("ask"), async (c) =>
-      c.json(out(await api.ask(c.req.valid("json")))),
+      c.json(await api.ask(c.req.valid("json"))),
     )
     .post("/api/tool", checked("tool"), async (c) =>
-      c.json(out(await api.tool(c.req.valid("json")))),
+      c.json(await api.tool(c.req.valid("json"))),
     )
     .post("/api/makePod", checked("makePod"), async (c) =>
-      c.json(out(await api.makePod(c.req.valid("json")))),
+      c.json(await api.makePod(c.req.valid("json"))),
     )
     .post("/api/waitingWords", checked("waitingWords"), async (c) =>
-      c.json(out(await api.waitingWords(c.req.valid("json")))),
+      c.json(await api.waitingWords(c.req.valid("json"))),
     )
     .post("/api/confirmWords", checked("confirmWords"), async (c) =>
-      c.json(out(await api.confirmWords(c.req.valid("json")))),
+      c.json(await api.confirmWords(c.req.valid("json"))),
     )
     .post("/api/unlock", checked("unlock"), async (c) =>
-      c.json(out(await api.unlock(c.req.valid("json")))),
+      c.json(await api.unlock(c.req.valid("json"))),
     )
     .post("/api/deleteAll", checked("deleteAll"), async (c) =>
-      c.json(out(await api.deleteAll(c.req.valid("json")))),
+      c.json(await api.deleteAll(c.req.valid("json"))),
     )
     .post("/api/resetAll", checked("resetAll"), async (c) =>
-      c.json(out(await api.resetAll(c.req.valid("json")))),
+      c.json(await api.resetAll(c.req.valid("json"))),
     )
     .post("/api/checkTables", checked("checkTables"), async (c) =>
-      c.json(out(await api.checkTables(c.req.valid("json")))),
+      c.json(await api.checkTables(c.req.valid("json"))),
     )
     .post("/api/setWorldDate", checked("setWorldDate"), async (c) =>
-      c.json(out(await api.setWorldDate(c.req.valid("json")))),
+      c.json(await api.setWorldDate(c.req.valid("json"))),
     )
     .post("/api/hospitals", checked("hospitals"), async (c) =>
-      c.json(out(await api.hospitals(c.req.valid("json")))),
+      c.json(await api.hospitals(c.req.valid("json"))),
     )
     .post("/api/connect", checked("connect"), async (c) =>
-      c.json(out(await api.connect(c.req.valid("json")))),
+      c.json(await api.connect(c.req.valid("json"))),
     )
     .post("/api/connection", checked("connection"), async (c) =>
-      c.json(out(await api.connection(c.req.valid("json")))),
+      c.json(await api.connection(c.req.valid("json"))),
     )
     .post("/api/bring", checked("bring"), async (c) =>
-      c.json(out(await api.bring(c.req.valid("json")))),
+      c.json(await api.bring(c.req.valid("json"))),
     )
     .notFound((c) => c.json({ refused: "no such operation" }, 404))
     .onError((error, c) => {

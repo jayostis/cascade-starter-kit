@@ -25,9 +25,9 @@ import {
   worldDate,
 } from "@the-cascade-protocol/sandbox/web";
 import { addresses } from "../../addresses.ts";
-import { podApi } from "../../pod-api.mjs";
+import { podApi } from "../../pod-api.ts";
 import type { Person } from "../../said.ts";
-import { TOOLS } from "../../tools.mjs";
+import { TOOLS } from "../../tools.ts";
 import type { Host, PodApi } from "../api.tsx";
 import { busy } from "../doing.ts";
 
@@ -163,7 +163,7 @@ const browser = {
     signIn(row: Row, { pod }: { pod: string }, report: (href: string) => void) {
       const signing = popup;
       popup = undefined;
-      return (authorize: URL, signal: AbortSignal) => {
+      return (authorize: URL, signal?: AbortSignal) => {
         if (row.vendor === "demo")
           authorize.searchParams.set("login_hint", pod);
         report(authorize.href);

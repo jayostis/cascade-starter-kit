@@ -3,6 +3,6 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "The starter in a browser: the page, its host, and the build that puts the installed package beside them.",
+  "description": "The starter's site on Pages: the app's browser build at try/, the kits' samples beside it, and a root page that sends a visitor to try/.",
   "license": "Apache-2.0"
 }

@@ -18,16 +18,16 @@ import {
   type UIMessageChunk,
   validateUIMessages,
 } from "ai";
-import { checkInput, Refusal } from "cascade-runtime";
+import { checkInput, type InputSchema, Refusal } from "cascade-runtime";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
 import { addresses } from "../addresses.ts";
 import type { Model } from "../models.ts";
-import { maps } from "../pod-api.mjs";
-import { podPath, trendPath } from "../pods.mjs";
+import { maps } from "../pod-api.ts";
+import { podPath, trendPath } from "../pods.ts";
 import { CHANGED, changeSaid, entryId } from "../said.ts";
-import { TOOLS, withPod } from "../tools.mjs";
+import { TOOLS, withPod } from "../tools.ts";
 
 /** How many rounds of tool calls a chat runs before the model must answer. */
 export const MAX_ROUNDS = 6;
@@ -172,7 +172,9 @@ async function running<T>(run: () => Promise<T>): Promise<T> {
 export function chatTools(api: PodApi): ToolSet {
   return Object.fromEntries(
     LISTED.map((each) => {
-      const schema = each.ofPod ? withPod(each.inputSchema) : each.inputSchema;
+      const schema = each.ofPod
+        ? (withPod(each.inputSchema as InputSchema) as JSONSchema7)
+        : each.inputSchema;
       const offered = {
         description: each.description,
         inputSchema: checked(schema),

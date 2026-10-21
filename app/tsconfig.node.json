@@ -17,13 +17,5 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": [
-    "server",
-    "vite.config.ts",
-    "vite",
-    "said.ts",
-    "addresses.ts",
-    "models.ts",
-    "model.ts"
-  ]
+  "include": ["*.ts", "server", "vite"]
 }

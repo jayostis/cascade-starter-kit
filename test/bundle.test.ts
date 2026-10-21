@@ -49,7 +49,7 @@ test("the Node target's bundle is the app over its typed client, with the chat w
       (id) =>
         id.includes("/node_modules/cascade-runtime/") ||
         id.includes("/app/server/") ||
-        id.endsWith("/app/pod-api.mjs") ||
+        id.endsWith("/app/pod-api.ts") ||
         id.includes("/node_modules/@hono/") ||
         /\/node_modules\/hono\/dist\/(?!client\/|utils\/)/.test(id),
     ),

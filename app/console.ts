@@ -9,7 +9,7 @@ import {
   openWithoutWords,
   podFolder,
   refuse,
-} from "./pods.mjs";
+} from "./pods.ts";
 
 const { values } = argumentsOf(
   argv.slice(2),

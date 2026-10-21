@@ -134,7 +134,7 @@ export type Classification =
       readonly series?: string;
     }
   | {
-      readonly found: "no table";
+      readonly found: "no series";
       readonly version?: undefined;
       readonly series?: undefined;
     };

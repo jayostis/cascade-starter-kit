@@ -87,14 +87,18 @@ test("given a folder, it makes the project and names it, with the template's pac
   ) as { name: string; dependencies: Record<string, string> };
   const template = JSON.parse(
     await readFile(new URL("../../app/package.json", import.meta.url), "utf8"),
-  ) as { dependencies: Record<string, string> };
+  ) as {
+    dependencies: Record<string, string>;
+    devDependencies: Record<string, string>;
+  };
   assert.equal(manifest.name, "my-app");
   const { devDependencies } = JSON.parse(
     await readFile(new URL("../../package.json", import.meta.url), "utf8"),
   ) as { devDependencies: Record<string, string> };
   assert.deepEqual(manifest.dependencies, template.dependencies);
-  for (const name of ["preact", "htm"])
-    assert.equal(devDependencies[name], template.dependencies[name], name);
+  const tested = { ...template.dependencies, ...template.devDependencies };
+  for (const name of ["react", "react-dom", "vite", "typescript"])
+    assert.equal(devDependencies[name], tested[name], name);
   const ignored = (await readFile(join(folder, ".gitignore"), "utf8")).split(
     /\r?\n/,
   );
