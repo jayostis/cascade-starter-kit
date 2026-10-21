@@ -115,6 +115,7 @@ const AT =
           [...new URL(href, "http://x/try/index.html").searchParams.keys()]
             .sort()
             .join(","),
+        screenOf: (_shape: string): string | undefined => undefined,
       }
     : {
         home: "next/",
@@ -143,6 +144,12 @@ const AT =
               };
         },
         links: 'a[href^="/next/"]',
+        screenOf: (shape: string): string | undefined =>
+          shape.startsWith("tables/") || shape.startsWith("tables?")
+            ? "table"
+            : shape.startsWith("pods/*/hospitals")
+              ? "hospitals"
+              : undefined,
         shapeOf: (href: string) => {
           const at = new URL(href, "http://x/");
           return [
@@ -1851,7 +1858,7 @@ ${shots.join("\n")}`);
   }
 });
 
-test("in try/, Martin's pod, copied on a first visit, has a Genetic variants tile whose rows open each variant's entry once the engine is ready: the MLH1 variant's two reports with their labs and what ClinVar says today, a gene the series does not cover, and a variant it holds no row for, then the counsellor sentence and ClinVar's disclaimer; a row opens its entry with no request, each address shape the pod's page and the entry link opens a page, and the pages reach their table-dependent line within twice their budgets", async () => {
+test("in try/, Martin's pod, copied on a first visit, has a Genetic variants tile whose rows open each variant's entry once the engine is ready: the MLH1 variant's two reports with their labs and what ClinVar says today, a gene the series does not cover, and a variant it holds no row for, then the counsellor sentence and ClinVar's disclaimer; a row opens its entry with no request, each address shape the pod's page and the entry link opens a page, and the pages reach their table-dependent line within twice their budgets", async (t) => {
   const context = await browser.newContext();
   await context.addInitScript(recordDraws);
   try {
@@ -2043,6 +2050,9 @@ test("in try/, Martin's pod, copied on a first visit, has a Genetic variants til
       const found = await shapes(fresh);
       assert.ok(found.length > 1, `${address} links one shape of address`);
       for (const { shape, href } of found) {
+        const screen = AT.screenOf(shape);
+        if (screen !== undefined && !ported(t, `the link ${href}`, screen))
+          continue;
         await opened(fresh, address);
         await inPlace(fresh, () =>
           fresh
@@ -2051,7 +2061,7 @@ test("in try/, Martin's pod, copied on a first visit, has a Genetic variants til
             .evaluate((link) => (link as HTMLElement).click()),
         );
         assert.ok(
-          !["Not found", "Something went wrong"].includes(
+          !["Not found", "Something went wrong", "Not ported yet"].includes(
             (await fresh.textContent("main h1")) ?? "",
           ),
           `${address} links ${href} (${shape}), which draws a page that is not found`,

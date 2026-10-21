@@ -1145,6 +1145,40 @@ const textOf = (page: string): string =>
     .replace(/\s+/g, " ")
     .trim();
 
+/** The page's links, each as its target and its text, whatever order the tag writes its attributes in. */
+const linksOf = (page: string): { href?: string; text: string }[] =>
+  [...page.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/g)].map(
+    ([, attributes, inner]) => ({
+      href: /\bhref="([^"]*)"/.exec(attributes!)?.[1]?.replaceAll("&amp;", "&"),
+      text: textOf(inner!),
+    }),
+  );
+
+/** Whether the page links to `href` with `text`. */
+const links = (page: string, href: string, text: string): boolean =>
+  linksOf(page).some((link) => link.href === href && link.text === text);
+
+/** How many rows of data the page's tables hold, their heading rows not counted. */
+const rowsIn = (page: string): number =>
+  page.split(/<tr\b/).filter((row) => /<td\b/.test(row)).length;
+
+/** The text of the element with `id`. */
+const textAt = (page: string, id: string): string | undefined => {
+  const tag = new RegExp(
+    `<(\\w+)\\b[^>]*\\bid="${id}"[^>]*>([\\s\\S]*?)</\\1>`,
+  );
+  const inner = tag.exec(page)?.[2];
+  return inner === undefined ? undefined : textOf(inner);
+};
+
+/** The text of each element the page marks as the current one. */
+const currentIn = (page: string): string[] =>
+  [
+    ...page.matchAll(
+      /<(\w+)\b[^>]*\baria-current="true"[^>]*>([\s\S]*?)<\/\1>/g,
+    ),
+  ].map(([, , inner]) => textOf(inner!));
+
 test("the sidebar lists the pods, then the reference tables and Check now; a table's page gives its source, licence, version and freshness, the codes a search found, and the pods using each version", () => {
   const page = render(
     view.layout({
@@ -1849,9 +1883,12 @@ test("a lab result's page links the panels LOINC lists its test in, and a result
   assert.ok(words.includes("Electrolytes panel required"));
   assert.ok(words.includes("and 2 more."));
   assert.ok(
-    page.includes(
-      '<a href="/pods/rowan-marsh/panel?panel=http%3A%2F%2Floinc.org%2Frdf%2F24326-1">',
+    linksOf(page).some(
+      ({ href }) =>
+        href ===
+        "/pods/rowan-marsh/panel?panel=http%3A%2F%2Floinc.org%2Frdf%2F24326-1",
     ),
+    "a link opens the panel",
   );
   assert.ok(!textOf(shown({ entry, panels: [] })).includes("In LOINC panels"));
 });
@@ -2351,12 +2388,12 @@ test("an entry's page says what it is, where each document it came from put it, 
     "Back to Alex Rivera",
   ])
     assert.ok(words.includes(shown), `${shown} is not in ${words}`);
-  for (const link of [
-    `<a href="${paths.table(pure.tableId(NAMES.iri), { code: "195967001" })}">195967001</a>`,
-    `<a href="${paths.table(pure.tableId(STATUS.iri))}">version 1, Sep 1, 2026</a>`,
-    '<a href="/pods/alex-rivera/">Back to Alex Rivera</a>',
-  ])
-    assert.ok(page.includes(link), link);
+  for (const [href, text] of [
+    [paths.table(pure.tableId(NAMES.iri), { code: "195967001" }), "195967001"],
+    [paths.table(pure.tableId(STATUS.iri)), "version 1, Sep 1, 2026"],
+    ["/pods/alex-rivera/", "Back to Alex Rivera"],
+  ] as const)
+    assert.ok(links(page, href, text), `${text} links to ${href}`);
   for (const credit of [NAMES.credit, STATUS.credit])
     assert.equal(words.split(credit).length, 2, `${credit} is said once`);
 });
@@ -2405,10 +2442,12 @@ test("an entry kept as one names the held table version whose rows joined it, an
   );
 
   assert.ok(
-    shown(only).includes(
-      `Matched using Example names, <a href="${paths.table(pure.tableId(NAMES.iri))}">`,
+    links(
+      shown(only),
+      paths.table(pure.tableId(NAMES.iri)),
+      "version 2, Oct 1, 2026",
     ),
-    "the version link follows the table's name after a space",
+    "the version is a link to its table",
   );
 
   const twice = view.entryOf(ENTRY_ANSWERS, "aa11", {
@@ -2949,9 +2988,12 @@ test("a variant's entry says its gene and expressions, its ClinVar ID linked to 
   ])
     assert.ok(words.includes(shown), `${shown} is not in ${words}`);
   assert.ok(
-    page.includes(
-      `<a href="${paths.table(pure.tableId(CLINVAR.iri), { code: "90011" })}">90011</a>`,
+    links(
+      page,
+      paths.table(pure.tableId(CLINVAR.iri), { code: "90011" }),
+      "90011",
     ),
+    "the ClinVar ID links to its code page",
   );
   assert.equal(
     words.split(CLINVAR.credit).length,
@@ -3190,7 +3232,7 @@ test("no sentence CHANGED gives, and none said of any of the five stories' findi
   assert.equal(sentences.length, 4);
   for (const sentence of sentences) assert.doesNotMatch(sentence, causes);
 
-  for (const [patient, story] of await storyPods())
+  for (const [patient, story] of await storyPods()) {
     for (const finding of story.changes.filter(
       ({ direction }: Finding) => direction !== "not enough results",
     ))
@@ -3199,6 +3241,8 @@ test("no sentence CHANGED gives, and none said of any of the five stories' findi
         causes,
         patient,
       );
+    assert.doesNotMatch(textOf(trendOf("a-pod", story, {})), causes, patient);
+  }
 });
 
 test("a pod brought in twice says where What changed comes from: the imports in order, each with its source, the world's date it answered as of (else the person's day it was retrieved) and what it brought in, and the medication's new version with what differs; one import, or a medication of one version, says less", async () => {
@@ -3393,7 +3437,7 @@ test("the trend states that the chart leaves out a result in another unit, while
   });
   assert.match(text(page), /The chart leaves out 1 result in another unit/);
   assert.doesNotMatch(text(page), /Left out/);
-  assert.equal(count(page, "<tr><td>"), 3);
+  assert.equal(rowsIn(page), 3);
 });
 
 test("the trend round-trips through its address: the state read from it draws the same test and medication, a marker for each result, the medication's start marked, the test named and the results in a table", async () => {
@@ -3414,19 +3458,13 @@ test("the trend round-trips through its address: the state read from it draws th
   assert.equal(count(page, 'class="mark start"'), 1);
   assert.equal(count(page, 'class="mark stop"'), 0);
   const name = story.changes[0]!.test.name!;
+  assert.equal(textAt(page, "trend-chart-title"), name);
   assert.match(
-    page,
-    new RegExp(`<title id="trend-chart-title">${name}</title>`),
+    textAt(page, "trend-chart-desc") ?? "",
+    /^6 results from Sep 1, 2023 to Dec 2, 2024/,
   );
-  assert.match(
-    page,
-    /<desc id="trend-chart-desc">6 results from Sep 1, 2023 to Dec 2, 2024/,
-  );
-  assert.equal(count(page, "<tr><td>"), 6);
-  assert.deepEqual(
-    [...page.matchAll(/aria-current="true">([^<]*)</g)].map(([, said]) => said),
-    [name, story.changes[0]!.medication.name],
-  );
+  assert.equal(rowsIn(page), 6);
+  assert.deepEqual(currentIn(page), [name, story.changes[0]!.medication.name]);
 
   assert.deepEqual(
     pure.trendInput({ changes: story.changes, labs: story.answers[LABS]! }, {}),
