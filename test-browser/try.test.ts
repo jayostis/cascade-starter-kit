@@ -4,7 +4,7 @@ import { cp, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { env } from "node:process";
-import { after, before, test as nodeTest } from "node:test";
+import { after, before, test as nodeTest, type TestContext } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   type Browser,
@@ -53,7 +53,7 @@ const NEXT = JSON.parse(
 ) as { screens: string[]; claimed: string[] };
 /** The tests registered, so that a claim naming none fails the run. */
 const registered = new Set<string>();
-function test(name: string, run: () => Promise<void>): void {
+function test(name: string, run: (t: TestContext) => Promise<void>): void {
   registered.add(name);
   nodeTest(
     name,
@@ -66,9 +66,24 @@ function test(name: string, run: () => Promise<void>): void {
     run,
   );
 }
-/** Whether the page draws every one of `screens`: try/ draws them all. */
-const ported = (...screens: string[]): boolean =>
-  TARGET === "try" || screens.every((each) => NEXT.screens.includes(each));
+/** The parts of claimed tests that next/ has not run, for `after` to print: a later step must not forget them. */
+const gated = new Set<string>();
+/**
+ * Whether the page draws every one of `screens`: try/ draws them all. When it does not, the test says which `part`
+ * it leaves out and the screens it waits for, and `after` repeats it.
+ */
+const ported = (
+  t: TestContext,
+  part: string,
+  ...screens: string[]
+): boolean => {
+  const missing = screens.filter((each) => !NEXT.screens.includes(each));
+  if (TARGET === "try" || missing.length === 0) return true;
+  const said = `${part}: not run on next/ until its screens list has ${missing.map((each) => `"${each}"`).join(" and ")}`;
+  gated.add(said);
+  t.diagnostic(said);
+  return false;
+};
 /** The components the page serves, as the package carries them. */
 const SERVED = join(PAGES, TARGET, "cascade-runtime", "components");
 /** The page's addresses: try/'s are its page's query, next/'s paths under its base. */
@@ -371,6 +386,10 @@ after(async () => {
     [],
     "next.json claims a test there is none of",
   );
+  if (gated.size > 0)
+    console.log(
+      `Parts of claimed tests still gated on next/:\n${[...gated].map((each) => `  ${each}`).join("\n")}`,
+    );
 });
 
 const texts = (page: Page, selector: string): Promise<string[]> =>
@@ -541,7 +560,7 @@ const loadable = (page: Page): Promise<string[]> =>
     found.map((each) => (each as HTMLInputElement).value),
   );
 
-test("a first visit copies Alex's, Martin's, Priya's and Tamsin's pods and opens Alex's, which reads as her record: her name, her places, what is worth a look with each line linking to its entry, and a tile per kind counting the question's rows; it and a switch to Priya's draw in place before the engine loads, a click on the pod shown adds no entry to the history, so Back draws Alex's again, and the engine then loads in the background, an entry opened and left for a code page before it does leaves the code page drawn when it lands; a fresh browser's first visit draws the tables' names within twice its budget", async () => {
+test("a first visit copies Alex's, Martin's, Priya's and Tamsin's pods and opens Alex's, which reads as her record: her name, her places, what is worth a look with each line linking to its entry, and a tile per kind counting the question's rows; it and a switch to Priya's draw in place before the engine loads, a click on the pod shown adds no entry to the history, so Back draws Alex's again, and the engine then loads in the background, an entry opened and left for a code page before it does leaves the code page drawn when it lands; a fresh browser's first visit draws the tables' names within twice its budget", async (t) => {
   const page = watched(await profile.newPage());
   const held: Route[] = [];
   await page.route(ENGINE, (route) => {
@@ -616,7 +635,7 @@ test("a first visit copies Alex's, Martin's, Priya's and Tamsin's pods and opens
     );
   });
   assert.equal(AT.podOf(page.url()), ALEX);
-  const toCode = ported("entry", "table");
+  const toCode = ported(t, "#1's entry, then code page", "entry", "table");
   let entryName: string | null = null;
   if (toCode) {
     await inPlace(page, () => page.click(".worth li a"));
@@ -2526,7 +2545,7 @@ test("in try/, the sample pod tamsin-vale draws What changed and, in its card, w
   }
 });
 
-test("try/ ships the starter tables its published answers were computed with: after a check that finds nothing new, a visit draws a copied pod from its kept answers, the engine held back, and the browser keeps one set of tables for every address", async () => {
+test("try/ ships the starter tables its published answers were computed with: after a check that finds nothing new, a visit draws a copied pod from its kept answers, the engine held back, and the browser keeps one set of tables for every address", async (t) => {
   const [feedUrl] = (await servedConfig()).tables.feeds;
   assert.ok(feedUrl);
   const REC = "https://ns.cascadeprotocol.org/records/v1-draft#";
@@ -2605,7 +2624,7 @@ test("try/ ships the starter tables its published answers were computed with: af
     );
     assert.ok(row);
     await page.click('a.tile[href="#see-allergies"]');
-    if (ported("entry")) {
+    if (ported(t, "#18's entry from a tile", "entry")) {
       await inPlace(page, async () => {
         await page
           .locator("#see-allergies tbody tr")
