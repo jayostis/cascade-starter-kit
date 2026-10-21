@@ -17,6 +17,7 @@ export const firstReady = new Promise<void>((resolve) => {
 
 function set(state: State, said?: string) {
   document.body.dataset.state = state;
+  if (state !== "error") delete document.body.dataset.error;
   for (const button of document.querySelectorAll("button"))
     button.disabled = state === "busy";
   saying = said;
@@ -26,7 +27,12 @@ function set(state: State, said?: string) {
 
 export const busy = (said = "Working…") => set("busy", said);
 export const ready = () => set("ready");
-export const failed = () => set("error");
+/** Says the page went wrong, and why, in `data-error` on the body and on the console. */
+export function failed(reason: string) {
+  document.body.dataset.error = reason;
+  console.error(`The page went wrong: ${reason}`);
+  set("error");
+}
 export const isBusy = () => document.body.dataset.state === "busy";
 
 /** What the doing line says, while the page is busy. */

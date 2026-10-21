@@ -128,12 +128,9 @@ function Message({ heading, children }: { heading: string; children: string }) {
   );
 }
 
-function NotPorted() {
+function NoPage() {
   return (
-    <Message heading="Not ported yet">
-      This screen is still drawn by the app before React; it comes here in a
-      later step.
-    </Message>
+    <Message heading="Not found">This app has no page at this address.</Message>
   );
 }
 
@@ -325,7 +322,8 @@ function PodScreen({
   );
   useEffect(() => {
     if (shown?.at !== at) return;
-    if (typeof page === "object" && "wrong" in page) return failed();
+    if (typeof page === "object" && "wrong" in page)
+      return failed(`the pod's page could not be read: ${page.wrong}`);
     if (following !== undefined) {
       if (!isBusy())
         busy(following.step === "bringing in" ? BRINGING : "Signing in…");
@@ -345,7 +343,10 @@ function PodScreen({
           ? "Open this pod"
           : "Not found";
     document.title = `${title} · Cascade`;
-    if (typeof page === "object" && page.connection?.retry) failed();
+    if (typeof page === "object" && page.connection?.retry)
+      failed(
+        `the connection failed: ${page.connection.failed ?? page.connection.step}`,
+      );
     else ready();
   }, [shown, at, page, titles, following]);
   if (shown === undefined) return null;
@@ -542,8 +543,9 @@ export function App() {
       await host.firstVisit();
       setPods((await api.pods()).pods);
     })().catch((error: unknown) => {
-      console.error(error);
-      failed();
+      failed(
+        `the pods could not be listed: ${error instanceof Error ? error.message : String(error)}`,
+      );
     });
   }, [api, host]);
   useEffect(() => {
@@ -686,7 +688,7 @@ export function App() {
                     path="/encrypted-pods/:pod"
                     element={<WordsScreen />}
                   />
-                  <Route path="*" element={<NotPorted />} />
+                  <Route path="*" element={<NoPage />} />
                 </Routes>
               )}
             </Layout>
