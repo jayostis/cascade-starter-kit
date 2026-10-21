@@ -38,10 +38,15 @@ no tool calls: `makePod` with `encrypt`, `waitingWords`, `confirmWords`, `unlock
 `POST /chat`, the free tools, so its chat only reads and moves the app; try/'s WebMCP the free tools for the
 pod shown. `server/chat.ts`, `npm run next`'s `/chat`, runs on the Vercel AI SDK (`ai`): `chatTools(api)` offers
 every tool of the list, the free reads with a server `execute` and the navigation and `ask` tools with none, so a
-call to one ends the server's turn and the page runs it (the window is step 9's). `POST /chat` takes the SDK's
+call to one ends the server's turn and the page runs it. `POST /chat` takes the SDK's
 `messages` beside `pod`, `page` and `context`, answers with the SDK's UI message stream, stops after `MAX_ROUNDS`
 rounds of tool calls, and says the model's refusal as a `data-refused` part; `GET /chat` gives the model's
-`{ provider, name, local }`, or `{}`. A hosted client sends what the tools return to its provider:
+`{ provider, name, local }`, or `{}`. The React app's chat window, on its Node build only, is `src/chat/`:
+assistant-ui's components over the SDK's `useChat` at `/chat`. It runs the page's tools, `PAGE_TOOLS` of `said.ts`
+(which `tools.mjs` lists too), over the host's PodApi: a navigation moves the app in place with the chat open, and a
+write waits on the page's own ask, `useConfirm()` of `src/confirm.tsx` (Allow, or Cancel, which tells the model "The
+person said no"). It keeps its chats as the strip does (`src/chat/chats.ts`), and the screens draw "Ask about this"
+(`src/ask.tsx`) once `GET /chat` names a model. A hosted client sends what the tools return to its provider:
 never point one at a person's own pod without their say. The starter holds only
 made-up records (the kits, the demo hospitals); before connecting real records,
 decide whether a hosted model may see them.

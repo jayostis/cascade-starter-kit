@@ -23,6 +23,7 @@ import {
   unitOf,
 } from "../said.ts";
 import { useAddress } from "./address.tsx";
+import { AskButton } from "./ask.tsx";
 import { Chart, Lane } from "./chart.tsx";
 import { Back, NotFound, useLoaded, Wrong } from "./screen.tsx";
 
@@ -115,6 +116,14 @@ export function TrendPage({
         {series.results.length === 0
           ? "No result of this test is a number."
           : `${resultsSaid(series.results.length)}${unit === "" ? "" : `, in ${unit}`}`}
+        <AskButton
+          about={{
+            kind: "trend",
+            test: tested,
+            ...(chosen ? { medication: chosen.key } : {}),
+          }}
+          label={chosen ? `${name} and ${chosen.name}` : name}
+        />
       </p>
       {medication !== undefined && chosen === undefined && (
         <p className="note">This pod holds no medication {medication}.</p>

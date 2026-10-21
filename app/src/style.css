@@ -671,7 +671,8 @@ form.inline {
   padding: 1rem;
   overflow: auto;
 }
-.dialog:target {
+.dialog:target,
+.dialog.asking {
   display: grid;
   place-items: center;
 }
@@ -811,4 +812,213 @@ form.inline {
 }
 body[data-state="busy"] {
   cursor: progress;
+}
+.chat {
+  position: sticky;
+  bottom: 0;
+  z-index: 8;
+  display: flex;
+  flex-direction: column;
+  max-height: max(33vh, 15rem);
+  background: var(--panel);
+  border-top: 1px solid var(--line);
+  padding: 0.6rem 1.25rem;
+  box-shadow: 0 -4px 16px rgb(0 0 0 / 0.08);
+}
+.chat [hidden] {
+  display: none;
+}
+.chat-off {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+.chat-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin: 0 0 0.4rem;
+}
+.chat > * {
+  flex: none;
+}
+.chat > .chat-log,
+.chat > .chat-chips {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+.chat > .chat-log {
+  min-height: 4rem;
+}
+.chat-about {
+  margin: 0 0 0.4rem;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 46rem) {
+  .chat-bar {
+    gap: 0.25rem 0.75rem;
+  }
+  .chat-about {
+    -webkit-line-clamp: 1;
+    line-clamp: 1;
+  }
+}
+.chat[data-folded="true"] > :not(.chat-bar) {
+  display: none;
+}
+.chat[data-folded="true"] .chat-bar {
+  margin: 0;
+}
+.chat-bar .chat-new {
+  margin-left: auto;
+}
+.chat-bar .chat-new,
+.chat-bar .chat-fold {
+  padding: 0.15rem 0.7rem;
+}
+.chat-recent {
+  position: relative;
+  font-size: 0.9rem;
+}
+.chat-recent summary {
+  cursor: pointer;
+  color: var(--accent);
+}
+.chat-recent ul {
+  position: absolute;
+  bottom: calc(100% + 0.35rem);
+  left: 0;
+  z-index: 10;
+  min-width: 16rem;
+  max-height: 14rem;
+  overflow: auto;
+  list-style: none;
+  margin: 0;
+  padding: 0.3rem;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 6px 24px rgb(0 0 0 / 0.25);
+}
+.chat-recent li button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  color: var(--text);
+  border-color: transparent;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat-recent li button:hover {
+  background: var(--soft);
+}
+.chat-recent li.empty {
+  padding: 0.3rem 0.6rem;
+  color: var(--muted);
+}
+.chat-log {
+  margin: 0 0 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.chat-log .you {
+  align-self: flex-end;
+  max-width: 80%;
+  background: var(--tint);
+  border-radius: 10px;
+  padding: 0.3rem 0.8rem;
+  white-space: pre-wrap;
+}
+.chat-log .model {
+  white-space: pre-wrap;
+}
+.chat-log .stopped {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+.chat-log .refused {
+  border-left: 3px solid var(--accent);
+  background: var(--soft);
+  padding: 0.4rem 0.8rem;
+  border-radius: 0 7px 7px 0;
+}
+.chat-log .failed {
+  border-left: 3px solid var(--warm);
+  background: var(--warm-bg);
+  color: var(--warm);
+  padding: 0.4rem 0.8rem;
+  border-radius: 0 7px 7px 0;
+}
+.chat-log .card {
+  margin: 0;
+  padding: 0.7rem 0.9rem;
+  background: var(--page);
+}
+.chat-log .card p {
+  margin: 0.15rem 0;
+}
+.chat-log .card ul {
+  list-style: none;
+  margin: 0.4rem 0;
+  padding: 0;
+  max-height: 9rem;
+  overflow: auto;
+  font-size: 0.9rem;
+}
+.chat-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0 0 0.5rem;
+}
+.chat-chips button {
+  font-size: 0.85rem;
+  padding: 0.15rem 0.7rem;
+  border-radius: 999px;
+}
+button.ask {
+  position: relative;
+  font-size: inherit;
+  line-height: 1;
+  padding: 0.15em 0.3em;
+  border-color: transparent;
+  vertical-align: middle;
+}
+button.ask svg {
+  display: block;
+  width: 1.1em;
+  height: 1.1em;
+}
+button.ask:hover {
+  background: var(--panel);
+  border-color: var(--line);
+}
+@media (pointer: coarse) {
+  button.ask::after {
+    content: "";
+    position: absolute;
+    inset: -6px -8px;
+  }
+}
+button.ask:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.chat-form {
+  display: flex;
+  gap: 0.5rem;
+}
+.chat-form input {
+  flex: 1;
+  min-width: 0;
 }

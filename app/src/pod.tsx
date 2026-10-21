@@ -11,6 +11,7 @@ import {
   day,
   dayAt,
   dayInWords,
+  entryId,
   type Finding,
   HISTORY,
   hospitalName,
@@ -47,6 +48,7 @@ import {
   leftSaid,
 } from "../said.ts";
 import { useAddress } from "./address.tsx";
+import { AskButton } from "./ask.tsx";
 import { Chart } from "./chart.tsx";
 import { Box, Pending, PostButton, Tag, useReopenedBox } from "./parts.tsx";
 
@@ -249,6 +251,10 @@ function Worth({
           <li className="arrive" key={`${entry} ${sentence}`}>
             <a href={entryHref(entry)}>{sentence}</a>
             {tag !== undefined && <Tag tag={tag} />}
+            <AskButton
+              about={{ kind: "worth", entry: entryId(entry) }}
+              label={sentence}
+            />
           </li>
         ))}
       </ul>
@@ -305,6 +311,7 @@ function Change({
       <p className="row">
         <a href={`#${id}`}>Show the {resultsSaid(shown)}</a>{" "}
         <a href={trendHref(finding)}>Open the trend</a>
+        <AskButton about={{ kind: "finding", key }} label={sentence} />
       </p>
     </div>
   );
