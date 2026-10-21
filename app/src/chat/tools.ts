@@ -6,18 +6,8 @@ import { PAGE_TOOLS, type PageDoor, type ToolInput } from "../../said.ts";
 import { useActions } from "../actions.tsx";
 import { goState, routed, useAddress } from "../address.tsx";
 import { isRefusal, useHost } from "../api.tsx";
-import { useConfirm } from "../confirm.tsx";
+import { ACTIONS, SAID_NO, useConfirm } from "../confirm.tsx";
 import { busy, ready } from "../doing.ts";
-
-/** What the person is asked to allow, for each write. */
-const ACTIONS: Readonly<Record<string, string>> = {
-  make_pod: "Make a pod",
-  check_tables: "Check the reference tables for newer versions",
-  set_world_date: "Set the date the demo hospitals answer as of",
-};
-
-/** What the model is told when the person cancels a write. */
-export const SAID_NO = "The person said no";
 
 /** A tool's answer to the model: its output, or why it gave none. */
 export type Answer =
@@ -46,9 +36,9 @@ export function usePageTools(opened: (address: string) => void) {
         address,
         async open(to) {
           const { navigate, here, opened } = latest.current;
-          opened(to);
           const routedTo = routed(new URL(to, location.href));
           if (routedTo === here) return;
+          opened(to);
           busy("Opening…");
           void navigate(routedTo);
         },

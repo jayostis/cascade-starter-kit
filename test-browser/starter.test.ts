@@ -266,11 +266,24 @@ test("asking to open another pod moves the app there in place, and the question,
     await page.waitForURL(`${modelled.origin}/pods/ines-calloway/`);
     await page.locator(".chat-log .model", { hasText: "Done." }).waitFor();
   });
-  assert.equal(await page.locator("h1").first().textContent(), "Ines Calloway");
+  await page
+    .locator("h1", { hasText: /^Ines Calloway$/ })
+    .first()
+    .waitFor();
   assert.equal(await page.locator(".chat-log .you").textContent(), ASKS);
   assert.equal(await page.locator(".chat-log .model").textContent(), "Done.");
   assert.equal(
     await page.locator(".chat-recent li button").textContent(),
+    ASKS,
+  );
+  await page.waitForFunction(
+    (title) =>
+      (
+        JSON.parse(localStorage.getItem("cascade.chats") ?? "[]") as {
+          title: string;
+          pod: string;
+        }[]
+      ).some((each) => each.title === title && each.pod === "ines-calloway"),
     ASKS,
   );
   const { chats, open } = await storage(page);
@@ -288,7 +301,10 @@ test("a move within the pod shown does not make the chat follow the next click t
   await ask(page, ASKS);
   await page.locator(".chat-log .model", { hasText: "Done." }).waitFor();
   await page.locator("aside nav a", { hasText: "Ada Lovelace" }).click();
-  await page.locator("h1", { hasText: /^Ada Lovelace$/ }).first().waitFor();
+  await page
+    .locator("h1", { hasText: /^Ada Lovelace$/ })
+    .first()
+    .waitFor();
   assert.equal(await page.locator(".chat-log .you").count(), 0);
   assert.equal(await page.locator(".chat-recent li button").count(), 0);
   await page.close();
@@ -370,6 +386,34 @@ test("a write the model asks for waits on the page's confirm: Cancel makes no po
   await asking.getByRole("button", { name: "Allow" }).click();
   await page.locator("aside nav a", { hasText: "Cora Diaz" }).waitFor();
   assert.equal((await pods()).includes("cora-diaz"), true);
+  await page.close();
+});
+
+test("a write the model asked for is withdrawn when its chat is closed: the box goes, nothing is made, and the model is not asked again", async (t) => {
+  if (skipped(t, "chat")) return;
+  const page = await browser.newPage();
+  await page.goto(`${modelled.origin}/pods/ada-lovelace/`);
+  const posts: string[] = [];
+  page.on("request", (request) => {
+    if (isPost(request)) posts.push(request.url());
+  });
+  await ask(page, "make a pod for Dora Xu");
+  const asking = page.getByRole("alertdialog");
+  await asking.waitFor();
+  const before = posts.length;
+  await page.getByRole("button", { name: "New chat" }).dispatchEvent("click");
+  await asking.waitFor({ state: "detached" });
+  await page.waitForTimeout(500);
+  assert.equal(posts.length, before);
+  const made = (await (
+    await post(modelled.origin, "/api/pods", {})
+  ).json()) as {
+    pods: { name: string }[];
+  };
+  assert.equal(
+    made.pods.some(({ name }) => name === "dora-xu"),
+    false,
+  );
   await page.close();
 });
 
