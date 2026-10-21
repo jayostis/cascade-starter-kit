@@ -5,8 +5,11 @@ import type { z } from "zod";
 import type { ApiRoutes, Output } from "../../server/api.ts";
 import type { INPUTS, Operation } from "../../server/inputs.ts";
 
+/** Only the fields a schema names: its `looseObject` lets the server take others, but a caller may not send them. */
+type Named<T> = { [P in keyof T as string extends P ? never : P]: T[P] };
+
 /** What `operation` may be sent, as its route's schema says. */
-type In<K extends Operation> = z.input<(typeof INPUTS)[K]>;
+type In<K extends Operation> = Named<z.input<(typeof INPUTS)[K]>>;
 
 /** PodApi's own errors, by the names the runtime's carry: the screens tell them apart by `name`. */
 class Refusal extends Error {
@@ -27,8 +30,15 @@ async function answer(
   sent: Promise<Response>,
 ): Promise<Output> {
   const response = await sent;
-  const body = (await response.json().catch(() => ({}))) as Output;
-  if (response.ok) return body;
+  const parsed: unknown = await response.json().catch(() => undefined);
+  if (response.ok) {
+    if (parsed === undefined)
+      throw new Error(
+        `${operation}: the server answered ${response.status} with ${response.headers.get("content-type") ?? "no content type"}, not JSON`,
+      );
+    return parsed as Output;
+  }
+  const body = (parsed ?? {}) as Output;
   if (typeof body.refused === "string") {
     if (response.status === 423)
       throw new Unopened(String(body.unopened), body.refused);
