@@ -20,6 +20,7 @@ import {
   versionName,
 } from "../said.ts";
 import { useAddress } from "./address.tsx";
+import { failed } from "./doing.ts";
 import { Tag } from "./parts.tsx";
 import { Back, NotFound, sourceOf, useLoaded, Wrong } from "./screen.tsx";
 import type { TablesHeld } from "./shell.tsx";
@@ -230,23 +231,25 @@ export function EntryScreen({
       const own = entryOf(answers, id);
       if (own === undefined || engine !== "ready")
         return { entry: own, panels: [] };
-      let named = own;
-      try {
-        const { about, said, held } = maps(await api.said({ pod })) as {
-          about?: Abouts;
-          said?: VariantsSaid;
-          held?: readonly Series[];
-        };
-        named = entryOf(answers, id, { about, said, held }) ?? own;
-      } catch {
-        return { entry: own, panels: [] };
-      }
+      const { about, said, held } = maps(await api.said({ pod })) as {
+        about?: Abouts;
+        said?: VariantsSaid;
+        held?: readonly Series[];
+      };
+      const named = entryOf(answers, id, { about, said, held }) ?? own;
+      const here = location.pathname + location.search;
       api.said({ pod, entry: id }).then(
         (sent) => {
           const full = maps(sent) as { entry?: Entry; panels?: Panels };
           later({ entry: full.entry ?? named, panels: full.panels ?? [] });
         },
-        () => undefined,
+        (error: unknown) => {
+          if (
+            !(error instanceof Error && error.name === "Refusal") &&
+            location.pathname + location.search === here
+          )
+            failed();
+        },
       );
       return { entry: named, panels: [] };
     },
