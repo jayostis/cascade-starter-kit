@@ -964,9 +964,25 @@ try {
       assert.equal(answer.status, chat ? 200 : 404, "GET /chat");
       if (chat)
         assert.deepEqual(await answer.json(), {}, "a model with none set");
-      const page = await opened(await tab(), server, "/pods/alex-rivera/");
+      const page = await tab();
+      const asked: string[] = [];
+      page.on("request", (request) => {
+        if (new URL(request.url()).pathname === "/chat")
+          asked.push(request.url());
+      });
+      await opened(page, server, "/pods/alex-rivera/");
       if (chat) await page.locator(".chat-off").waitFor();
-      else assert.equal(await page.locator(".chat").count(), 0, "a chat");
+      else {
+        // A host with a chat asks GET /chat as it mounts and loads the window's chunk; both are done once the network idles.
+        await page.waitForLoadState("networkidle");
+        assert.deepEqual(asked, [], "the page asked /chat for a model");
+        assert.equal(await page.locator(".chat").count(), 0, "a chat");
+        assert.equal(
+          await page.locator("[data-ask]").count(),
+          0,
+          "an Ask about this",
+        );
+      }
       await page.close();
       const { scripts } = JSON.parse(
         await readFile(join(app, "package.json"), "utf8"),

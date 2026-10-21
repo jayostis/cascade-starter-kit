@@ -20,13 +20,15 @@ async function chooseAddOns(
     `\nThe add-ons:\n\n${addOns.map(({ name, description }) => `  ${name.padEnd(width)}  ${description}\n`).join("")}\n`,
   );
   const answer = await question(
-    "Which to add, by name and separated by commas? (none) ",
+    "Which to add, by name and separated by commas? Enter alone adds none: ",
   );
   return answer.split(",");
 }
 
 async function offerModel(folder: string): Promise<boolean> {
-  const answer = (await question("\nAdd a chat with a model? (y/N) "))
+  const answer = (
+    await question("\nChoose the model the chat uses now? (y/N) ")
+  )
     .trim()
     .toLowerCase();
   return (answer === "y" || answer === "yes") && (await npmRunModel(folder));
