@@ -24,9 +24,15 @@ export interface Served {
 }
 
 const ADDRESS = addresses();
-/** An address a person opens rather than a file a page reads: its last part has no extension. */
-const isPage = (path: string) =>
-  !path.startsWith("/api/") && !/\.[^/]*$/.test(path);
+/**
+ * An address a person opens rather than a file a page reads. An id may hold a dot, so a last part with one is a page
+ * only when the request is a navigation or asks for HTML.
+ */
+const isPage = (path: string, headers: Headers) =>
+  !path.startsWith("/api/") &&
+  (!/\.[^/]*$/.test(path) ||
+    headers.get("sec-fetch-mode") === "navigate" ||
+    (headers.get("accept") ?? "").includes("text/html"));
 
 const notWaiting = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Not waiting · Cascade</title></head><body><h1>No sign-in is waiting for this</h1></body></html>`;
 
@@ -52,7 +58,7 @@ export function appServer(served: Served) {
   else {
     let page: Promise<string> | undefined;
     app.get("*", serveStatic({ root: pages }), async (c, next) => {
-      if (!isPage(c.req.path)) return next();
+      if (!isPage(c.req.path, c.req.raw.headers)) return next();
       page ??= readFile(join(pages, "index.html"), "utf8");
       return c.html(await page);
     });
