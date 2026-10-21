@@ -1,48 +1,37 @@
 import assert from "node:assert/strict";
-import process from "node:process";
 import { after, test } from "node:test";
-import { render } from "preact-render-to-string";
-import { loadHospital, loadStories } from "@the-cascade-protocol/sandbox/node";
 import {
-  changesIn,
-  type Finding,
-  labSeriesIn,
-  openPod,
-  type Pod,
-  pullFiles,
-  type Row,
-  timelineIn,
-} from "cascade-runtime";
-import { pulled } from "./hospitals.js";
-import {
-  currentIn,
-  links,
-  linksOf,
-  pages,
-  rowsIn,
-  textAt,
-  textOf,
-} from "./render.js";
+  ALLERGIES,
+  CLINVAR,
+  closeStoryPods,
+  COLUMBA,
+  concept,
+  CONDITIONS,
+  DIFFERS,
+  entryRow,
+  GROUPS,
+  HARBOURLINE,
+  HISTORY,
+  LABELS,
+  LABS,
+  MEDICATIONS,
+  NAME,
+  report,
+  REVIEW,
+  ROW,
+  rows,
+  said,
+  SEEN,
+  SOURCES,
+  storyPods,
+  VARIANT_ANSWERS,
+  VARIANTS,
+  VARIANTS_SAID,
+  verdict,
+  VERSION,
+} from "./fixtures.js";
 
-const view = await import(
-  new URL("../../app/summary.mjs", import.meta.url).href
-);
-const said = await import(new URL("../../app/said.ts", import.meta.url).href);
-const { addresses } = await import(
-  new URL("../../app/addresses.ts", import.meta.url).href
-);
-const paths = addresses("/");
-const draw = await pages();
-const { trendPath } = (await import(
-  new URL("../../app/pods.mjs", import.meta.url).href
-)) as { trendPath: (pod: string, trend: object) => string };
-
-const ALLERGIES = "pod/My active allergies";
-const CONDITIONS = "pod/My active conditions";
-const LABS = "pod/My lab results";
-const MEDICATIONS = "pod/My medication history";
-const SEEN = "pod/What was seen more than once";
-const REVIEW = "entry/What needs review";
+after(closeStoryPods);
 
 test("worth a look: each thing that needs review, with its entry and the Needs review tag, and nothing for what was seen more than once", () => {
   const at = (entry: string, place: string, places: number) => ({
@@ -118,7 +107,7 @@ test("worth a look: each thing that needs review, with its entry and the Needs r
   const shared =
     "Cascade cannot confirm that the shared code names one product, so they may or may not be the same.";
   assert.deepEqual(
-    view
+    said
       .worthALook(answers)
       .map(({ entry, sentence, tag }: Record<string, string>) => [
         entry,
@@ -184,11 +173,6 @@ test("worth a look: each thing that needs review, with its entry and the Needs r
       ],
     ],
   );
-  const part = (href?: (entry: string) => string) =>
-    render(view.worthPart(view.worthALook(answers), href));
-  assert.ok(part((entry) => `/e/${entry}`).includes('<a href="/e/e5">'));
-  assert.ok(!part().includes("<a "), "plain text with no address to link");
-  assert.equal(view.worthPart([]), undefined);
 });
 
 test("worth a look: two medications in two entries whose codes share an ingredient are shown apart, once for each pair in the order of the section even when an entry's rows are not adjacent, a combination of one MIN said as a combination, and one entry's own rows, a medication with no code or two entries that share a code give nothing, since What needs review lists those, and a medication stopped or paused shares with none", () => {
@@ -222,7 +206,7 @@ test("worth a look: two medications in two entries whose codes share an ingredie
     })),
   });
   const lines = (rows: object) =>
-    view
+    said
       .worthALook(rows, about)
       .map(({ entry, sentence, tag }: Record<string, string>) => [
         entry,
@@ -303,7 +287,7 @@ test("worth a look: two medications in two entries whose codes share an ingredie
     })),
   };
   const sentenceOf = (id: string, held: object[]) =>
-    view
+    said
       .entryOf(sourced, id, { about, held })
       .known.map(({ sentence, from }: { sentence: string; from?: object }) => [
         sentence,
@@ -375,7 +359,7 @@ test("a row's place, as a person says it", () => {
     [{ importLabel: "Apple Health export" }, "Apple Health"],
     [{}, "Somewhere unnamed"],
   ] as const)
-    assert.equal(view.placeOf(row), place, JSON.stringify(row));
+    assert.equal(said.placeOf(row), place, JSON.stringify(row));
 });
 
 test("a hospital's people are named family name first and sorted by family name, then given name", () => {
@@ -431,7 +415,7 @@ test("a pod's name, from a person's", () => {
     ["  Zoë Ångström-Lee ", "zoe-angstrom-lee"],
     ["李明", ""],
   ])
-    assert.equal(view.slug(person), pod, person);
+    assert.equal(said.slug(person), pod, person);
 });
 
 test("a person's name is the one typed when the pod was made, else the pod's name capitalised", () => {
@@ -448,13 +432,13 @@ test("a person's name is the one typed when the pod was made, else the pod's nam
     ["ada", "Ada"],
     ["alex-rivera-j24", "Alex Rivera J24"],
   ])
-    assert.equal(view.personName(pod, titles), person, pod);
-  assert.equal(view.personName("tamsin-at-north"), "Tamsin At North");
+    assert.equal(said.personName(pod, titles), person, pod);
+  assert.equal(said.personName("tamsin-at-north"), "Tamsin At North");
 });
 
 test("a record's person against the pod's: the grade", () => {
   const named = (...names: [string, string, string?][]) =>
-    view.patientNames({
+    said.patientNames({
       entry: [
         {
           resource: {
@@ -472,7 +456,7 @@ test("a record's person against the pod's: the grade", () => {
   for (const [subject, names, grade] of [
     [rowan, named(["Rowan Ellery", "Marsh"]), "certain"],
     [" rowan  ellery MARSH ", named(["Rowan Ellery", "Marsh"]), "certain"],
-    ["José García", named(["José", "García"]), "certain"],
+    ["José García", named(["José", "García"]), "certain"],
     [
       "Blanche Weber",
       named(
@@ -494,12 +478,12 @@ test("a record's person against the pod's: the grade", () => {
     [rowan, named(["Odalys", "Brandt"]), "certainly-not"],
     [rowan, named(["Rowan Ellery", ""]), "certainly-not"],
   ] as const)
-    assert.equal(view.gradePerson(subject, names), grade, subject);
+    assert.equal(said.gradePerson(subject, names), grade, subject);
   assert.equal(
-    view.gradePerson(undefined, named(["Odalys", "Brandt"])),
+    said.gradePerson(undefined, named(["Odalys", "Brandt"])),
     undefined,
   );
-  assert.equal(view.gradePerson(rowan, []), undefined);
+  assert.equal(said.gradePerson(rowan, []), undefined);
 });
 
 test("a measurement, to three significant figures", () => {
@@ -510,7 +494,7 @@ test("a measurement, to three significant figures", () => {
     ["192", "192"],
     ["Negative", "Negative"],
   ])
-    assert.equal(view.rounded(value), shown, value);
+    assert.equal(said.rounded(value), shown, value);
 });
 
 test("a cell with nothing to sort by sorts after the rest", () => {
@@ -519,7 +503,7 @@ test("a cell with nothing to sort by sorts after the rest", () => {
     ["number", "4.7"],
     ["date", "2025-01-05"],
   ])
-    assert.ok(view.compare(type, "", key) > 0, type);
+    assert.ok(said.compare(type, "", key) > 0, type);
 });
 
 test("the codes a pod's page asks the tables to name are every code of every row", () => {
@@ -549,7 +533,7 @@ test("the codes a pod's page asks the tables to name are every code of every row
     [REVIEW]: [{ entry: "i3", needs: "judged different, still joined" }],
   };
   assert.deepEqual(
-    view.codesOf(answers).sort(),
+    said.codesOf(answers).sort(),
     [
       `${CVX}141`,
       `${CVX}15`,
@@ -579,88 +563,8 @@ test("what the page says after a File menu item: how many pods were deleted, or 
     assert.equal(said.didNote(new URLSearchParams(query), kits), note, query);
 });
 
-test("the chat strip says how to set a model when none is set, and otherwise holds the form, the suggestions and the model's name, and no strip on a page that reloads itself", () => {
-  const shown = (chat: object, refresh?: string) =>
-    render(
-      view.frame({
-        title: "Alex Rivera",
-        body: view.html`<h1>Alex Rivera</h1>`,
-        pods: ["alex-rivera"],
-        current: "alex-rivera",
-        href: (pod: string) => `/pods/${pod}/`,
-        home: "/",
-        dialog: "",
-        menu: { deleteAll: "/d", resetAll: "/r", about: { name: "a" } },
-        chat,
-        refresh,
-      }),
-    );
-  const off = shown({ pod: "alex-rivera", suggestions: [] });
-  assert.match(off, /run <code>npm run model<\/code>/);
-  assert.doesNotMatch(off, /<form class="chat-form"/);
-  const chat = {
-    model: { provider: "other", name: "m-1", local: false },
-    pod: "alex-rivera",
-    suggestions: ["Find anything interesting"],
-  };
-  const on = shown(chat);
-  assert.match(on, /<section class="chat"[^>]* data-pod="alex-rivera"/);
-  assert.match(on, /<form class="chat-form">/);
-  assert.match(
-    on,
-    /<div class="chat-chips" hidden><button [^>]*data-ask-text="Find anything interesting"/,
-  );
-  assert.match(on, /m-1/);
-  assert.doesNotMatch(
-    shown(chat, "/pods/alex-rivera/connections/1"),
-    /class="chat"/,
-  );
-});
-
-test("Escape closes an open menu and follows the open box's own close link, or with none clears the hash; a click closes every open menu but the one whose name it is on", () => {
-  const listening = (close?: { click: () => void }) => {
-    const on: Record<string, ((event: object) => void)[]> = {};
-    const location = { hash: "#connection" };
-    const menus = [{ open: true }, { open: true }];
-    const page = {
-      defaultView: { location },
-      addEventListener: (type: string, listener: (event: object) => void) => {
-        on[type] = [...(on[type] ?? []), listener];
-      },
-      querySelector: () => close ?? null,
-      querySelectorAll: () => menus.filter(({ open }) => open),
-    };
-    view.closing(page);
-    const fire = (type: string, event: object) => {
-      for (const listener of on[type] ?? []) listener(event);
-    };
-    return { fire, location, menus };
-  };
-  const opened = (menus: { open: boolean }[]) => menus.map(({ open }) => open);
-  let clicked = 0;
-  const boxed = listening({ click: () => (clicked += 1) });
-  boxed.fire("keydown", { key: "Escape" });
-  assert.equal(boxed.location.hash, "#connection");
-  assert.equal(clicked, 1);
-  assert.deepEqual(opened(boxed.menus), [false, false]);
-  const bare = listening();
-  bare.fire("keydown", { key: "Escape" });
-  assert.equal(bare.location.hash, "");
-  for (const menu of bare.menus) menu.open = true;
-  const [first] = bare.menus;
-  bare.fire("click", {
-    target: {
-      closest: (selector: string) =>
-        selector === "summary" ? { parentElement: first } : null,
-    },
-  });
-  assert.deepEqual(opened(bare.menus), [true, false]);
-  bare.fire("click", { target: { closest: () => null } });
-  assert.deepEqual(opened(bare.menus), [false, false]);
-});
-
 test("a table opens newest first, a row with no date last", () => {
-  const section = view.SECTIONS.find(
+  const section = said.SECTIONS.find(
     ({ question }: { question: string }) => question === LABS,
   );
   const rows = [
@@ -670,25 +574,11 @@ test("a table opens newest first, a row with no date last", () => {
     { test: "Creatinine", performed: "2025-01-05" },
   ];
   assert.deepEqual(
-    view.opening(section, rows).map(({ test }: { test: string }) => test),
+    said.opening(section, rows).map(({ test }: { test: string }) => test),
     ["Potassium", "Creatinine", "Glucose", "Sodium"],
   );
 });
 
-const GROUPS = {
-  iri: "urn:uuid:c1a6678c-2b4d-4287-b852-9039e6a71afd",
-  label: "Example vaccine groups",
-  licence: "http://creativecommons.org/publicdomain/zero/1.0/",
-  publisher: "https://publisher.example/",
-  credit: "Source: an example publisher",
-  current: { iri: "ni:///v2", label: "2", issued: "2026-10-08T19:22:23Z" },
-  versions: [
-    { iri: "ni:///v2", label: "2", issued: "2026-10-08T19:22:23Z" },
-    { iri: "ni:///v1", label: "1", issued: "2026-10-01T00:00:00Z" },
-  ],
-  checked: "2026-10-08T21:55:00Z",
-  watched: { at: "2026-10-08T20:00:00Z", found: "nothing new" },
-};
 test("a page of results is asked for by a whole number from 1, else the first", () => {
   assert.deepEqual(
     ["3", "", null, "0", "-2", "2.5", "x", "Infinity", "1e400", "1e20"].map(
@@ -733,401 +623,6 @@ test("a source is named by the words its tables share, and a table of its own is
   );
 });
 
-test("a pod's page credits the table whose names it shows, once, and no other", () => {
-  const code = "http://loinc.org/rdf/2823-3";
-  const answers = {
-    [LABS]: [
-      { entry: "l1", test: "K+", code },
-      { entry: "l2", test: "K again", code },
-    ],
-  };
-  const about = new Map<string, object>([
-    [
-      code,
-      {
-        name: {
-          label: "Potassium [Moles/volume] in Serum or Plasma",
-          altLabels: [],
-          origin: "urn:x:loinc-1",
-        },
-      },
-    ],
-  ]);
-  const held = [
-    {
-      iri: "urn:x:loinc",
-      versions: [{ iri: "urn:x:loinc-1" }],
-      credit: "This material contains content from LOINC.",
-    },
-    {
-      iri: "urn:x:other",
-      versions: [{ iri: "urn:x:other-1" }],
-      credit: "Another table's credit.",
-    },
-  ];
-  const shown = (props: object) =>
-    textOf(
-      render(
-        view.podPage(answers, {
-          pod: "alex-rivera",
-          signIn: () => "",
-          findHospital: "",
-          ...props,
-        }),
-      ),
-    );
-  const credited = shown({ about, held });
-  assert.equal(
-    credited.split("This material contains content from LOINC.").length,
-    2,
-  );
-  assert.ok(!credited.includes("Another table's credit."));
-  assert.ok(
-    !shown({ about: new Map(), held }).includes("content from LOINC"),
-    "a name the tables did not give has no credit",
-  );
-});
-
-test("the medicines by class page groups the pod's active medicines under each class, one class alone when picked, with the table and version each came from and its credit, and says which medicines are in none and why", () => {
-  const MEDRT = "https://ns.cascadeprotocol.org/codes/medrt/";
-  const ORIGIN = "urn:x:classes-1";
-  const series = {
-    ...GROUPS,
-    iri: "urn:x:classes",
-    label: "Example drug classes",
-    credit: "Classes are FDA's.",
-    versions: [{ iri: ORIGIN, label: "1", issued: "2026-10-08" }],
-  };
-  const row = (
-    entry: string,
-    medication: string,
-    cls: string,
-    relation = "establishedPharmacologicClass",
-    on = "3827",
-    stated = "false",
-  ) => ({
-    entry,
-    medication,
-    class: `${MEDRT}${cls}`,
-    relation: `${REC}${relation}`,
-    origin: ORIGIN,
-    through: `http://www.nlm.nih.gov/research/umls/rxnorm/${on}`,
-    stated,
-  });
-  const rows = [
-    row("e4", "Estradiol 1 MG Oral Tablet", "N0000175825", undefined, "4083"),
-    row(
-      "e5",
-      "Fluoroestradiol F-18",
-      "N0000177914",
-      undefined,
-      "2372221",
-      "true",
-    ),
-    row("e2", "Enalapril", "N0000175562"),
-    row("e2", "Enalapril", "N0000000174", "mechanismOfAction"),
-  ];
-  const LISINOPRIL_TABLET =
-    "http://www.nlm.nih.gov/research/umls/rxnorm/314076";
-  const medications = [
-    {
-      entry: "e1",
-      medication: "Lisinopril 10 MG Oral Tablet",
-      code: LISINOPRIL_TABLET,
-    },
-    { entry: "e2", medication: "Enalapril" },
-    { entry: "e3", medication: "Lisinopril with hydrochlorothiazide" },
-    { entry: "e4", medication: "Estradiol 1 MG Oral Tablet" },
-    { entry: "e5", medication: "Fluoroestradiol F-18" },
-  ];
-  const about = new Map<string, object>([
-    [
-      `${MEDRT}N0000175562`,
-      {
-        notation: "N0000175562",
-        name: {
-          label: "Angiotensin Converting Enzyme Inhibitor [EPC]",
-          altLabels: [],
-          origin: ORIGIN,
-        },
-      },
-    ],
-    [
-      `${MEDRT}N0000000174`,
-      {
-        notation: "N0000000174",
-        name: {
-          label: "Angiotensin-converting Enzyme Inhibitors",
-          altLabels: [],
-          origin: ORIGIN,
-        },
-      },
-    ],
-    [
-      `${MEDRT}N0000175825`,
-      {
-        notation: "N0000175825",
-        name: { label: "Estrogen [EPC]", altLabels: [], origin: ORIGIN },
-      },
-    ],
-    [
-      "http://www.nlm.nih.gov/research/umls/rxnorm/3827",
-      {
-        notation: "3827",
-        name: { label: "enalapril", altLabels: [], origin: ORIGIN },
-      },
-    ],
-    [
-      "http://www.nlm.nih.gov/research/umls/rxnorm/4083",
-      {
-        notation: "4083",
-        name: { label: "estradiol", altLabels: [], origin: ORIGIN },
-      },
-    ],
-  ]);
-  const read = {
-    rows,
-    medications,
-    classes: about,
-    elsewhere: new Map([[LISINOPRIL_TABLET, ["lisinopril"]]]),
-    held: [series],
-  };
-  const page = (picked?: string, shown: object = read) =>
-    textOf(
-      draw("ClassesPage", {
-        pod: "priya-natarajan",
-        titles: new Map(),
-        read: shown,
-        picked,
-      }),
-    );
-  const all = page();
-  for (const said of [
-    "Angiotensin Converting Enzyme Inhibitor [EPC] Established pharmacologic class",
-    "Enalapril through enalapril",
-    "Estrogen [EPC]",
-    "Estradiol 1 MG Oral Tablet through estradiol",
-    "Mechanism of action",
-    "From Example drug classes, version 1, Oct 8, 2026.",
-    "Classes are FDA's.",
-    "Not in a class here",
-    "Lisinopril 10 MG Oral Tablet: FDA classes a different form of lisinopril; RxNorm does not tie this product to it.",
-    "Lisinopril with hydrochlorothiazide. MED-RT classes single ingredients",
-  ])
-    assert.ok(all.includes(said), `${said} in ${all}`);
-  assert.ok(
-    all.includes("Fluoroestradiol F-18") &&
-      !all.includes("Fluoroestradiol F-18 through"),
-    "a class on a code the entry states is not through anything",
-  );
-  assert.ok(
-    !all.includes("Lisinopril 10 MG Oral Tablet, ") &&
-      !all.includes("Lisinopril 10 MG Oral Tablet and"),
-    "a medicine with its own reason is not in the general one",
-  );
-  assert.ok(
-    all.indexOf("Established pharmacologic class") <
-      all.indexOf("Mechanism of action"),
-    "the relations come in MED-RT's order",
-  );
-  const picked = page(`${MEDRT}N0000000174`);
-  assert.ok(picked.includes("Enalapril through"));
-  assert.ok(
-    !picked.includes("Estradiol 1 MG Oral Tablet through"),
-    "only the class picked",
-  );
-  const none = page(undefined, { ...read, rows: [] });
-  assert.ok(none.includes("None of this pod's active medicines is in a class"));
-});
-
-test("a panel's page lists the pod's results in LOINC's order with each test's requirement, newest first, the required tests with no result, a nested panel's tests under it, and the version and credit; it never says a result was drawn in the panel", () => {
-  const LOINC = "http://loinc.org/rdf/";
-  const ORIGIN = "urn:x:panels-1";
-  const NAMES = "urn:x:names-1";
-  const series = {
-    ...GROUPS,
-    iri: "urn:x:panels",
-    label: "Example panel members",
-    credit: "Panels: LOINC's credit.",
-    versions: [{ iri: ORIGIN, label: "2.83", issued: "2026-10-05" }],
-  };
-  const names = {
-    ...GROUPS,
-    iri: "urn:x:names",
-    label: "Example LOINC names",
-    credit: "Names: LOINC's credit.",
-    versions: [{ iri: NAMES, label: "2.84", issued: "2026-10-06" }],
-  };
-  const panel = `${LOINC}24326-1`;
-  const nested = `${LOINC}99999-2`;
-  const row = (
-    member: string,
-    sequence: number,
-    required: string,
-    entry?: string,
-    via = panel,
-  ) => ({
-    panel,
-    member: `${LOINC}${member}`,
-    sequence: String(sequence),
-    required,
-    via,
-    origin: ORIGIN,
-    ...(entry !== undefined && { entry }),
-  });
-  const rows = [
-    row("2951-2", 1, "R"),
-    row("2823-3", 2, "R", "k1"),
-    row("2823-3", 2, "R", "k2"),
-    row("2075-0", 3, "R"),
-    row("2028-9", 4, "O", "c1"),
-    row("6298-4", 1, "R", "n1", nested),
-    row("2823-3", 1, "R", "k1", nested),
-  ];
-  const name = (code: string, label: string): [string, object] => [
-    `${LOINC}${code}`,
-    { notation: code, name: { label, altLabels: [], origin: NAMES } },
-  ];
-  const read = {
-    panel,
-    rows,
-    labs: [
-      { entry: "k1", value: "4.1", unit: "mmol/L", performed: "2025-03-01" },
-      { entry: "k2", value: "4.6", unit: "mmol/L", performed: "2025-06-01" },
-      { entry: "c1", value: "24", unit: "mmol/L", performed: "2025-06-01" },
-      { entry: "n1", value: "3.9", unit: "mmol/L", performed: "2025-06-01" },
-    ],
-    panelAbout: new Map([
-      name("24326-1", "Electrolytes panel"),
-      name("2951-2", "Sodium"),
-      name("2823-3", "Potassium"),
-      name("2075-0", "Chloride"),
-      name("2028-9", "Carbon dioxide"),
-      name("6298-4", "Potassium in blood"),
-      name("99999-2", "Nested panel"),
-    ]),
-    held: [series, names],
-  };
-  const page = (shown: object = read) =>
-    textOf(
-      draw("PanelPage", { pod: "rowan-marsh", titles: new Map(), read: shown }),
-    );
-  const words = page();
-  assert.ok(
-    words.includes(
-      "Your results in Electrolytes panel You have 1 of 3 required tests; missing: Sodium and Chloride.",
-    ),
-    words,
-  );
-  const order = ["Sodium", "Potassium", "Chloride", "Carbon dioxide"].map(
-    (each) => words.indexOf(each, words.indexOf("Tests in the panel")),
-  );
-  assert.deepEqual(
-    order,
-    [...order].sort((a, b) => a - b),
-    "LOINC's order",
-  );
-  for (const said of [
-    "Sodium required No result",
-    "Potassium required 4.6 mmol/L Jun 1, 2025 4.1 mmol/L Mar 1, 2025",
-    "Carbon dioxide optional 24 mmol/L",
-    "Within Nested panel Potassium in blood required 3.9 mmol/L",
-    "From Example panel members, version 2.83, Oct 5, 2026 and Example LOINC names, version 2.84, Oct 6, 2026.",
-    "Panels: LOINC's credit.",
-    "Names: LOINC's credit.",
-    "that does not say your results were drawn as part of it",
-  ])
-    assert.ok(words.includes(said), `${said} in ${words}`);
-  assert.equal(
-    words.split("Potassium required").length,
-    2,
-    "a test the panel lists itself is not repeated under a nested panel",
-  );
-  const withMissingNested = page({
-    ...read,
-    rows: [...rows, row("6299-2", 2, "R", undefined, nested)],
-    panelAbout: new Map([...read.panelAbout, name("6299-2", "Another test")]),
-  });
-  assert.ok(
-    withMissingNested.includes(
-      "You have 2 of 5 required tests; missing: Sodium, Chloride and Another test.",
-    ),
-    "a nested panel the query requires counts its held tests too",
-  );
-  assert.ok(
-    page({ ...read, rows: [] }).includes("You have no results in this panel."),
-  );
-});
-
-test("a lab result's page links the panels LOINC lists its test in, and a result whose test is in none has no such part", () => {
-  const series = {
-    ...GROUPS,
-    iri: "urn:x:panels",
-    label: "Example panel members",
-    credit: "Panels: LOINC's credit.",
-    versions: [{ iri: "urn:x:panels-1", label: "2.83", issued: "2026-10-05" }],
-  };
-  const labs = {
-    [view.SOURCES]: [
-      {
-        entry: "urn:e:k",
-        entryLabel: "Lab result entry · Potassium",
-        record: "r-k",
-        arrived: "2026-09-12T10:00:00Z",
-      },
-    ],
-    "pod/My lab results": [
-      {
-        entry: "urn:e:k",
-        entryLabel: "Lab result entry · Potassium",
-        test: "Potassium",
-        code: "http://loinc.org/rdf/2823-3",
-        value: "4.1",
-      },
-    ],
-  };
-  const entry = view.entryOf(labs, view.entryId("urn:e:k"), {
-    held: [series],
-  });
-  assert.deepEqual(entry.testCodes, ["http://loinc.org/rdf/2823-3"]);
-  const panels = [
-    {
-      series,
-      version: series.versions[0],
-      total: 3,
-      panels: [
-        {
-          code: "http://loinc.org/rdf/24326-1",
-          notation: "24326-1",
-          required: "R",
-          about: { notation: "24326-1", name: { label: "Electrolytes panel" } },
-        },
-      ],
-    },
-  ];
-  const shown = (read: object) =>
-    draw("EntryPage", {
-      pod: "rowan-marsh",
-      titles: new Map(),
-      read,
-      held: [series],
-    });
-  const page = shown({ entry, panels });
-  const words = textOf(page);
-  assert.ok(words.includes("In LOINC panels"));
-  assert.ok(words.includes("Electrolytes panel required"));
-  assert.ok(words.includes("and 2 more."));
-  assert.ok(
-    linksOf(page).some(
-      ({ href }) =>
-        href ===
-        "/pods/rowan-marsh/panel?panel=http%3A%2F%2Floinc.org%2Frdf%2F24326-1",
-    ),
-    "a link opens the panel",
-  );
-  assert.ok(!textOf(shown({ entry, panels: [] })).includes("In LOINC panels"));
-});
-
 test("what a check did, in one note", () => {
   const checked = (fields: object) => ({
     feed: "https://f.example/feed.ttl",
@@ -1135,7 +630,7 @@ test("what a check did, in one note", () => {
     refused: [],
     ...fields,
   });
-  for (const [did, said] of [
+  for (const [did, note] of [
     [[checked({})], "Checked the feeds: nothing new."],
     [
       [checked({ kept: ["ni:///v2"] })],
@@ -1159,65 +654,7 @@ test("what a check did, in one note", () => {
       "Refused a version: its rows do not have the checksum the feed gives.",
     ],
   ] as const)
-    assert.equal(view.checkedNote(did, [GROUPS]), said);
-});
-
-const GENOMICS = "https://ns.cascadeprotocol.org/genomics/v1#";
-const REC = "https://ns.cascadeprotocol.org/records/v1-draft#";
-const VARIANTS = "pod/My genetic variants";
-const REPORTS = "pod/What each report says of a variant";
-const CONCEPTS: Record<string, string> = {
-  [`${GENOMICS}Pathogenic`]: "Pathogenic",
-  [`${GENOMICS}LikelyPathogenic`]: "Likely pathogenic",
-  [`${GENOMICS}VUS`]: "Uncertain significance",
-  [`${GENOMICS}LikelyBenign`]: "Likely benign",
-  [`${GENOMICS}Benign`]: "Benign",
-  [`${REC}ClinVarConflicting`]: "Conflicting classifications of pathogenicity",
-  [`${REC}ClinVarConflictingData`]: "conflicting data from submitters",
-  [`${REC}ClinVarCombinationOnly`]: "-",
-  [`${REC}ClinVarVusHigh`]: "VUS-high",
-  [`${REC}ClinVarRiskFactor`]: "risk factor",
-  [`${REC}ClinVarMultipleSubmittersNoConflicts`]:
-    "criteria provided, multiple submitters, no conflicts",
-  [`${REC}ClinVarSingleSubmitter`]: "criteria provided, single submitter",
-  [`${REC}ClinVarNoAssertionCriteria`]: "no assertion criteria provided",
-};
-const concept = (name: string) => {
-  const iri = [GENOMICS, REC]
-    .map((space) => space + name)
-    .find((each) => each in CONCEPTS);
-  assert.ok(iri, name);
-  return { iri, label: CONCEPTS[iri] };
-};
-const LABELS = new Map(
-  Object.entries(CONCEPTS).filter(([iri]) => iri.startsWith(GENOMICS)),
-);
-const VERSION = "ni:///clinvar-1";
-const ROW = "http://www.ncbi.nlm.nih.gov/clinvar/90011";
-const rows = (fields: Record<string, unknown>) => ({
-  found: "rows",
-  series: "urn:test:clinvar",
-  version: VERSION,
-  rows: [{ variation: ROW, classification: [], ...fields }],
-});
-const report = (
-  id: string,
-  classification: string | undefined,
-  date: string | undefined,
-) => ({
-  report: id,
-  variant: "v1",
-  ...(classification === undefined
-    ? {}
-    : { classification: `${GENOMICS}${classification}` }),
-  ...(date === undefined ? {} : { date }),
-});
-const verdict = (reportId: string, said: string, extra = {}) => ({
-  report: reportId,
-  row: ROW,
-  origin: VERSION,
-  verdict: said,
-  ...extra,
+    assert.equal(said.checkedNote(did, [GROUPS]), note);
 });
 
 test("what a variant's page says: a sentence for each report, oldest first, tagged when it differs from the row ClinVar holds today, and one for what ClinVar says, in every state of its answer", () => {
@@ -1451,7 +888,7 @@ test("what a variant's page says: a sentence for each report, oldest first, tagg
     ],
   ];
   for (const [name, input, reports, clinvar] of cases) {
-    const said = view.variantSaid({
+    const variant = said.variantSaid({
       variant: { gene: input.gene, hgvs: [], variations: [] },
       reports: input.reports ?? [],
       says: input.says,
@@ -1460,15 +897,15 @@ test("what a variant's page says: a sentence for each report, oldest first, tagg
       ...(input.places && { places: input.places }),
     });
     assert.deepEqual(
-      said.reports.map(
+      variant.reports.map(
         ({ sentence, tag }: { sentence: string; tag?: string }) =>
           tag === undefined ? { sentence } : { sentence, tag },
       ),
       reports,
       name,
     );
-    assert.equal(said.clinvar, clinvar, name);
-    for (const each of said.reports)
+    assert.equal(variant.clinvar, clinvar, name);
+    for (const each of variant.reports)
       assert.equal(
         "when" in each,
         !each.sentence.includes("undated"),
@@ -1487,355 +924,6 @@ test("a variation's classification is said as ClinVar's sentence", () => {
     }),
     "ClinVar today says uncertain significance.",
   );
-});
-
-const SOURCES = "entry/Where it came from";
-const SCT = "urn:test:sct/";
-const AT_MERIDIAN = "Meridian Health System";
-const AT_LARKSPUR = "Larkspur Valley Health";
-const ASTHMA = "urn:cascade:entry:aa11";
-const LATEX = "urn:cascade:entry:bb22";
-const record = (entry: string, at: string, extra: object) => ({
-  entry,
-  entryLabel: "Condition entry · Asthma",
-  record: `${entry}-${at}`,
-  document: `${entry}-${at}-document`,
-  ...extra,
-});
-
-/** Asthma at two hospitals, its SNOMED code named and retired by two series; and a latex allergy only a review line names. */
-const ENTRY_ANSWERS = {
-  [SOURCES]: [
-    record(ASTHMA, "meridian", {
-      arrived: "2026-09-10T10:00:00Z",
-      importLabel: "Apple Health export",
-      hospital: AT_MERIDIAN,
-      retrieved: "2026-09-01",
-    }),
-    record(ASTHMA, "larkspur", {
-      arrived: "2026-08-01T10:00:00Z",
-      importLabel: "FHIR pull",
-      hospital: AT_LARKSPUR,
-      retrieved: "2026-07-30",
-    }),
-    {
-      entry: LATEX,
-      entryLabel: "Allergy entry · Latex",
-      record: "r-latex",
-      arrived: "2026-09-12T10:00:00Z",
-      importLabel: "entered by Alex in the Cascade app",
-    },
-  ],
-  [CONDITIONS]: [
-    {
-      entry: ASTHMA,
-      entryLabel: "Condition entry · Asthma",
-      condition: "Asthma",
-      onset: "2019-03-02",
-      snomed: `${SCT}195967001`,
-    },
-  ],
-  [SEEN]: [AT_MERIDIAN, AT_LARKSPUR].map((place) => ({
-    entry: ASTHMA,
-    place,
-    records: "1",
-    places: "2",
-  })),
-  [REVIEW]: [
-    {
-      entry: LATEX,
-      entryLabel: "Allergy entry · Latex",
-      needs: "judged different, still joined",
-    },
-  ],
-};
-const NAMES = {
-  iri: "urn:test:names",
-  label: "Example names",
-  credit: "Names: an example publisher",
-  versions: [{ iri: "urn:test:names-2", label: "2", issued: "2026-10-01" }],
-};
-const STATUS = {
-  iri: "urn:test:status",
-  label: "Example status",
-  credit: "Status: another publisher",
-  versions: [{ iri: "urn:test:status-1", label: "1", issued: "2026-09-01" }],
-};
-
-test("an entry's page says what it is, where each document it came from put it, and what Cascade and the tables say of it, each claim from a table naming the table and version, the version a link, and each credit once", () => {
-  assert.equal(view.entryId(ASTHMA), "aa11");
-  const about = new Map([
-    [
-      `${SCT}195967001`,
-      {
-        notation: "195967001",
-        name: {
-          label: "Asthma (disorder)",
-          altLabels: [],
-          origin: "urn:test:names-2",
-        },
-        status: {
-          deprecated: true,
-          replacedBy: [`${SCT}195967002`],
-          origin: "urn:test:status-1",
-        },
-      },
-    ],
-  ]);
-  const held = [NAMES, STATUS];
-  const entry = view.entryOf(ENTRY_ANSWERS, "aa11", { about, held });
-  assert.equal(entry.name, "Asthma (disorder)");
-  assert.equal(entry.recorded, "Asthma");
-  assert.equal(entry.kind, "condition");
-  assert.deepEqual(entry.tags, ["Retired code"]);
-  assert.deepEqual(entry.codes, [{ notation: "195967001", series: NAMES }]);
-  assert.deepEqual(
-    entry.where.map(({ place }: { place: string }) => place),
-    [AT_LARKSPUR, AT_MERIDIAN],
-    "oldest arrival first",
-  );
-  assert.deepEqual(
-    entry.known.map(({ sentence }: { sentence: string }) => sentence),
-    [
-      `Cascade recorded it at ${AT_MERIDIAN} and ${AT_LARKSPUR} and keeps it as one condition.`,
-      '195967001 is named "Asthma (disorder)".',
-      "195967001 is retired, replaced by 195967002.",
-    ],
-  );
-  assert.deepEqual(entry.credits, [NAMES.credit, STATUS.credit]);
-
-  const page = draw("EntryPage", {
-    pod: "alex-rivera",
-    titles: new Map(),
-    read: { entry, panels: [] },
-    held,
-  });
-  const words = textOf(page).replace(/ \./g, ".");
-  for (const shown of [
-    "Asthma (disorder) Retired code",
-    "Recorded as Asthma",
-    "Since Mar 2, 2019",
-    "Code 195967001",
-    `${AT_LARKSPUR} retrieved Jul 30, 2026; arrived Aug 1, 2026 through FHIR pull`,
-    `${AT_MERIDIAN} retrieved Sep 1, 2026; arrived Sep 10, 2026 through Apple Health export`,
-    "195967001 is retired, replaced by 195967002. From Example status, version 1, Sep 1, 2026.",
-    "From Example names, version 2, Oct 1, 2026.",
-    "Back to Alex Rivera",
-  ])
-    assert.ok(words.includes(shown), `${shown} is not in ${words}`);
-  for (const [href, text] of [
-    [paths.table(said.tableId(NAMES.iri), { code: "195967001" }), "195967001"],
-    [paths.table(said.tableId(STATUS.iri)), "version 1, Sep 1, 2026"],
-    ["/pods/alex-rivera/", "Back to Alex Rivera"],
-  ] as const)
-    assert.ok(links(page, href, text), `${text} links to ${href}`);
-  for (const credit of [NAMES.credit, STATUS.credit])
-    assert.equal(words.split(credit).length, 2, `${credit} is said once`);
-});
-
-test("before the tables can say, an entry shows the record's own name and each code as written, unlinked, with no claim from a table, and where it came from and what Cascade did unchanged", () => {
-  const entry = view.entryOf(ENTRY_ANSWERS, "aa11");
-  assert.equal(entry.name, "Asthma");
-  assert.equal(entry.recorded, undefined);
-  assert.deepEqual(entry.tags, []);
-  assert.deepEqual(entry.codes, [{ notation: "195967001" }]);
-  assert.equal(entry.where.length, 2);
-  assert.equal(entry.known.length, 1);
-  assert.deepEqual(entry.credits, []);
-  const page = draw("EntryPage", {
-    pod: "alex-rivera",
-    titles: new Map(),
-    read: { entry, panels: [] },
-    held: [],
-  });
-  assert.ok(textOf(page).includes("Code 195967001"));
-  assert.ok(!page.includes('href="/tables/'));
-});
-
-test("an entry kept as one names the held table version whose rows joined it, and says nothing of a version the app does not hold; another table that joined it has a line of its own", () => {
-  const joined = (...used: string[]) => new Map([[ASTHMA, used]]);
-  const held = [NAMES, STATUS];
-  const only = view.entryOf(ENTRY_ANSWERS, "aa11", {
-    held,
-    joined: joined("urn:test:names-2", "urn:test:rules", "urn:test:names-2"),
-  });
-  assert.equal(only.known.length, 1);
-  assert.equal(only.known[0].from.series, NAMES);
-  const shown = (entry: object) =>
-    draw("EntryPage", {
-      pod: "alex-rivera",
-      titles: new Map(),
-      read: { entry, panels: [] },
-      held,
-    });
-  const page = textOf(shown(only)).replace(/ \./g, ".");
-  assert.ok(
-    page.includes(
-      "and keeps it as one condition. Matched using Example names, version 2, Oct 1, 2026.",
-    ),
-    page,
-  );
-
-  assert.ok(
-    links(
-      shown(only),
-      paths.table(said.tableId(NAMES.iri)),
-      "version 2, Oct 1, 2026",
-    ),
-    "the version is a link to its table",
-  );
-
-  const twice = view.entryOf(ENTRY_ANSWERS, "aa11", {
-    held,
-    joined: joined("urn:test:names-2", "urn:test:status-1"),
-  });
-  assert.deepEqual(
-    twice.known.map(({ from }: { from?: { series: object } }) => from?.series),
-    [NAMES, STATUS],
-  );
-  const twicePage = textOf(shown(twice)).replace(/ \./g, ".");
-  assert.ok(
-    twicePage.includes("Also matched using Example status, version 1,"),
-    twicePage,
-  );
-  assert.ok(!twicePage.includes("Another reference table"), twicePage);
-
-  const none = view.entryOf(ENTRY_ANSWERS, "aa11", {
-    held,
-    joined: joined("urn:test:rules"),
-  });
-  assert.equal(none.known.length, 1);
-  assert.equal(none.known[0].from, undefined);
-});
-
-test("the Medications tile holds a By class link to the class view, and no other tile does; with no medication or no address there is none", () => {
-  const props = { pod: "alex-rivera", signIn: () => "", findHospital: "" };
-  const answers = {
-    [ALLERGIES]: [{ entry: "e1", allergen: "Penicillin" }],
-    [MEDICATIONS]: [
-      { entry: "e8", medication: "Lisinopril 10 MG Oral Tablet" },
-    ],
-  };
-  const page = render(
-    view.podPage(answers, {
-      ...props,
-      classesHref: "?pod=alex-rivera&classes",
-    }),
-  );
-  const boxes = [...page.matchAll(/<div class="tile-box">(.*?)<\/div>/g)];
-  assert.equal(boxes.length, 1);
-  const [, box = ""] = boxes[0] ?? [];
-  assert.match(box, /Medications/);
-  assert.match(
-    box,
-    /<a class="by" href="\?pod=alex-rivera&amp;classes"[^>]*>By class<\/a>/,
-  );
-  assert.equal((page.match(/By class/g) ?? []).length, 1);
-  assert.equal((page.match(/<a class="tile"/g) ?? []).length, 2);
-
-  const without = render(view.podPage(answers, props));
-  assert.ok(!without.includes("By class"));
-  const noMedicines = render(
-    view.podPage(
-      { [ALLERGIES]: answers[ALLERGIES] },
-      { ...props, classesHref: "?classes" },
-    ),
-  );
-  assert.ok(!noMedicines.includes("By class"));
-});
-
-test("the Medications tile says each medication's L1 lifecycle, current ones first and counted, then how many stopped, and leaves out one entered in error", () => {
-  const REC = "https://ns.cascadeprotocol.org/records/v1-draft#";
-  const table: [string, Record<string, string>, string | undefined][] = [
-    ["MedicationStopped", { medication: "Warfarin" }, "Stopped"],
-    [
-      "MedicationStopped",
-      { medication: "Metformin", ended: "2024-04-15" },
-      "Stopped Apr 15, 2024",
-    ],
-    ["MedicationEnteredInError", { medication: "Mistaken" }, undefined],
-    ["MedicationUnknown", { medication: "Aspirin" }, "Unknown"],
-    ["MedicationPaused", { medication: "Atorvastatin" }, "Paused"],
-    ["MedicationActive", { medication: "Lisinopril" }, "Active"],
-    [
-      "MedicationActive",
-      { medication: "Amlodipine", ended: "2027-01-31" },
-      "Active, until Jan 31, 2027",
-    ],
-  ];
-  const section = view.SECTIONS.find(
-    ({ title }: { title: string }) => title === "Medications",
-  );
-  const rows = view.sectionRows(section, {
-    [MEDICATIONS]: table.map(([lifecycle, row], at) => ({
-      entry: `e${at}`,
-      lifecycle: REC + lifecycle,
-      ...row,
-    })),
-  });
-  const { tile, dialog } = view.tile(section, rows);
-  const cells = [...render(dialog).matchAll(/<tr[^>]*>(.*?)<\/tr>/g)]
-    .map(([, row = ""]) =>
-      [...row.matchAll(/<td[^>]*>(.*?)<\/td>/g)].map(([, cell = ""]) =>
-        cell.replace(/<[^>]+>/g, ""),
-      ),
-    )
-    .filter((row) => row.length > 0)
-    .map(([name, said]) => [name, said]);
-  assert.deepEqual(
-    cells,
-    [
-      "Amlodipine",
-      "Lisinopril",
-      "Atorvastatin",
-      "Aspirin",
-      "Warfarin",
-      "Metformin",
-    ].map((name) => [
-      name,
-      table.find(([, { medication }]) => medication === name)?.[2],
-    ]),
-  );
-  assert.match(render(tile), /<span class="count">4<\/span>/);
-  assert.match(
-    textOf(render(tile)),
-    /Amlodipine, Lisinopril, Atorvastatin, Aspirin, and 2 stopped/,
-  );
-});
-
-test("an entry no section shows is named and kinded from its label and says what a review line says; an address of no entry says so and links back", () => {
-  const entry = view.entryOf(ENTRY_ANSWERS, "bb22");
-  assert.equal(entry.name, "Latex");
-  assert.equal(entry.kind, "allergy");
-  assert.deepEqual(entry.what, []);
-  assert.deepEqual(entry.codes, []);
-  assert.deepEqual(entry.where, [
-    {
-      place: "Alex's own entries",
-      arrived: "2026-09-12T10:00:00Z",
-      records: 1,
-    },
-  ]);
-  assert.deepEqual(entry.tags, ["Needs review"]);
-  assert.deepEqual(entry.known, [
-    {
-      sentence:
-        "Latex was marked as different, but is still shown as one allergy.",
-      tag: "Needs review",
-    },
-  ]);
-
-  assert.equal(view.entryOf(ENTRY_ANSWERS, "0"), undefined);
-  const gone = textOf(
-    draw("EntryPage", {
-      pod: "alex-rivera",
-      titles: new Map(),
-      read: { entry: undefined, panels: [] },
-      held: [],
-    }),
-  );
-  assert.ok(gone.includes("This entry is no longer in this pod."));
-  assert.ok(gone.includes("Back to Alex Rivera"));
 });
 
 test("what the tables say of the codes a pod holds includes the ingredients those codes map to", async () => {
@@ -1860,157 +948,14 @@ test("what the tables say of the codes a pod holds includes the ingredients thos
       );
     },
   });
-  const about = await view.codesSaid(answers, { tables: tables() });
+  const about = await said.codesSaid(answers, { tables: tables() });
   assert.deepEqual(asked, [[`${RX}314076`, `${RX}1`], [`${RX}29046`]]);
   assert.equal(about.get(`${RX}1`).name.label, "lisinopril");
   assert.equal(about.get(`${RX}29046`).name.label, "lisinopril");
 });
 
-const DIFFERS = "Differs";
-const COUNSELLOR =
-  "Your clinician or a genetic counsellor can explain what this means for you.";
-const HARBOURLINE = "Harbourline Genetics";
-const COLUMBA = "St Columba's Hospital";
-const CLINVAR = {
-  iri: "urn:test:clinvar",
-  label: "ClinVar variant classifications",
-  credit:
-    "ClinVar, NCBI. Not intended for direct diagnostic use or medical decision-making without review by a genetics professional.",
-  versions: [{ iri: VERSION, label: "1", issued: "2026-10-01" }],
-};
-const entryRow = (
-  entry: string,
-  label: string,
-  record: string,
-  document: string,
-  extra: object,
-) => ({
-  entry,
-  entryLabel: label,
-  record,
-  document,
-  importLabel: "FHIR pull",
-  ...extra,
-});
-const NAME = "NM_000249.3:c.2042C>T";
-/**
- * One variant entry kept from two labs, a report of it from each, and a report whose variant only the reports name,
- * which has no lab.
- */
-const VARIANT_ANSWERS = {
-  [ALLERGIES]: [{ entry: "e1", allergen: "Penicillin" }],
-  [VARIANTS]: [
-    { variant: "v1", gene: "MLH1", hgvs: NAME },
-    { variant: "v1", gene: "MLH1", hgvs: "NM_000249.4:c.2042C>T" },
-    { variant: "v1", gene: "MLH1", variation: "90011" },
-  ],
-  [REPORTS]: [
-    report("r1", "VUS", "2022-05-01"),
-    report("r2", "LikelyPathogenic", "2024-03-21"),
-    { ...report("r3", "Benign", "2023-01-01"), variant: "orphan" },
-  ],
-  [SEEN]: [HARBOURLINE, COLUMBA].map((place) => ({
-    entry: "v1",
-    place,
-    records: "1",
-    places: "2",
-  })),
-  [SOURCES]: [
-    entryRow("v1", `Variant entry · ${NAME}`, "v1-a", "doc-2022", {
-      hospital: HARBOURLINE,
-      arrived: "2026-09-01T10:00:00Z",
-    }),
-    entryRow("v1", `Variant entry · ${NAME}`, "v1-b", "doc-2024", {
-      hospital: COLUMBA,
-      arrived: "2026-09-02T10:00:00Z",
-    }),
-    entryRow("r1", "Interpretation entry · VUS", "r1-a", "doc-2022", {
-      hospital: HARBOURLINE,
-      arrived: "2026-09-01T10:00:00Z",
-    }),
-    entryRow("r2", "Interpretation entry · LP", "r2-a", "doc-2024", {
-      hospital: COLUMBA,
-      arrived: "2026-09-02T10:00:00Z",
-    }),
-    entryRow("r3", "Interpretation entry · Benign", "r3-a", "doc-other", {}),
-    entryRow(
-      "orphan",
-      "Variant entry · NM_000500.1:c.1A>G",
-      "o-a",
-      "doc-other",
-      {},
-    ),
-  ],
-};
-const VARIANTS_SAID = {
-  says: new Map([["v1", rows({ classification: [concept("Pathogenic")] })]]),
-  verdicts: [verdict("r1", "differs")],
-  labels: LABELS,
-};
-
-test("a pod's page has a Genetic variants tile beside the others, a row for each variant entry that opens it, naming its gene and expression, counting its reports and tagged only once the tables say a report differs; the page has no variants card and no column of its own for ClinVar today, and Worth a look says which report differs and links to the variant's entry", () => {
-  const page = (said?: object) =>
-    render(
-      view.podPage(VARIANT_ANSWERS, {
-        pod: "martin",
-        signIn: () => "",
-        entryHref: (entry: string) => `/entries/${entry}`,
-        said,
-      }),
-    );
-  const rowsOf = (html: string) =>
-    [...html.matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/g)].map((found) => ({
-      text: textOf((found[1] ?? "").replace(/ data-key="[^"]*"/g, "")),
-      href: /<a href="([^"]*)"/.exec(found[1] ?? "")?.[1],
-    }));
-  const before = page();
-  assert.ok(textOf(before).includes("Allergies 1"));
-  assert.ok(textOf(before).includes("Genetic variants 2"));
-  const ofVariants = ({ href }: { href?: string }) =>
-    ["/entries/v1", "/entries/orphan"].includes(href ?? "");
-  assert.deepEqual(rowsOf(before).filter(ofVariants), [
-    { text: `MLH1 ${NAME} 2`, href: "/entries/v1" },
-    { text: "NM_000500.1:c.1A>G 1", href: "/entries/orphan" },
-  ]);
-  assert.deepEqual(
-    rowsOf(page(VARIANTS_SAID))
-      .filter(ofVariants)
-      .map(({ text }) => text),
-    [`MLH1 ${NAME} Differs 2`, "NM_000500.1:c.1A>G 1"],
-  );
-  assert.ok(!textOf(before).includes("ClinVar today"), "no column of its own");
-  assert.ok(!before.includes('class="card variants"'));
-  assert.ok(!textOf(before).includes("counsellor"));
-  assert.ok(
-    !textOf(before).includes("differs from ClinVar"),
-    "nothing needs a look yet",
-  );
-  assert.ok(!textOf(before).includes("Cascade keeps it as one variant"));
-  const differing = `MLH1 ${NAME}: your 2022 report from ${HARBOURLINE} differs from ClinVar today.`;
-  assert.deepEqual(view.worthALook(VARIANT_ANSWERS), []);
-  assert.deepEqual(view.worthALook(VARIANT_ANSWERS, new Map(), VARIANTS_SAID), [
-    { sentence: differing, entry: "v1", tag: DIFFERS },
-  ]);
-  const worth = /<div class="card worth">([\s\S]*?)<\/div>/.exec(
-    page(VARIANTS_SAID),
-  )?.[1];
-  assert.equal(textOf(worth ?? ""), `Worth a look ${differing} ${DIFFERS}`);
-  assert.ok(worth?.includes('<a href="/entries/v1">'), "it opens the entry");
-  assert.deepEqual(
-    view.named(VARIANT_ANSWERS, new Map())[VARIANTS],
-    VARIANT_ANSWERS[VARIANTS],
-  );
-  const bare = render(
-    view.podPage(
-      { [ALLERGIES]: VARIANT_ANSWERS[ALLERGIES] },
-      { pod: "martin", signIn: () => "" },
-    ),
-  );
-  assert.ok(!bare.includes("Genetic variants"));
-});
-
 test("variantReports gives each variant entry a pod holds, those its questions list first and a variant only a report names last, with its reports apart from their sentences", () => {
-  const found = view.variantReports(VARIANT_ANSWERS, VARIANTS_SAID, [CLINVAR]);
+  const found = said.variantReports(VARIANT_ANSWERS, VARIANTS_SAID, [CLINVAR]);
   assert.deepEqual([...found.keys()], ["v1", "orphan"]);
   const mlh1 = found.get("v1");
   assert.equal(mlh1.name, `MLH1 ${NAME}`);
@@ -2044,7 +989,7 @@ test("variantReports gives each variant entry a pod holds, those its questions l
   ]);
   assert.equal(orphan.clinvar, undefined);
   assert.equal(orphan.from, undefined);
-  const early = view.variantReports(VARIANT_ANSWERS).get("v1");
+  const early = said.variantReports(VARIANT_ANSWERS).get("v1");
   assert.deepEqual(
     early.reports.map(({ tag }: { tag?: string }) => tag),
     [undefined, undefined],
@@ -2099,8 +1044,8 @@ test("a variant is named by ClinVar's name of the one variation its classificati
         ]),
       ),
   };
-  const said = await view.variantsSaid(answers, { tables, pod: undefined });
-  const named = view.variantReports(answers, said, [NAMES]);
+  const variants = await said.variantsSaid(answers, { tables, pod: undefined });
+  const named = said.variantReports(answers, variants, [NAMES]);
   assert.deepEqual(
     [...named].map(([entry, { name }]) => [entry, name]),
     [
@@ -2110,9 +1055,9 @@ test("a variant is named by ClinVar's name of the one variation its classificati
       ["twofold", "MLH1"],
     ],
   );
-  const unheld = view.variantReports(
+  const unheld = said.variantReports(
     answers,
-    await view.variantsSaid(answers, {
+    await said.variantsSaid(answers, {
       tables: { ...tables, held: async () => [] },
       pod: undefined,
     }),
@@ -2124,555 +1069,15 @@ test("a variant is named by ClinVar's name of the one variation its classificati
     series: NAMES,
     version: NAMES.versions[0],
   });
-  const entry = view.entryOf(answers, "named", { said, held: [NAMES] });
+  const entry = said.entryOf(answers, "named", {
+    said: variants,
+    held: [NAMES],
+  });
   assert.equal(entry.name, PROTEIN);
   assert.deepEqual(entry.known[0], {
     sentence: `ClinVar names this variation ${PROTEIN}.`,
     from: { series: NAMES, version: NAMES.versions[0] },
   });
-});
-
-test("a variant's entry says its gene and expressions, its ClinVar ID linked to the series, the document each report came with and its date, and what else is known: what Cascade did, each report with its lab, ClinVar today with its table and version, the counsellor sentence, and the series' credit once", () => {
-  const entry = view.entryOf(VARIANT_ANSWERS, "v1", {
-    said: VARIANTS_SAID,
-    held: [CLINVAR],
-  });
-  assert.equal(entry.name, `MLH1 ${NAME}`);
-  assert.equal(entry.kind, "variant");
-  assert.deepEqual(entry.tags, [DIFFERS]);
-  assert.deepEqual(entry.what, [
-    { head: "Gene", text: "MLH1" },
-    { head: "Expressions", text: `${NAME}, NM_000249.4:c.2042C>T` },
-  ]);
-  assert.deepEqual(entry.codes, [{ notation: "90011", series: CLINVAR }]);
-  assert.deepEqual(
-    entry.where.map(({ place, issued }: Record<string, string>) => [
-      place,
-      issued,
-    ]),
-    [
-      [HARBOURLINE, "2022-05-01"],
-      [COLUMBA, "2024-03-21"],
-    ],
-  );
-  assert.deepEqual(entry.known, [
-    {
-      sentence: `Cascade recorded it at ${HARBOURLINE} and ${COLUMBA} and keeps it as one variant.`,
-    },
-    {
-      sentence: `Your 2022 report from ${HARBOURLINE} said uncertain significance.`,
-      tag: DIFFERS,
-    },
-    { sentence: `Your 2024 report from ${COLUMBA} said likely pathogenic.` },
-    {
-      sentence: "ClinVar today says pathogenic.",
-      from: { series: CLINVAR, version: CLINVAR.versions[0] },
-    },
-    { sentence: COUNSELLOR },
-  ]);
-  assert.deepEqual(entry.credits, [CLINVAR.credit]);
-  const page = draw("EntryPage", {
-    pod: "martin-okafor",
-    titles: new Map(),
-    read: { entry, panels: [] },
-    held: [CLINVAR],
-  });
-  const words = textOf(page).replace(/ \./g, ".");
-  for (const shown of [
-    `${entry.name} ${DIFFERS}`,
-    `Gene MLH1`,
-    `${HARBOURLINE} report of May 1, 2022;`,
-    `${COLUMBA} report of Mar 21, 2024;`,
-    `uncertain significance. ${DIFFERS}`,
-    "ClinVar today says pathogenic. From ClinVar variant classifications, version 1, Oct 1, 2026.",
-  ])
-    assert.ok(words.includes(shown), `${shown} is not in ${words}`);
-  assert.ok(
-    links(
-      page,
-      paths.table(said.tableId(CLINVAR.iri), { code: "90011" }),
-      "90011",
-    ),
-    "the ClinVar ID links to its code page",
-  );
-  assert.equal(
-    words.split(CLINVAR.credit).length,
-    2,
-    "the credit is said once",
-  );
-});
-
-test("before the tables can say, a variant's entry names each report's lab and its classification in the IRI's own words, with no tag, no ClinVar sentence and its ClinVar ID unlinked; a variant only a report names is named from its label and takes the date of the document it shares", () => {
-  const entry = view.entryOf(VARIANT_ANSWERS, "v1");
-  assert.deepEqual(entry.tags, []);
-  assert.deepEqual(entry.codes, [{ notation: "90011" }]);
-  assert.deepEqual(
-    entry.known.map(({ sentence }: { sentence: string }) => sentence),
-    [
-      `Cascade recorded it at ${HARBOURLINE} and ${COLUMBA} and keeps it as one variant.`,
-      `Your 2022 report from ${HARBOURLINE} said VUS.`,
-      `Your 2024 report from ${COLUMBA} said likely pathogenic.`,
-      COUNSELLOR,
-    ],
-  );
-  assert.deepEqual(entry.credits, []);
-  assert.ok(
-    !draw("EntryPage", {
-      pod: "martin-okafor",
-      titles: new Map(),
-      read: { entry, panels: [] },
-      held: [],
-    }).includes('href="/tables/'),
-  );
-
-  const orphan = view.entryOf(VARIANT_ANSWERS, "orphan");
-  assert.equal(orphan.name, "NM_000500.1:c.1A>G");
-  assert.equal(orphan.kind, "variant");
-  assert.deepEqual(orphan.what, []);
-  assert.deepEqual(orphan.codes, []);
-  assert.deepEqual(
-    orphan.where.map(({ issued }: Record<string, string>) => issued),
-    ["2023-01-01"],
-  );
-  assert.deepEqual(
-    orphan.known.map(({ sentence }: { sentence: string }) => sentence),
-    ["Your 2023 report said benign.", COUNSELLOR],
-  );
-});
-
-const HISTORY = "pod/My medication history";
-
-interface Story {
-  pod: Pod;
-  answers: Record<string, Row[]>;
-  changes: Finding[];
-}
-
-let built: Promise<Map<string, Story>> | undefined;
-
-/** The five story patients' pods, brought in from North once and shared by the tests that need them. */
-function storyPods(): Promise<Map<string, Story>> {
-  built ??= (async () => {
-    const north = await loadHospital("cascade-north");
-    const stories = new Map<string, Story>();
-    for (const { patient } of await loadStories()) {
-      const { pull } = await pulled(north, patient);
-      const pod = await openPod();
-      const imported = await pod.import(pullFiles(pull, "north"), {
-        aboutSubject: true,
-      });
-      assert.equal(imported.refused, undefined, patient);
-      const answers = Object.fromEntries(
-        await Promise.all(
-          (view.QUESTIONS as string[]).map(
-            async (question) => [question, await pod.ask(question)] as const,
-          ),
-        ),
-      );
-      stories.set(patient, {
-        pod,
-        answers,
-        changes: changesIn(answers[HISTORY]!, answers[LABS]!, { limit: 20 }),
-      });
-    }
-    return stories;
-  })();
-  return built;
-}
-
-after(async () => {
-  for (const { pod } of (await built)?.values() ?? []) await pod.close();
-});
-
-const entryLink = (entry: string) => `/entry/${view.entryId(entry)}`;
-const text = (markup: string) =>
-  markup
-    .replace(/<[^>]*>/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-const count = (markup: string, part: string) => markup.split(part).length - 1;
-const hrefsOf = (markup: string, label: string) =>
-  [
-    ...markup.matchAll(new RegExp(`<a href="([^"]*)"[^>]*>${label}</a>`, "g")),
-  ].map(([, href]) => href!.replaceAll("&amp;", "&"));
-const capitalised = (sentence: string) =>
-  sentence[0]!.toUpperCase() + sentence.slice(1);
-
-/** A story pod's page as the Node starter draws it, with `answers` in place of the pod's own. */
-function podOf(name: string, story: Story, answers = story.answers) {
-  return render(
-    view.podPage(answers, {
-      pod: name,
-      signIn: () => null,
-      entryHref: entryLink,
-      about: new Map(),
-      changes: story.changes,
-      trendHref: (trend: object) => trendPath(name, trend),
-    }),
-  );
-}
-
-/** A story pod's trend page for the test and medication asked, as the app draws it from what PodApi's `trend` answers. */
-function trendOf(
-  name: string,
-  { answers, changes }: Story,
-  asked: { test?: string; medication?: string },
-) {
-  const labs = answers[LABS]!;
-  const input = said.trendInput({ changes, labs }, asked);
-  return draw("TrendPage", {
-    pod: name,
-    titles: new Map(),
-    read: {
-      labs,
-      series: labSeriesIn(labs, input.test),
-      timeline: timelineIn(answers[HISTORY]!),
-      medication: input.medication,
-    },
-  });
-}
-
-test("What changed on the statin story patient's page: one card in CHANGED's words with both means and counts, the six results behind it each linking to its entry, and the trend's address", async () => {
-  const story = (await storyPods()).get("story-statin")!;
-  const [finding] = story.changes;
-  const page = podOf("ines-calloway", story);
-  assert.equal(count(page, 'class="change"'), 1);
-  const said = capitalised(
-    view.CHANGED["after start"].down(
-      finding!.test.name,
-      finding!.medication.name,
-    ),
-  );
-  assert.ok(text(page).includes(said), said);
-  assert.match(
-    text(page),
-    /162 → 98\.3 mg\/dL, the mean of 3 results before and 3 after/,
-  );
-
-  const behind = page.slice(page.indexOf('id="change-start-617310-18262-6"'));
-  const [box] = behind.split('class="dialog"');
-  assert.deepEqual(
-    hrefsOf(box!, "[^<]*").sort(),
-    [...finding!.rows.before, ...finding!.rows.after]
-      .map(({ entry }) => entryLink(entry!))
-      .sort(),
-  );
-  assert.deepEqual(hrefsOf(page, "Open the trend"), [
-    trendPath("ines-calloway", { test: "18262-6", medication: "617310" }),
-  ]);
-  assert.deepEqual(hrefsOf(page, "Show the 6 results"), [
-    "#change-start-617310-18262-6",
-  ]);
-});
-
-test("a card is drawn once, by the tables' names: with the tables not yet asked What changed has no card and says it is naming what changed, and with their answer the card says the same as changeSaid does", async () => {
-  const story = (await storyPods()).get("story-statin")!;
-  const [finding] = story.changes;
-  const props = {
-    pod: "ines-calloway",
-    signIn: () => null,
-    changes: story.changes,
-  };
-  const before = render(view.podPage(story.answers, props));
-  assert.equal(count(before, 'class="change"'), 0);
-  assert.match(text(before), /What changed\s*Naming what changed…/);
-  assert.equal(count(before, 'aria-busy="true"'), 2, "it and the credits wait");
-
-  const about = new Map([
-    [
-      finding!.medication.code,
-      { name: { label: "Atorvastatin, per the tables", altLabels: [] } },
-    ],
-  ]);
-  const landed = render(view.podPage(story.answers, { ...props, about }));
-  assert.equal(count(landed, "aria-busy"), 0);
-  const after = text(landed);
-  const said = view.changeSaid(finding, about);
-  assert.ok(said.includes("Atorvastatin, per the tables"), said);
-  assert.ok(after.includes(said), said);
-});
-
-test("What changed says nothing stands out when no pair does, counts a pair with too few results without a card, and is absent when the pod holds no lab row or no medication-history row", async () => {
-  const stories = await storyPods();
-  const herring = podOf("pell-hargrove", stories.get("story-red-herring")!);
-  assert.match(text(herring), /Nothing stands out yet\./);
-  assert.equal(count(herring, 'class="change"'), 0);
-
-  const little = stories.get("story-too-little")!;
-  const thin = podOf("rafferty-moon", little);
-  assert.equal(count(thin, 'class="change"'), 0);
-  assert.match(
-    text(thin),
-    /1 pair of a medication and a test had too few results to say anything\./,
-  );
-  assert.match(text(thin), /3 results before, 1 after/);
-  assert.deepEqual(hrefsOf(thin, "Open the trend"), [
-    trendPath("rafferty-moon", { test: "2823-3", medication: "979492" }),
-  ]);
-
-  for (const question of [LABS, HISTORY])
-    assert.equal(
-      count(
-        podOf("pell-hargrove", little, { ...little.answers, [question]: [] }),
-        'class="card changes"',
-      ),
-      0,
-      question,
-    );
-});
-
-test("no sentence CHANGED gives, and none said of any of the five stories' findings, says why a result changed", async () => {
-  const causes =
-    /because|caus|due to|effect|led to|improv|worsen|thanks to|\bworks?\b/i;
-  const sentences = Object.values(said.CHANGED as object).flatMap((byWay) =>
-    Object.values(byWay as object).map((say) =>
-      (say as (a: string, b: string) => string)("Test", "Medication"),
-    ),
-  );
-  assert.equal(sentences.length, 4);
-  for (const sentence of sentences) assert.doesNotMatch(sentence, causes);
-
-  for (const [patient, story] of await storyPods()) {
-    for (const finding of story.changes.filter(
-      ({ direction }: Finding) => direction !== "not enough results",
-    ))
-      assert.doesNotMatch(
-        said.sentenceOf(finding, said.changeNames(finding, new Map())),
-        causes,
-        patient,
-      );
-    assert.doesNotMatch(textOf(trendOf("a-pod", story, {})), causes, patient);
-  }
-});
-
-test("a pod brought in twice says where What changed comes from: the imports in order, each with its source, the world's date it answered as of (else the person's day it was retrieved) and what it brought in, and the medication's new version with what differs; one import, or a medication of one version, says less", async () => {
-  const story = (await storyPods()).get("story-statin")!;
-  const [finding] = story.changes;
-  const entry = finding!.medication.entry;
-  const record = String(
-    story.answers[view.SOURCES]!.find((row: Row) => row.entry === entry)!
-      .record,
-  );
-  const IMPORTS = "pod/What each import brought in";
-  const REVISIONS = "record/Its revisions, in the order they arrived";
-  const VERSIONS = "record/What each version says";
-  const CLINICAL = "https://ns.cascadeprotocol.org/clinical/v1#";
-  const north = "Cascade North Demo Hospital";
-  const imported = (n: number, records: string[]) =>
-    records.map((each) => ({
-      started: `202${3 + n}-02-01T09:05:00Z`,
-      import: `urn:uuid:import-${n}`,
-      importLabel: "FHIR pull",
-      record: each,
-    }));
-  const arrival = (n: number, each: string, version: string, extra = {}) => ({
-    record: each,
-    revision: `ni:revision-${n}-${each}`,
-    version,
-    arrived: `202${3 + n}-02-01T09:05:00Z`,
-    import: `urn:uuid:import-${n}`,
-    hospital: north,
-    retrieved: `202${3 + n}-01-30T00:00:00Z`,
-    ...extra,
-  });
-  const said = (version: string, field: string, value: string) => ({
-    version,
-    field: `${CLINICAL}${field}`,
-    value,
-  });
-  const twice = {
-    ...story.answers,
-    [IMPORTS]: [...imported(1, ["r-other", record]), ...imported(2, [record])],
-    [REVISIONS]: [
-      arrival(1, "r-other", "ni:other"),
-      arrival(1, record, "ni:first"),
-      arrival(2, record, "ni:second", {
-        previous: "ni:revision-1",
-        arrived: "2026-10-17T09:05:00Z",
-        answeredAsOf: "2025-02-01T00:00:00Z",
-      }),
-    ],
-    [VERSIONS]: [
-      said("ni:first", "drugName", "Atorvastatin"),
-      said("ni:first", "status", "active"),
-      said("ni:second", "drugName", "Atorvastatin"),
-      said("ni:second", "endDate", "2024-04-15"),
-      said("ni:second", "status", "completed"),
-    ],
-  };
-  const zone = process.env.TZ;
-  process.env.TZ = "America/Los_Angeles";
-  let drawn: string;
-  try {
-    drawn = text(podOf("pell-hargrove", story, twice));
-  } finally {
-    if (zone === undefined) delete process.env.TZ;
-    else process.env.TZ = zone;
-  }
-  assert.match(
-    drawn,
-    /Where this comes from The pod's records came in 2 imports, in this order: From Cascade North, retrieved 29 January 2024: 2 records\. From Cascade North, as of 1 February 2025: 1 record, 1 of them a new version of one the pod already held\. .+ came in a new version: version 1 to version 2, in import 2, as of 1 February 2025\. Status active → completed; end date none → Apr 15, 2024\./,
-  );
-  assert.doesNotMatch(drawn, /Oct 17, 2026/);
-  const undated = text(
-    podOf("pell-hargrove", story, {
-      ...twice,
-      [REVISIONS]: twice[REVISIONS]!.map((row) =>
-        Object.fromEntries(
-          Object.entries(row).filter(([key]) => key !== "answeredAsOf"),
-        ),
-      ),
-    }),
-  );
-  assert.ok(
-    undated.includes(
-      `in import 2, on ${view.localDay("2026-10-17T09:05:00Z")}.`,
-    ),
-    undated,
-  );
-  assert.doesNotMatch(drawn, /urn:|ni:|https?:/);
-  assert.doesNotMatch(
-    drawn.slice(drawn.indexOf("Where this comes from")),
-    /because|caus|due to|effect|led to|improv|worsen|thanks to|\bworks?\b/i,
-  );
-
-  const once = text(podOf("pell-hargrove", story));
-  assert.match(once, /What changed/);
-  assert.doesNotMatch(once, /Where this comes from/);
-
-  const unrevised = text(
-    podOf("pell-hargrove", story, {
-      ...twice,
-      [REVISIONS]: twice[REVISIONS]!.slice(0, 2).concat(
-        arrival(2, "r-third", "ni:third"),
-      ),
-    }),
-  );
-  assert.match(unrevised, /The pod's records came in 2 imports/);
-  assert.doesNotMatch(unrevised, /came in a new version/);
-
-  const asked: string[] = [];
-  const ask = async (question: string) => {
-    asked.push(question);
-    return [];
-  };
-  const base = { ...story.answers, [IMPORTS]: twice[IMPORTS] };
-  await view.withMechanism(
-    { ...base, [IMPORTS]: twice[IMPORTS]!.slice(0, 2) },
-    story.changes,
-    ask,
-  );
-  await view.withMechanism(base, [], ask);
-  assert.deepEqual(asked, [], "asked for a block that would not show");
-  await view.withMechanism(base, story.changes, ask);
-  assert.deepEqual(asked, [REVISIONS, VERSIONS]);
-});
-
-test("the trend names its first date from the earliest result, and its test and medication by the tables where they name the code, else by the record's own text", () => {
-  const series = {
-    test: {
-      code: "http://loinc.org/18262-6",
-      notation: "18262-6",
-      name: "LDL",
-    },
-    results: [{ date: "2024-03-10", value: 98, unit: "mg/dL" }],
-    left: { unparsed: 0, undated: 0 },
-  };
-  const timeline = [
-    {
-      name: "Atorvastatin",
-      code: "http://www.nlm.nih.gov/research/umls/rxnorm/617310",
-      notation: "617310",
-      started: "2024-01-05",
-    },
-    { name: "Aspirin", notation: "1191", started: "2020-01-01" },
-  ];
-  const drawn = (about?: Map<string, unknown>) =>
-    draw("TrendPage", {
-      pod: "a-pod",
-      titles: new Map(),
-      read: {
-        labs: [],
-        series,
-        timeline,
-        medication: "617310",
-        ...(about ? { about } : {}),
-      },
-    });
-
-  const own = drawn();
-  assert.match(
-    own,
-    /<desc id="trend-chart-desc">1 result from Mar 10, 2024 to Mar 10, 2024/,
-  );
-  assert.match(own, /Atorvastatin started Jan 5, 2024./);
-  assert.match(text(own), /LDL/);
-  assert.match(text(own), /Atorvastatin/);
-
-  const named = drawn(
-    new Map([
-      [series.test.code, { name: { label: "LDL cholesterol" } }],
-      [timeline[0]!.code!, { name: { label: "Atorvastatin calcium" } }],
-    ]),
-  );
-  assert.match(named, /<h1>LDL cholesterol[<]/);
-  assert.match(named, /Atorvastatin calcium started/);
-  assert.match(text(named), /Aspirin/);
-});
-
-test("the trend states that the chart leaves out a result in another unit, while its table still lists it", () => {
-  const series = {
-    test: { code: "http://loinc.org/18262-6", notation: "18262-6" },
-    results: [
-      { date: "2024-03-10", value: 98, unit: "mg/dL" },
-      { date: "2024-04-10", value: 98, unit: "mg/dL" },
-      { date: "2024-05-10", value: 2.5, unit: "mmol/L" },
-    ],
-    left: { unparsed: 0, undated: 0 },
-  };
-  const page = draw("TrendPage", {
-    pod: "a-pod",
-    titles: new Map(),
-    read: { labs: [], series, timeline: [] },
-  });
-  assert.match(text(page), /The chart leaves out 1 result in another unit/);
-  assert.doesNotMatch(text(page), /Left out/);
-  assert.equal(rowsIn(page), 3);
-});
-
-test("the trend round-trips through its address: the state read from it draws the same test and medication, a marker for each result, the medication's start marked, the test named and the results in a table", async () => {
-  const story = (await storyPods()).get("story-statin")!;
-  const href = paths.trend("ines-calloway", {
-    test: "18262-6",
-    medication: "617310",
-  });
-  const query = new URL(href, "http://app.test").searchParams;
-  const asked = {
-    test: query.get("test") ?? undefined,
-    medication: query.get("medication") ?? undefined,
-  };
-  assert.deepEqual(asked, { test: "18262-6", medication: "617310" });
-  const page = trendOf("ines-calloway", story, asked);
-
-  assert.equal(count(page, 'class="marker"'), 6);
-  assert.equal(count(page, 'class="mark start"'), 1);
-  assert.equal(count(page, 'class="mark stop"'), 0);
-  const name = story.changes[0]!.test.name!;
-  assert.equal(textAt(page, "trend-chart-title"), name);
-  assert.match(
-    textAt(page, "trend-chart-desc") ?? "",
-    /^6 results from Sep 1, 2023 to Dec 2, 2024/,
-  );
-  assert.equal(rowsIn(page), 6);
-  assert.deepEqual(currentIn(page), [name, story.changes[0]!.medication.name]);
-
-  assert.deepEqual(
-    said.trendInput({ changes: story.changes, labs: story.answers[LABS]! }, {}),
-    asked,
-  );
-  const none = trendOf("ines-calloway", story, { test: "18262-6" });
-  assert.equal(count(none, 'class="mark start"'), 0);
-  assert.equal(count(none, 'class="marker"'), 6);
 });
 
 test("Ask about this: a click sends the kind's first question, and none for a kind it does not know", () => {
@@ -2684,20 +1089,13 @@ test("Ask about this: a click sends the kind's first question, and none for a ki
     [{ kind: "other" }, undefined],
     [{ kind: "toString" }, undefined],
   ] as const)
-    assert.equal(view.firstQuestion(context), question, context.kind);
+    assert.equal(said.firstQuestion(context), question, context.kind);
 });
-
-/** The `data-ask` contexts a page draws, in order. */
-const asksOf = (markup: string) =>
-  [...markup.matchAll(/data-ask="([^"]*)"/g)].map(
-    ([, context]) =>
-      JSON.parse(context!.replaceAll("&quot;", '"')) as Record<string, unknown>,
-  );
 
 test("suggested questions: Ines Calloway's find a change and ask about it named as the page names it, a pod with a Worth a look line and no change is offered it too, a pod's four at most keep the first and last in place, and the same answers give the same list", async () => {
   const story = (await storyPods()).get("story-statin")!;
   const [finding] = story.changes;
-  const ines = view.suggestedQuestions(story.answers, {
+  const ines = said.suggestedQuestions(story.answers, {
     changes: story.changes,
   }) as string[];
   assert.deepEqual(ines, [
@@ -2705,12 +1103,12 @@ test("suggested questions: Ines Calloway's find a change and ask about it named 
     `Did ${finding!.test.name} change after ${finding!.medication.name} started?`,
   ]);
   assert.deepEqual(
-    view.suggestedQuestions(story.answers, { changes: story.changes }),
+    said.suggestedQuestions(story.answers, { changes: story.changes }),
     ines,
   );
 
   assert.deepEqual(
-    view.suggestedQuestions(
+    said.suggestedQuestions(
       {
         [HISTORY]: [],
         [LABS]: [],
@@ -2727,7 +1125,7 @@ test("suggested questions: Ines Calloway's find a change and ask about it named 
     test: { code: `t${n}`, name: `Test ${n}` },
     medication: { code: `m${n}`, name: `Drug ${n}` },
   });
-  const many = view.suggestedQuestions(
+  const many = said.suggestedQuestions(
     { [HISTORY]: [{ medication: "Drug 1", ended: "2024-05-01" }] },
     {
       changes: [
@@ -2745,91 +1143,7 @@ test("suggested questions: Ines Calloway's find a change and ask about it named 
     "Did Test 2 change after Drug 2 stopped?",
     "Which medications have I stopped?",
   ]);
-  assert.deepEqual(view.suggestedQuestions({}, { changes: [] }), []);
-});
-
-test("Ask about this: once the chat names a model, each What changed card, each Worth a look line, the trend and the entry draw a button naming the finding's key, the line's entry ID, the trend's test and medication or the entry's ID, and before it they draw none", async () => {
-  const story = (await storyPods()).get("story-statin")!;
-  const [finding] = story.changes;
-  const pod =
-    (answers: object, changes: readonly object[] = []) =>
-    (ask: boolean) =>
-      draw(
-        "PodPage",
-        {
-          shown: { pod: "ines-calloway", answers, about: new Map(), changes },
-          titles: new Map(),
-          person: undefined,
-          held: [],
-        },
-        ask,
-      );
-  const lines = {
-    [REVIEW]: [
-      { entry: "urn:uuid:e1", needs: "judged different, still joined" },
-    ],
-  };
-  const trend = (ask: boolean) =>
-    draw(
-      "TrendPage",
-      {
-        pod: "a-pod",
-        titles: new Map(),
-        read: {
-          labs: [],
-          series: {
-            test: { code: "http://loinc.org/18262-6", notation: "18262-6" },
-            results: [{ date: "2024-03-10", value: 98, unit: "mg/dL" }],
-            left: { unparsed: 0, undated: 0 },
-          },
-          timeline: [
-            { name: "Atorvastatin", notation: "617310", started: "2024-01-05" },
-          ],
-          medication: "617310",
-        },
-      },
-      ask,
-    );
-  const entry = (ask: boolean) =>
-    draw(
-      "EntryPage",
-      {
-        pod: "alex-rivera",
-        titles: new Map(),
-        read: { entry: view.entryOf(ENTRY_ANSWERS, "bb22"), panels: [] },
-        held: [],
-      },
-      ask,
-    );
-  for (const [page, asked] of [
-    [
-      pod(story.answers, story.changes),
-      [{ kind: "finding", key: finding!.key }],
-    ],
-    [pod(lines), [{ kind: "worth", entry: "e1" }]],
-    [trend, [{ kind: "trend", test: "18262-6", medication: "617310" }]],
-    [entry, [{ kind: "entry", id: "bb22" }]],
-  ] as const) {
-    assert.deepEqual(asksOf(page(false)), []);
-    assert.doesNotMatch(page(false), /Ask about this/);
-    const markup = page(true);
-    assert.deepEqual(
-      asksOf(markup).filter(({ kind }) => kind === asked[0].kind),
-      asked,
-    );
-    assert.deepEqual(
-      [...new Set(asksOf(markup).map(({ kind }) => kind))],
-      [asked[0].kind],
-      "the page draws no other kind of ask",
-    );
-    for (const [button, inside] of markup.matchAll(
-      /<button [^>]*data-ask="[^>]*>(.*?)<\/button>/g,
-    )) {
-      assert.match(button, /title="Ask about this"/);
-      assert.match(button, /aria-label="Ask about this: [^"]+"/);
-      assert.equal(inside!.replace(/<svg.*<\/svg>/, ""), "");
-    }
-  }
+  assert.deepEqual(said.suggestedQuestions({}, { changes: [] }), []);
 });
 
 test("the world's date: a calendar day is the end of that day in UTC, an instant stays as given, and anything else is none; it is said as the day the hospitals answer as of, and a pull's as the day it was pulled as of", () => {
@@ -2848,29 +1162,29 @@ test("the world's date: a calendar day is the end of that day in UTC, an instant
     ["yesterday", undefined],
   ];
   for (const [text, instant] of instants)
-    assert.equal(view.worldInstant(text), instant, JSON.stringify(text));
+    assert.equal(said.worldInstant(text), instant, JSON.stringify(text));
   assert.equal(
-    view.utcInstant("2024-02-01T09:00:00+02:00"),
+    said.utcInstant("2024-02-01T09:00:00+02:00"),
     "2024-02-01T07:00:00Z",
     "a world date with an offset is saved in UTC, which pull.json requires",
   );
-  assert.equal(view.utcInstant(undefined), undefined);
+  assert.equal(said.utcInstant(undefined), undefined);
 
   assert.equal(
-    view.worldDateSaid("2024-02-01T23:59:59Z"),
+    said.worldDateSaid("2024-02-01T23:59:59Z"),
     "Hospitals answer as of 1 February 2024.",
   );
   assert.equal(
-    view.worldDateSaid(undefined),
+    said.worldDateSaid(undefined),
     "Hospitals answer with everything they hold.",
   );
   assert.equal(
-    view.worldDateSaid("2024-02-01T00:30:00+01:00"),
+    said.worldDateSaid("2024-02-01T00:30:00+01:00"),
     "Hospitals answer as of 31 January 2024.",
   );
   assert.equal(
-    view.pulledAsOfSaid("2024-02-01T23:59:59Z"),
+    said.pulledAsOfSaid("2024-02-01T23:59:59Z"),
     "Pulled as of 1 February 2024.",
   );
-  assert.equal(view.pulledAsOfSaid(undefined), undefined);
+  assert.equal(said.pulledAsOfSaid(undefined), undefined);
 });
