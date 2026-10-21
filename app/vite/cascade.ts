@@ -105,6 +105,12 @@ const importMap = (runtime: string): HtmlTagDescriptor => ({
   injectTo: "head-prepend",
 });
 
+const preloaded = (runtime: string): HtmlTagDescriptor => ({
+  tag: "link",
+  attrs: { rel: "modulepreload", href: `${runtime}index.js` },
+  injectTo: "head",
+});
+
 const signedIn = (runtime: string) => `<!doctype html>
 <html lang="en">
 <head>
@@ -168,7 +174,9 @@ export function cascade({ browser }: { browser: boolean }): Plugin {
         .join("");
       return {
         html: html.replace(/<body([^>]*)>/, `<body$1${attributes}>`),
-        tags: browser ? [importMap(`${base}${RUNTIME}`)] : [],
+        tags: browser
+          ? [importMap(`${base}${RUNTIME}`), preloaded(`${base}${RUNTIME}`)]
+          : [],
       };
     },
     async generateBundle() {

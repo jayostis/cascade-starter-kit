@@ -1,10 +1,9 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { cp, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { env } from "node:process";
-import { after, before, test as nodeTest, type TestContext } from "node:test";
+import { after, before, test } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   type Browser,
@@ -43,131 +42,54 @@ import { inPlace, newPod, settled, tiles, watched } from "./shown.js";
 
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const PAGES = join(ROOT, "build", "pages");
-/**
- * The page the suite runs on: try/, or with `TRY=next` next/, the app's browser build, which runs the tests it has
- * claimed and draws the screens it has ported (`next.json`).
- */
-const TARGET = env.TRY === "next" ? "next" : "try";
-const NEXT = JSON.parse(
-  readFileSync(join(ROOT, "test-browser", "next.json"), "utf8"),
-) as { screens: string[]; claimed: string[] };
-/** The tests registered, so that a claim naming none fails the run. */
-const registered = new Set<string>();
-function test(name: string, run: (t: TestContext) => Promise<void>): void {
-  registered.add(name);
-  nodeTest(
-    name,
-    {
-      skip:
-        TARGET === "next" && !NEXT.claimed.includes(name)
-          ? "next/ has not claimed it yet"
-          : false,
-    },
-    run,
-  );
-}
-/** The parts of claimed tests that next/ has not run, for `after` to print: a later step must not forget them. */
-const gated = new Set<string>();
-/**
- * Whether the page draws every one of `screens`: try/ draws them all. When it does not, the test says which `part`
- * it leaves out and the screens it waits for, and `after` repeats it.
- */
-const ported = (
-  t: TestContext,
-  part: string,
-  ...screens: string[]
-): boolean => {
-  const missing = screens.filter((each) => !NEXT.screens.includes(each));
-  if (TARGET === "try" || missing.length === 0) return true;
-  const said = `${part}: not run on next/ until its screens list has ${missing.map((each) => `"${each}"`).join(" and ")}`;
-  gated.add(said);
-  t.diagnostic(said);
-  return false;
-};
 /** The components the page serves, as the package carries them. */
-const SERVED = join(PAGES, TARGET, "cascade-runtime", "components");
-/** The page's addresses: try/'s are its page's query, next/'s paths under its base. */
-const AT =
-  TARGET === "try"
-    ? {
-        home: "try/index.html",
-        pod: (pod: string) => `try/index.html?pod=${pod}`,
-        entryLink: (pod: string, id: string) =>
-          `?pod=${pod}&entry=${encodeURIComponent(id)}`,
-        code: (code: string) => `?table=&code=${code}`,
-        classes: (pod: string) => `try/index.html?pod=${pod}&classes`,
-        trend: (pod: string, test: string) =>
-          `try/index.html?pod=${pod}&trend&test=${test}`,
-        podOf: (url: string) => new URL(url).searchParams.get("pod"),
-        entryOf: (url: string) => new URL(url).searchParams.get("entry"),
-        table: (id: string, q: string) => `try/index.html?table=${id}&q=${q}`,
-        tableOf: (url: string) => new URL(url).searchParams.get("table"),
-        codeOf: (url: string) => new URL(url).searchParams.get("code"),
-        trendOf: (url: string) => {
-          const query = new URL(url).searchParams;
-          return query.has("trend")
-            ? {
-                pod: query.get("pod"),
-                test: query.get("test"),
-                medication: query.get("medication"),
-              }
-            : null;
-        },
-        links: 'a[href^="?"]',
-        shapeOf: (href: string) =>
-          [...new URL(href, "http://x/try/index.html").searchParams.keys()]
-            .sort()
-            .join(","),
-        entry: (pod: string, id: string) =>
-          `try/index.html?pod=${pod}&entry=${encodeURIComponent(id)}`,
-        worker: /\/try\/demo-hospital-worker\.js$/,
-      }
-    : {
-        home: "next/",
-        pod: (pod: string) => `next/pods/${pod}/`,
-        entryLink: (pod: string, id: string) =>
-          `/next/pods/${pod}/entries/${encodeURIComponent(id)}`,
-        code: (code: string) => `/next/tables/?code=${code}`,
-        podOf: (url: string) =>
-          /\/pods\/([^/]+)\//.exec(new URL(url).pathname)?.[1] ?? null,
-        entryOf: (url: string) => {
-          const id = /\/entries\/([^/]+)$/.exec(new URL(url).pathname)?.[1];
-          return id === undefined ? null : decodeURIComponent(id);
-        },
-        table: (id: string, q: string) => `next/tables/${id}/?q=${q}`,
-        tableOf: (url: string) =>
-          /\/tables\/([^/]+)\//.exec(new URL(url).pathname)?.[1] ?? null,
-        codeOf: (url: string) => new URL(url).searchParams.get("code"),
-        classes: (pod: string) => `next/pods/${pod}/classes`,
-        trend: (pod: string, test: string) =>
-          `next/pods/${pod}/trend?test=${test}`,
-        trendOf: (url: string) => {
-          const at = new URL(url);
-          const pod = /\/pods\/([^/]+)\/trend$/.exec(at.pathname)?.[1];
-          return pod === undefined
-            ? null
-            : {
-                pod,
-                test: at.searchParams.get("test"),
-                medication: at.searchParams.get("medication"),
-              };
-        },
-        links: 'a[href^="/next/"]',
-        entry: (pod: string, id: string) =>
-          `next/pods/${pod}/entries/${encodeURIComponent(id)}`,
-        worker: /\/next\/demo-hospital-worker\.js$/,
-        shapeOf: (href: string) => {
-          const at = new URL(href, "http://x/");
-          return [
-            at.pathname
-              .replace(/^\/next\/pods\/[^/]+/, "pods/*")
-              .replace(/^\/next\/tables\/[^/]+/, "tables/*")
-              .replace(/\/entries\/.+$/, "/entries/*")
-              .replace(/^\/next\//, ""),
-            ...[...at.searchParams.keys()].sort(),
-          ].join("?");
-        },
-      };
+const SERVED = join(PAGES, "try", "cascade-runtime", "components");
+/** The page's addresses: paths under its base, try/. */
+const AT = {
+  home: "try/",
+  pod: (pod: string) => `try/pods/${pod}/`,
+  entryLink: (pod: string, id: string) =>
+    `/try/pods/${pod}/entries/${encodeURIComponent(id)}`,
+  code: (code: string) => `/try/tables/?code=${code}`,
+  podOf: (url: string) =>
+    /\/pods\/([^/]+)\//.exec(new URL(url).pathname)?.[1] ?? null,
+  entryOf: (url: string) => {
+    const id = /\/entries\/([^/]+)$/.exec(new URL(url).pathname)?.[1];
+    return id === undefined ? null : decodeURIComponent(id);
+  },
+  table: (id: string, q: string) => `try/tables/${id}/?q=${q}`,
+  tableOf: (url: string) =>
+    /\/tables\/([^/]+)\//.exec(new URL(url).pathname)?.[1] ?? null,
+  codeOf: (url: string) => new URL(url).searchParams.get("code"),
+  classes: (pod: string) => `try/pods/${pod}/classes`,
+  trend: (pod: string, test: string) => `try/pods/${pod}/trend?test=${test}`,
+  trendOf: (url: string) => {
+    const at = new URL(url);
+    const pod = /\/pods\/([^/]+)\/trend$/.exec(at.pathname)?.[1];
+    return pod === undefined
+      ? null
+      : {
+          pod,
+          test: at.searchParams.get("test"),
+          medication: at.searchParams.get("medication"),
+        };
+  },
+  links: 'a[href^="/try/"]',
+  entry: (pod: string, id: string) =>
+    `try/pods/${pod}/entries/${encodeURIComponent(id)}`,
+  worker: /\/try\/demo-hospital-worker\.js$/,
+  shapeOf: (href: string) => {
+    const at = new URL(href, "http://x/");
+    return [
+      at.pathname
+        .replace(/^\/try\/pods\/[^/]+/, "pods/*")
+        .replace(/^\/try\/tables\/[^/]+/, "tables/*")
+        .replace(/\/entries\/.+$/, "/entries/*")
+        .replace(/^\/try\//, ""),
+      ...[...at.searchParams.keys()].sort(),
+    ].join("?");
+  },
+};
 
 interface Followed {
   readonly repository: string;
@@ -410,10 +332,8 @@ async function nodeJoin(family: string): Promise<Joined> {
 }
 
 before(async () => {
-  if (!existsSync(join(PAGES, TARGET, "index.html")))
-    throw new Error(
-      `${PAGES} holds no ${TARGET}/; run npm run build:try first`,
-    );
+  if (!existsSync(join(PAGES, "try", "index.html")))
+    throw new Error(`${PAGES} holds no try/; run npm run build:try first`);
   const copy = await mkdtemp(join(tmpdir(), "try-"));
   try {
     await cp(join(PAGES, ALEX, "pod"), copy, { recursive: true });
@@ -437,15 +357,6 @@ before(async () => {
 after(async () => {
   await browser?.close();
   await served?.close();
-  assert.deepEqual(
-    NEXT.claimed.filter((name) => !registered.has(name)),
-    [],
-    "next.json claims a test there is none of",
-  );
-  if (gated.size > 0)
-    console.log(
-      `Parts of claimed tests still gated on next/:\n${[...gated].map((each) => `  ${each}`).join("\n")}`,
-    );
 });
 
 const texts = (page: Page, selector: string): Promise<string[]> =>
@@ -619,7 +530,7 @@ const loadable = (page: Page): Promise<string[]> =>
     found.map((each) => (each as HTMLInputElement).value),
   );
 
-test("a first visit copies Alex's, Martin's, Priya's and Tamsin's pods and opens Alex's, which reads as her record: her name, her places, what is worth a look with each line linking to its entry, and a tile per kind counting the question's rows; it and a switch to Priya's draw in place before the engine loads, a click on the pod shown adds no entry to the history, so Back draws Alex's again, and the engine then loads in the background, an entry opened and left for a code page before it does leaves the code page drawn when it lands; a fresh browser's first visit draws the tables' names within twice its budget", async (t) => {
+test("a first visit copies Alex's, Martin's, Priya's and Tamsin's pods and opens Alex's, which reads as her record: her name, her places, what is worth a look with each line linking to its entry, and a tile per kind counting the question's rows; it and a switch to Priya's draw in place before the engine loads, a click on the pod shown adds no entry to the history, so Back draws Alex's again, and the engine then loads in the background, an entry opened and left for a code page before it does leaves the code page drawn when it lands; a fresh browser's first visit draws the tables' names within twice its budget", async () => {
   const page = watched(await profile.newPage());
   const held: Route[] = [];
   await page.route(ENGINE, (route) => {
@@ -694,36 +605,30 @@ test("a first visit copies Alex's, Martin's, Priya's and Tamsin's pods and opens
     );
   });
   assert.equal(AT.podOf(page.url()), ALEX);
-  const toCode = ported(t, "#1's entry, then code page", "entry", "table");
-  let entryName: string | null = null;
-  if (toCode) {
-    await inPlace(page, () => page.click(".worth li a"));
-    assert.ok(AT.entryOf(page.url()), page.url());
-    entryName = await page.textContent("main h1");
-    await page.evaluate((code) => {
-      history.pushState(null, "", code);
-      dispatchEvent(new PopStateEvent("popstate"));
-    }, AT.code("141"));
-  }
+  await inPlace(page, () => page.click(".worth li a"));
+  assert.ok(AT.entryOf(page.url()), page.url());
+  const entryName = await page.textContent("main h1");
+  await page.evaluate((code) => {
+    history.pushState(null, "", code);
+    dispatchEvent(new PopStateEvent("popstate"));
+  }, AT.code("141"));
   await page.unroute(ENGINE);
   for (const route of held) await route.continue().catch(() => undefined);
   await page.waitForSelector('body[data-engine="ready"]', { timeout: 60_000 });
   await page.unroute(TABLE_ROWS);
   for (const route of rows) await route.continue().catch(() => undefined);
-  if (toCode) {
-    await page.waitForFunction(
-      (name) => document.querySelector("main h1")?.textContent !== name,
-      entryName,
-      { timeout: 120_000 },
-    );
-    await settled(page);
-    assert.equal(
-      await page.textContent("main h1"),
-      "141 Influenza, split virus, trivalent, preservative",
-      (await page.textContent("main")) ?? "",
-    );
-    assert.match((await page.textContent("main")) ?? "", /141 Influenza/);
-  }
+  await page.waitForFunction(
+    (name) => document.querySelector("main h1")?.textContent !== name,
+    entryName,
+    { timeout: 120_000 },
+  );
+  await settled(page);
+  assert.equal(
+    await page.textContent("main h1"),
+    "141 Influenza, split virus, trivalent, preservative",
+    (await page.textContent("main")) ?? "",
+  );
+  assert.match((await page.textContent("main")) ?? "", /141 Influenza/);
   assert.deepEqual(wrong, []);
   await page.goto(`${served.url}${AT.home}`);
   await page.waitForSelector('body[data-engine="ready"]', { timeout: 60_000 });
@@ -1014,7 +919,7 @@ test("a demo person's new pod signs in at both hospitals in a popup through try/
   );
 });
 
-test("in try/, a new pod for Tobias Fenn signed in at North names his hip condition by ICD-10-CM once for the retired code and the one that replaced it, and tags a retired CVX code and a retired LOINC code, the code that replaced it beside it untagged; on his connected pod, the world's date set while the engine loads draws nothing after the page says it is ready", async (t) => {
+test("in try/, a new pod for Tobias Fenn signed in at North names his hip condition by ICD-10-CM once for the retired code and the one that replaced it, and tags a retired CVX code and a retired LOINC code, the code that replaced it beside it untagged; on his connected pod, the world's date set while the engine loads draws nothing after the page says it is ready", async () => {
   const { person, patients, held, judged } = tobias;
   const context = await browser.newContext();
   try {
@@ -1105,16 +1010,11 @@ test("in try/, a new pod for Tobias Fenn signed in at North names his hip condit
     const late = await page.evaluate(
       () => (globalThis as unknown as Late).late,
     );
-    if (TARGET === "try")
-      t.diagnostic(
-        `try/ draws the pod's page again after it says it is ready (#11), until next/ replaces it: ${late.length} changes`,
-      );
-    else
-      assert.deepEqual(
-        late,
-        [],
-        "the pod's page was drawn again after it said it was ready",
-      );
+    assert.deepEqual(
+      late,
+      [],
+      "the pod's page was drawn again after it said it was ready",
+    );
   } finally {
     await context.close();
   }
@@ -1336,7 +1236,7 @@ test("File, Delete all data empties the pods column, leaves no pod nor answers i
   }
 });
 
-test("a first visit where no sample copies leaves no database, says there are no pods yet, and offers each sample to load, which loads it; a first visit to a sample's link copies them all and opens that sample, and to any other pod's link says it is not found", async () => {
+test("a first visit where no sample copies leaves no database, says there are no pods yet, and offers each sample to load, which loads it; a first visit to a sample's link copies them all and opens that sample, and to any other pod's link says it is not found, as an address that is no page's does; an old try/ link opens the first pod", async () => {
   const link = await browser.newContext();
   try {
     const page = watched(await link.newPage());
@@ -1347,6 +1247,19 @@ test("a first visit where no sample copies leaves no database, says there are no
     await page.goto(`${served.url}${AT.pod("nobody")}`);
     await settled(page);
     assert.equal(await page.textContent("main h1"), "Not found");
+    for (const nowhere of ["try/nothing/here", "tryx/pods/alex-rivera/"]) {
+      await page.goto(`${served.url}${nowhere}`);
+      await settled(page);
+      assert.equal(await page.textContent("main h1"), "Not found", nowhere);
+    }
+    for (const old of [
+      "try/?pod=martin-okafor#records",
+      "try/index.html?pod=martin-okafor",
+    ]) {
+      await page.goto(`${served.url}${old}`);
+      await settled(page);
+      assert.equal(await page.textContent("main h1"), "Alex Rivera", old);
+    }
   } finally {
     await link.close();
   }
@@ -1674,7 +1587,7 @@ test("in the browser, look and import read the files a person picks as Node read
   for (const iri of loads) assert.ok(carried.includes(iri), iri);
 });
 
-test("in the browser, a check keeps the test feed's planted newer version in the app's own database, and a pod opened after it adopts it: the version is recorded, the Same it newly joins is filed and the one that used the replaced version filed again", async (t) => {
+test("in the browser, a check keeps the test feed's planted newer version in the app's own database, and a pod opened after it adopts it: the version is recorded, the Same it newly joins is filed and the one that used the replaced version filed again", async () => {
   const [feedUrl] = (await servedConfig()).tables.feeds;
   assert.ok(feedUrl);
   const valid = join(
@@ -1927,7 +1840,6 @@ ${shots.join("\n")}`);
         .sort(),
     );
 
-    if (!ported(t, "#10's entry and code pages", "entry", "table")) return;
     const retired = said.find((each) => each.retired);
     assert.ok(retired);
     const opened = (title: string): Promise<boolean> =>
@@ -2758,7 +2670,7 @@ test("in try/, the sample pod tamsin-vale draws What changed and, in its card, w
   }
 });
 
-test("try/ ships the starter tables its published answers were computed with: after a check that finds nothing new, a visit draws a copied pod from its kept answers, the engine held back, and the browser keeps one set of tables for every address", async (t) => {
+test("try/ ships the starter tables its published answers were computed with: after a check that finds nothing new, a visit draws a copied pod from its kept answers, the engine held back, and the browser keeps one set of tables for every address", async () => {
   const [feedUrl] = (await servedConfig()).tables.feeds;
   assert.ok(feedUrl);
   const REC = "https://ns.cascadeprotocol.org/records/v1-draft#";
@@ -2837,24 +2749,22 @@ test("try/ ships the starter tables its published answers were computed with: af
     );
     assert.ok(row);
     await page.click('a.tile[href="#see-allergies"]');
-    if (ported(t, "#18's entry from a tile", "entry")) {
-      await inPlace(page, async () => {
-        await page
-          .locator("#see-allergies tbody tr")
-          .filter({ hasText: String(row.allergen) })
-          .locator("td:first-child a")
-          .first()
-          .click();
-        await page.waitForURL((url) => AT.entryOf(url.href) !== null);
-      });
-      assert.equal(AT.entryOf(page.url()), view.entryId(String(row.entry)));
-      assert.equal(await page.textContent("main h1"), row.allergen);
-      const came = await page
-        .locator("main .card", { hasText: "Where it came from" })
-        .innerText();
-      for (const place of new Set(penicillin.map(view.placeOf)))
-        assert.ok(came.includes(place), `${place} is not in ${came}`);
-    }
+    await inPlace(page, async () => {
+      await page
+        .locator("#see-allergies tbody tr")
+        .filter({ hasText: String(row.allergen) })
+        .locator("td:first-child a")
+        .first()
+        .click();
+      await page.waitForURL((url) => AT.entryOf(url.href) !== null);
+    });
+    assert.equal(AT.entryOf(page.url()), view.entryId(String(row.entry)));
+    assert.equal(await page.textContent("main h1"), row.allergen);
+    const came = await page
+      .locator("main .card", { hasText: "Where it came from" })
+      .innerText();
+    for (const place of new Set(penicillin.map(view.placeOf)))
+      assert.ok(came.includes(place), `${place} is not in ${came}`);
     assert.equal(await page.getAttribute("body", "data-engine"), null);
     await page.close();
   } finally {

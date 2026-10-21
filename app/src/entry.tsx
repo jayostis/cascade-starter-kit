@@ -256,7 +256,9 @@ export function EntryScreen({
             !(error instanceof Error && error.name === "Refusal") &&
             location.pathname + location.search === here
           )
-            failed();
+            failed(
+              `the entry's tables could not be read: ${error instanceof Error ? error.message : String(error)}`,
+            );
         },
       );
       return { entry: named, panels: [] };

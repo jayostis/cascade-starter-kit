@@ -7,6 +7,8 @@ import { useSyncExternalStore } from "react";
 type State = "opening" | "busy" | "ready" | "error";
 
 let saying: string | undefined;
+let stepping = false;
+let movedOn = false;
 const listeners = new Set<() => void>();
 let drawn: () => void = () => undefined;
 
@@ -17,17 +19,48 @@ export const firstReady = new Promise<void>((resolve) => {
 
 function set(state: State, said?: string) {
   document.body.dataset.state = state;
+  if (state !== "error") delete document.body.dataset.error;
   for (const button of document.querySelectorAll("button"))
     button.disabled = state === "busy";
   saying = said;
+  if (state !== "busy") {
+    stepping = false;
+    movedOn = false;
+  }
   if (state === "ready") drawn();
   for (const listener of listeners) listener();
 }
 
 export const busy = (said = "Working…") => set("busy", said);
-export const ready = () => set("ready");
-export const failed = () => set("error");
+/** Ignored while a step runs and has not yet moved: a screen drawn meanwhile is not the step's end. */
+export function ready() {
+  if (stepping && !movedOn) return;
+  set("ready");
+}
+/** Says the page went wrong, and why, in `data-error` on the body and on the console. */
+export function failed(reason: string) {
+  document.body.dataset.error = reason;
+  console.error(`The page went wrong: ${reason}`);
+  set("error");
+}
 export const isBusy = () => document.body.dataset.state === "busy";
+
+/**
+ * Whether a step is under way: from its start until the screen its own move lands on says the page is ready (or the
+ * step stayed, or the page went wrong). `ready` is ignored until the step has moved, so a screen drawn again meanwhile
+ * at the address the step left is not taken for the step's end.
+ */
+export const isStepping = () => stepping;
+
+/** Ends the step under way where it is: the screen shown says when it is ready. */
+export function stayed() {
+  stepping = false;
+}
+
+/** The step under way has gone to another address: the screen drawn there may now say ready. */
+export function moved() {
+  movedOn = true;
+}
 
 /** What the doing line says, while the page is busy. */
 export const sayingNow = () => saying;
@@ -59,10 +92,13 @@ export async function flight(
 ): Promise<Outcome | undefined> {
   if (isBusy()) return undefined;
   busy(doing);
+  stepping = true;
+  movedOn = false;
   try {
-    if ((await step()) !== true) ready();
+    if ((await step()) !== true) set("ready");
     return undefined;
   } catch (error) {
+    movedOn = true;
     return {
       refused: refusal(error),
       said: error instanceof Error ? error.message : String(error),

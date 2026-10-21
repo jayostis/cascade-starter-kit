@@ -54,11 +54,6 @@ jobs:
           key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-shell
       - name: try/ and the starter in Chromium, served from build/pages
         run: npm run test:browser
-      - name: next/, the app's browser build, in Chromium, for the try/ tests it claims (test-browser/next.json)
-        if: ${{ !cancelled() }}
-        run: node --test dist/test-browser/try.test.js
-        env:
-          TRY: next
       - name: The starter on its React app (server/main.ts) in Chromium, the chat window's tests included
         if: ${{ !cancelled() }}
         run: node --test dist/test-browser/starter.test.js
@@ -72,7 +67,6 @@ jobs:
             build/pages/*/pod
             build/pages/*/*.json
             !build/pages/try/**
-            !build/pages/next/**
           if-no-files-found: error
 
   build-pages:
@@ -90,7 +84,7 @@ jobs:
       - run: npm ci
       - run: npm run build:try
         env:
-          CASCADE_NEXT_BASE: /${{ github.event.repository.name }}/next/
+          CASCADE_TRY_BASE: /${{ github.event.repository.name }}/try/
       - uses: actions/upload-pages-artifact@v5
         with:
           path: build/pages

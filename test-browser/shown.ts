@@ -33,9 +33,10 @@ export async function settled(page: Page, timeout = 120_000): Promise<void> {
       { cause: error },
     );
   }
-  if ((await page.getAttribute("body", "data-state")) !== "ready")
+  const state = await page.getAttribute("body", "data-state");
+  if (state !== "ready")
     throw new Error(
-      `try/ says: ${(await page.textContent("main")) ?? ""} ${(pageErrors.get(page) ?? []).join("; ")}`,
+      `try/ is ${state ?? "in no state"} and says: ${(await page.textContent("main")) ?? ""} (because ${(await page.getAttribute("body", "data-error")) ?? "it gave no reason"}) ${(pageErrors.get(page) ?? []).join("; ")}`,
     );
 }
 
@@ -54,12 +55,21 @@ export async function inPlace(
   assert.equal(await mark(), true, "try/ loaded a page");
 }
 
-/** Opens the new-pod box and clicks the choice that holds `label`, then waits for the pod's page, drawn in place. */
+/**
+ * Opens the new-pod box and clicks the choice that holds `label`, then waits for the pod's page, drawn in place: the
+ * page says it is ready only once it is at the new pod's address, never at the address it was made from.
+ */
 export async function newPod(page: Page, label: string): Promise<void> {
+  const at = (): string => {
+    const { pathname, search } = new URL(page.url());
+    return pathname + search;
+  };
+  const from = at();
   await page.click('a[href="#new-pod"]');
   await inPlace(page, () =>
     page.click(`#new-pod button:has-text(${JSON.stringify(label)})`),
   );
+  assert.notEqual(at(), from, "the page said it was ready before it moved");
 }
 
 /**
@@ -90,7 +100,7 @@ export async function drawn(page: Page, timeout = 120_000): Promise<void> {
   }
   if ((await page.getAttribute("body", "data-state")) === "error")
     throw new Error(
-      `${page.url()} says: ${(await page.textContent("main")) ?? ""}`,
+      `${page.url()} says: ${(await page.textContent("main")) ?? ""} (because ${(await page.getAttribute("body", "data-error")) ?? "it gave no reason"})`,
     );
 }
 
