@@ -424,11 +424,25 @@ test("after Allow at a demo hospital the connection's box moves on by itself, to
   assert.equal(made.status, 200);
   const page = await browser.newPage();
   await page.goto(`${bare.origin}/pods/ines-calloway/`);
-  await page
-    .getByRole("button", { name: /^Sign in at / })
-    .first()
-    .click();
-  await page.getByRole("button", { name: "Allow" }).click();
+  const signIn = page.getByRole("button", { name: /^Sign in at / }).first();
+  await signIn.click();
+  const allow = page.getByRole("button", { name: "Allow" });
+  if (NEXT) {
+    await allow.waitFor();
+    await page.goBack();
+    await page.waitForSelector('body[data-state="ready"]');
+    assert.equal(
+      await page.getAttribute("body", "data-state"),
+      "ready",
+      "Back after the sign-in's full page did not restore a ready page",
+    );
+    assert.ok(
+      await signIn.isEnabled(),
+      "Back after the sign-in's full page left its buttons off",
+    );
+    await signIn.click();
+  }
+  await allow.click();
   const bring = page.getByRole("button", { name: /^Bring it into / });
   await bring.waitFor({ timeout: 30_000 });
   assert.equal(new URL(page.url()).origin, bare.origin);
