@@ -15,10 +15,17 @@ import {
   timelineIn,
 } from "cascade-runtime";
 import { pulled } from "./hospitals.js";
+import { screens } from "./screens.js";
 
 const view = await import(
   new URL("../../app/summary.mjs", import.meta.url).href
 );
+const pure = await import(new URL("../../app/said.ts", import.meta.url).href);
+const { addresses } = await import(
+  new URL("../../app/addresses.ts", import.meta.url).href
+);
+const paths = addresses("/");
+const draw = await screens();
 const { trendPath } = (await import(
   new URL("../../app/pods.mjs", import.meta.url).href
 )) as { trendPath: (pod: string, trend: object) => string };
@@ -1133,8 +1140,44 @@ const NOW = Date.parse("2026-10-08T22:00:00Z");
 const textOf = (page: string): string =>
   page
     .replace(/<[^>]*>/g, " ")
+    .replaceAll("&#x27;", "'")
+    .replaceAll("&gt;", ">")
     .replace(/\s+/g, " ")
     .trim();
+
+/** The page's links, each as its target and its text, whatever order the tag writes its attributes in. */
+const linksOf = (page: string): { href?: string; text: string }[] =>
+  [...page.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/g)].map(
+    ([, attributes, inner]) => ({
+      href: /\bhref="([^"]*)"/.exec(attributes!)?.[1]?.replaceAll("&amp;", "&"),
+      text: textOf(inner!),
+    }),
+  );
+
+/** Whether the page links to `href` with `text`. */
+const links = (page: string, href: string, text: string): boolean =>
+  linksOf(page).some((link) => link.href === href && link.text === text);
+
+/** How many rows of data the page's tables hold, their heading rows not counted. */
+const rowsIn = (page: string): number =>
+  page.split(/<tr\b/).filter((row) => /<td\b/.test(row)).length;
+
+/** The text of the element with `id`. */
+const textAt = (page: string, id: string): string | undefined => {
+  const tag = new RegExp(
+    `<(\\w+)\\b[^>]*\\bid="${id}"[^>]*>([\\s\\S]*?)</\\1>`,
+  );
+  const inner = tag.exec(page)?.[2];
+  return inner === undefined ? undefined : textOf(inner);
+};
+
+/** The text of each element the page marks as the current one. */
+const currentIn = (page: string): string[] =>
+  [
+    ...page.matchAll(
+      /<(\w+)\b[^>]*\baria-current="true"[^>]*>([\s\S]*?)<\/\1>/g,
+    ),
+  ].map(([, , inner]) => textOf(inner!));
 
 test("the sidebar lists the pods, then the reference tables and Check now; a table's page gives its source, licence, version and freshness, the codes a search found, and the pods using each version", () => {
   const page = render(
@@ -1607,19 +1650,23 @@ test("the medicines by class page groups the pod's active medicines under each c
       },
     ],
   ]);
-  const props = {
-    pod: "priya-natarajan",
-    back: "/pods/priya-natarajan/",
+  const read = {
     rows,
     medications,
-    about,
+    classes: about,
     elsewhere: new Map([[LISINOPRIL_TABLET, ["lisinopril"]]]),
     held: [series],
-    classHref: (code: string) => `/classes?class=${encodeURIComponent(code)}`,
-    allHref: "/classes",
-    entryHref: (entry: string) => `/entries/${entry}`,
   };
-  const all = textOf(render(view.classesPage(props)));
+  const page = (picked?: string, shown: object = read) =>
+    textOf(
+      draw("ClassesPage", {
+        pod: "priya-natarajan",
+        titles: new Map(),
+        read: shown,
+        picked,
+      }),
+    );
+  const all = page();
   for (const said of [
     "Angiotensin Converting Enzyme Inhibitor [EPC] Established pharmacologic class",
     "Enalapril through enalapril",
@@ -1648,15 +1695,13 @@ test("the medicines by class page groups the pod's active medicines under each c
       all.indexOf("Mechanism of action"),
     "the relations come in MED-RT's order",
   );
-  const picked = textOf(
-    render(view.classesPage({ ...props, picked: `${MEDRT}N0000000174` })),
-  );
+  const picked = page(`${MEDRT}N0000000174`);
   assert.ok(picked.includes("Enalapril through"));
   assert.ok(
     !picked.includes("Estradiol 1 MG Oral Tablet through"),
     "only the class picked",
   );
-  const none = textOf(render(view.classesPage({ ...props, rows: [] })));
+  const none = page(undefined, { ...read, rows: [] });
   assert.ok(none.includes("None of this pod's active medicines is in a class"));
 });
 
@@ -1708,9 +1753,7 @@ test("a panel's page lists the pod's results in LOINC's order with each test's r
     `${LOINC}${code}`,
     { notation: code, name: { label, altLabels: [], origin: NAMES } },
   ];
-  const props = {
-    pod: "rowan-marsh",
-    back: "/pods/rowan-marsh/",
+  const read = {
     panel,
     rows,
     labs: [
@@ -1719,7 +1762,7 @@ test("a panel's page lists the pod's results in LOINC's order with each test's r
       { entry: "c1", value: "24", unit: "mmol/L", performed: "2025-06-01" },
       { entry: "n1", value: "3.9", unit: "mmol/L", performed: "2025-06-01" },
     ],
-    about: new Map([
+    panelAbout: new Map([
       name("24326-1", "Electrolytes panel"),
       name("2951-2", "Sodium"),
       name("2823-3", "Potassium"),
@@ -1729,9 +1772,12 @@ test("a panel's page lists the pod's results in LOINC's order with each test's r
       name("99999-2", "Nested panel"),
     ]),
     held: [series, names],
-    entryHref: (entry: string) => `/entries/${entry}`,
   };
-  const words = textOf(render(view.panelPage(props)));
+  const page = (shown: object = read) =>
+    textOf(
+      draw("PanelPage", { pod: "rowan-marsh", titles: new Map(), read: shown }),
+    );
+  const words = page();
   assert.ok(
     words.includes(
       "Your results in Electrolytes panel You have 1 of 3 required tests; missing: Sodium and Chloride.",
@@ -1762,15 +1808,11 @@ test("a panel's page lists the pod's results in LOINC's order with each test's r
     2,
     "a test the panel lists itself is not repeated under a nested panel",
   );
-  const withMissingNested = textOf(
-    render(
-      view.panelPage({
-        ...props,
-        rows: [...rows, row("6299-2", 2, "R", undefined, nested)],
-        about: new Map([...props.about, name("6299-2", "Another test")]),
-      }),
-    ),
-  );
+  const withMissingNested = page({
+    ...read,
+    rows: [...rows, row("6299-2", 2, "R", undefined, nested)],
+    panelAbout: new Map([...read.panelAbout, name("6299-2", "Another test")]),
+  });
   assert.ok(
     withMissingNested.includes(
       "You have 2 of 5 required tests; missing: Sodium, Chloride and Another test.",
@@ -1778,9 +1820,7 @@ test("a panel's page lists the pod's results in LOINC's order with each test's r
     "a nested panel the query requires counts its held tests too",
   );
   assert.ok(
-    textOf(render(view.panelPage({ ...props, rows: [] }))).includes(
-      "You have no results in this panel.",
-    ),
+    page({ ...read, rows: [] }).includes("You have no results in this panel."),
   );
 });
 
@@ -1830,23 +1870,27 @@ test("a lab result's page links the panels LOINC lists its test in, and a result
       ],
     },
   ];
-  const props = {
-    entry,
-    pod: "rowan-marsh",
-    back: "/",
-    codeHref: () => "/code",
-    tableHref: () => "/table",
-    panelHref: (code: string) => `/panel?panel=${code}`,
-  };
-  const page = render(view.entryPage({ ...props, panels }));
+  const shown = (read: object) =>
+    draw("EntryPage", {
+      pod: "rowan-marsh",
+      titles: new Map(),
+      read,
+      held: [series],
+    });
+  const page = shown({ entry, panels });
   const words = textOf(page);
   assert.ok(words.includes("In LOINC panels"));
   assert.ok(words.includes("Electrolytes panel required"));
   assert.ok(words.includes("and 2 more."));
   assert.ok(
-    page.includes('<a href="/panel?panel=http://loinc.org/rdf/24326-1">'),
+    linksOf(page).some(
+      ({ href }) =>
+        href ===
+        "/pods/rowan-marsh/panel?panel=http%3A%2F%2Floinc.org%2Frdf%2F24326-1",
+    ),
+    "a link opens the panel",
   );
-  assert.ok(!textOf(render(view.entryPage(props))).includes("In LOINC panels"));
+  assert.ok(!textOf(shown({ entry, panels: [] })).includes("In LOINC panels"));
 });
 
 test("what a check did, in one note", () => {
@@ -2198,52 +2242,16 @@ test("what a variant's page says: a sentence for each report, oldest first, tagg
   }
 });
 
-test("a code's page gives a variation's classification as ClinVar's sentence with the table's credit", () => {
-  const facts = {
-    code: ROW,
-    notation: "90011",
-    names: [],
-    status: [],
-    mappings: [],
-    classifications: [
-      {
-        series: "urn:test:clinvar",
-        version: VERSION,
-        variation: ROW,
-        classification: [concept("VUS")],
-      },
-    ],
-  };
-  const shown = (said: object) =>
-    render(
-      view.codePage({
-        source: { label: "ClinVar" },
-        held: [
-          {
-            iri: "urn:test:clinvar",
-            label: "ClinVar variant classifications",
-            credit: "ClinVar, NCBI.",
-            versions: [{ iri: VERSION, label: "1", issued: "2026-10-01" }],
-          },
-        ],
-        facts: said,
-        codeHref: () => "#",
-        back: "#",
-      }),
-    );
-  const raw = shown(facts);
-  const page = raw.replace(/<[^>]*>/g, "");
-  assert.ok(page.includes("ClinVar today says uncertain significance."));
-  assert.ok(page.includes("ClinVar, NCBI."));
-  assert.ok(!page.includes("No table this app holds says anything"));
-  assert.ok(!raw.includes('rel="external"'), "no page, no outside link");
-  const outside = "https://example.org/variation/90011/";
-  const linked = shown({
-    ...facts,
-    page: { href: outside, system: "ClinVar" },
-  });
-  const link = linked.match(/<a href="([^"]*)" rel="external">([^<]*)<\/a>/);
-  assert.deepEqual(link?.slice(1), [outside, "ClinVar's page for 90011"]);
+test("a variation's classification is said as ClinVar's sentence", () => {
+  assert.equal(
+    pure.rowSaid({
+      series: "urn:test:clinvar",
+      version: VERSION,
+      variation: ROW,
+      classification: [concept("VUS")],
+    }),
+    "ClinVar today says uncertain significance.",
+  );
 });
 
 const SOURCES = "entry/Where it came from";
@@ -2361,16 +2369,12 @@ test("an entry's page says what it is, where each document it came from put it, 
   );
   assert.deepEqual(entry.credits, [NAMES.credit, STATUS.credit]);
 
-  const page = render(
-    view.entryPage({
-      entry,
-      pod: "alex-rivera",
-      back: "/pods/alex-rivera/",
-      codeHref: (series: { iri: string }, notation: string) =>
-        `/code/${series.iri}/${notation}`,
-      tableHref: (series: { iri: string }) => `/table/${series.iri}`,
-    }),
-  );
+  const page = draw("EntryPage", {
+    pod: "alex-rivera",
+    titles: new Map(),
+    read: { entry, panels: [] },
+    held,
+  });
   const words = textOf(page).replace(/ \./g, ".");
   for (const shown of [
     "Asthma (disorder) Retired code",
@@ -2384,12 +2388,12 @@ test("an entry's page says what it is, where each document it came from put it, 
     "Back to Alex Rivera",
   ])
     assert.ok(words.includes(shown), `${shown} is not in ${words}`);
-  for (const link of [
-    '<a href="/code/urn:test:names/195967001">195967001</a>',
-    '<a href="/table/urn:test:status">version 1, Sep 1, 2026</a>',
-    '<a href="/pods/alex-rivera/">Back to Alex Rivera</a>',
-  ])
-    assert.ok(page.includes(link), link);
+  for (const [href, text] of [
+    [paths.table(pure.tableId(NAMES.iri), { code: "195967001" }), "195967001"],
+    [paths.table(pure.tableId(STATUS.iri)), "version 1, Sep 1, 2026"],
+    ["/pods/alex-rivera/", "Back to Alex Rivera"],
+  ] as const)
+    assert.ok(links(page, href, text), `${text} links to ${href}`);
   for (const credit of [NAMES.credit, STATUS.credit])
     assert.equal(words.split(credit).length, 2, `${credit} is said once`);
 });
@@ -2403,9 +2407,14 @@ test("before the tables can say, an entry shows the record's own name and each c
   assert.equal(entry.where.length, 2);
   assert.equal(entry.known.length, 1);
   assert.deepEqual(entry.credits, []);
-  const page = render(view.entryPage({ entry, pod: "alex-rivera", back: "/" }));
+  const page = draw("EntryPage", {
+    pod: "alex-rivera",
+    titles: new Map(),
+    read: { entry, panels: [] },
+    held: [],
+  });
   assert.ok(textOf(page).includes("Code 195967001"));
-  assert.ok(!page.includes('<a href="/code'));
+  assert.ok(!page.includes('href="/tables/'));
 });
 
 test("an entry kept as one names the held table version whose rows joined it, and says nothing of a version the app does not hold; another table that joined it has a line of its own", () => {
@@ -2417,16 +2426,14 @@ test("an entry kept as one names the held table version whose rows joined it, an
   });
   assert.equal(only.known.length, 1);
   assert.equal(only.known[0].from.series, NAMES);
-  const page = textOf(
-    render(
-      view.entryPage({
-        entry: only,
-        pod: "alex-rivera",
-        back: "/",
-        tableHref: (series: { iri: string }) => `/table/${series.iri}`,
-      }),
-    ),
-  ).replace(/ \./g, ".");
+  const shown = (entry: object) =>
+    draw("EntryPage", {
+      pod: "alex-rivera",
+      titles: new Map(),
+      read: { entry, panels: [] },
+      held,
+    });
+  const page = textOf(shown(only)).replace(/ \./g, ".");
   assert.ok(
     page.includes(
       "and keeps it as one condition. Matched using Example names, version 2, Oct 1, 2026.",
@@ -2435,15 +2442,12 @@ test("an entry kept as one names the held table version whose rows joined it, an
   );
 
   assert.ok(
-    render(
-      view.entryPage({
-        entry: only,
-        pod: "p",
-        back: "/",
-        tableHref: (series: { iri: string }) => series.iri,
-      }),
-    ).includes('Matched using Example names, <a href="urn:test:names">'),
-    "the version link follows the table's name after a space",
+    links(
+      shown(only),
+      paths.table(pure.tableId(NAMES.iri)),
+      "version 2, Oct 1, 2026",
+    ),
+    "the version is a link to its table",
   );
 
   const twice = view.entryOf(ENTRY_ANSWERS, "aa11", {
@@ -2454,16 +2458,7 @@ test("an entry kept as one names the held table version whose rows joined it, an
     twice.known.map(({ from }: { from?: { series: object } }) => from?.series),
     [NAMES, STATUS],
   );
-  const twicePage = textOf(
-    render(
-      view.entryPage({
-        entry: twice,
-        pod: "p",
-        back: "/",
-        tableHref: (series: { iri: string }) => series.iri,
-      }),
-    ),
-  ).replace(/ \./g, ".");
+  const twicePage = textOf(shown(twice)).replace(/ \./g, ".");
   assert.ok(
     twicePage.includes("Also matched using Example status, version 1,"),
     twicePage,
@@ -2632,13 +2627,12 @@ test("an entry no section shows is named and kinded from its label and says what
 
   assert.equal(view.entryOf(ENTRY_ANSWERS, "0"), undefined);
   const gone = textOf(
-    render(
-      view.entryPage({
-        entry: undefined,
-        pod: "alex-rivera",
-        back: "/pods/alex-rivera/",
-      }),
-    ),
+    draw("EntryPage", {
+      pod: "alex-rivera",
+      titles: new Map(),
+      read: { entry: undefined, panels: [] },
+      held: [],
+    }),
   );
   assert.ok(gone.includes("This entry is no longer in this pod."));
   assert.ok(gone.includes("Back to Alex Rivera"));
@@ -2977,16 +2971,12 @@ test("a variant's entry says its gene and expressions, its ClinVar ID linked to 
     { sentence: COUNSELLOR },
   ]);
   assert.deepEqual(entry.credits, [CLINVAR.credit]);
-  const page = render(
-    view.entryPage({
-      entry,
-      pod: "martin-okafor",
-      back: "/pods/martin-okafor/",
-      codeHref: (series: { iri: string }, notation: string) =>
-        `/code/${series.iri}/${notation}`,
-      tableHref: (series: { iri: string }) => `/table/${series.iri}`,
-    }),
-  );
+  const page = draw("EntryPage", {
+    pod: "martin-okafor",
+    titles: new Map(),
+    read: { entry, panels: [] },
+    held: [CLINVAR],
+  });
   const words = textOf(page).replace(/ \./g, ".");
   for (const shown of [
     `${entry.name} ${DIFFERS}`,
@@ -2997,7 +2987,14 @@ test("a variant's entry says its gene and expressions, its ClinVar ID linked to 
     "ClinVar today says pathogenic. From ClinVar variant classifications, version 1, Oct 1, 2026.",
   ])
     assert.ok(words.includes(shown), `${shown} is not in ${words}`);
-  assert.ok(page.includes('<a href="/code/urn:test:clinvar/90011">90011</a>'));
+  assert.ok(
+    links(
+      page,
+      paths.table(pure.tableId(CLINVAR.iri), { code: "90011" }),
+      "90011",
+    ),
+    "the ClinVar ID links to its code page",
+  );
   assert.equal(
     words.split(CLINVAR.credit).length,
     2,
@@ -3020,9 +3017,12 @@ test("before the tables can say, a variant's entry names each report's lab and i
   );
   assert.deepEqual(entry.credits, []);
   assert.ok(
-    !render(
-      view.entryPage({ entry, pod: "martin-okafor", back: "/" }),
-    ).includes('<a href="/code'),
+    !draw("EntryPage", {
+      pod: "martin-okafor",
+      titles: new Map(),
+      read: { entry, panels: [] },
+      held: [],
+    }).includes('href="/tables/'),
   );
 
   const orphan = view.entryOf(VARIANT_ANSWERS, "orphan");
@@ -3112,35 +3112,24 @@ function podOf(name: string, story: Story, answers = story.answers) {
   );
 }
 
-/** A story pod's trend page for the test and medication asked, as the Node starter draws it. */
+/** A story pod's trend page for the test and medication asked, as the app draws it from what PodApi's `trend` answers. */
 function trendOf(
   name: string,
   { answers, changes }: Story,
   asked: { test?: string; medication?: string },
-  ask?: boolean,
 ) {
   const labs = answers[LABS]!;
-  const medications = answers[HISTORY]!;
-  const input = view.trendInput({ changes, labs }, asked);
-  let series;
-  try {
-    series = input === undefined ? undefined : labSeriesIn(labs, input.test);
-  } catch {
-    series = undefined;
-  }
-  return render(
-    view.trendPage({
-      pod: name,
-      back: `/pods/${name}/`,
+  const input = pure.trendInput({ changes, labs }, asked);
+  return draw("TrendPage", {
+    pod: name,
+    titles: new Map(),
+    read: {
       labs,
-      series,
-      timeline: timelineIn(medications),
-      test: input?.test,
-      medication: input?.medication,
-      trendHref: (trend: object) => trendPath(name, trend),
-      ...(ask ? { ask } : {}),
-    }),
-  );
+      series: labSeriesIn(labs, input.test),
+      timeline: timelineIn(answers[HISTORY]!),
+      medication: input.medication,
+    },
+  });
 }
 
 test("What changed on the statin story patient's page: one card in CHANGED's words with both means and counts, the six results behind it each linking to its entry, and the trend's address", async () => {
@@ -3232,10 +3221,10 @@ test("What changed says nothing stands out when no pair does, counts a pair with
     );
 });
 
-test("nothing What changed or the trend draws, for any of the five stories, nor any sentence CHANGED gives, says why a result changed", async () => {
+test("no sentence CHANGED gives, and none said of any of the five stories' findings, says why a result changed", async () => {
   const causes =
     /because|caus|due to|effect|led to|improv|worsen|thanks to|\bworks?\b/i;
-  const sentences = Object.values(view.CHANGED as object).flatMap((byWay) =>
+  const sentences = Object.values(pure.CHANGED as object).flatMap((byWay) =>
     Object.values(byWay as object).map((say) =>
       (say as (a: string, b: string) => string)("Test", "Medication"),
     ),
@@ -3244,19 +3233,15 @@ test("nothing What changed or the trend draws, for any of the five stories, nor 
   for (const sentence of sentences) assert.doesNotMatch(sentence, causes);
 
   for (const [patient, story] of await storyPods()) {
-    const drawn = text(
-      render(
-        view.changedPart({
-          changes: story.changes,
-          about: new Map(),
-          entryHref: entryLink,
-          trendHref: (trend: object) => trendPath(patient, trend),
-        }),
-      ),
-    );
-    assert.match(drawn, /What changed/, patient);
-    assert.doesNotMatch(drawn, causes, patient);
-    assert.doesNotMatch(text(trendOf("a-pod", story, {})), causes, patient);
+    for (const finding of story.changes.filter(
+      ({ direction }: Finding) => direction !== "not enough results",
+    ))
+      assert.doesNotMatch(
+        pure.sentenceOf(finding, pure.changeNames(finding, new Map())),
+        causes,
+        patient,
+      );
+    assert.doesNotMatch(textOf(trendOf("a-pod", story, {})), causes, patient);
   }
 });
 
@@ -3403,19 +3388,17 @@ test("the trend names its first date from the earliest result, and its test and 
     { name: "Aspirin", notation: "1191", started: "2020-01-01" },
   ];
   const drawn = (about?: Map<string, unknown>) =>
-    render(
-      view.trendPage({
-        pod: "a-pod",
-        back: "/pods/a-pod/",
+    draw("TrendPage", {
+      pod: "a-pod",
+      titles: new Map(),
+      read: {
         labs: [],
         series,
         timeline,
-        test: "18262-6",
         medication: "617310",
-        trendHref: (trend: object) => trendPath("a-pod", trend),
         ...(about ? { about } : {}),
-      }),
-    );
+      },
+    });
 
   const own = drawn();
   assert.match(
@@ -3447,25 +3430,19 @@ test("the trend states that the chart leaves out a result in another unit, while
     ],
     left: { unparsed: 0, undated: 0 },
   };
-  const page = render(
-    view.trendPage({
-      pod: "a-pod",
-      back: "/pods/a-pod/",
-      labs: [],
-      series,
-      timeline: [],
-      test: "18262-6",
-      trendHref: (trend: object) => trendPath("a-pod", trend),
-    }),
-  );
+  const page = draw("TrendPage", {
+    pod: "a-pod",
+    titles: new Map(),
+    read: { labs: [], series, timeline: [] },
+  });
   assert.match(text(page), /The chart leaves out 1 result in another unit/);
   assert.doesNotMatch(text(page), /Left out/);
-  assert.equal(count(page, "<tr><td>"), 3);
+  assert.equal(rowsIn(page), 3);
 });
 
-test("the trend round-trips through its address: the state read from it draws the same test and medication, a marker for each result, the medication's start marked, the test named and the results in a table; a test the pod lacks says so", async () => {
+test("the trend round-trips through its address: the state read from it draws the same test and medication, a marker for each result, the medication's start marked, the test named and the results in a table", async () => {
   const story = (await storyPods()).get("story-statin")!;
-  const href = trendPath("ines-calloway", {
+  const href = paths.trend("ines-calloway", {
     test: "18262-6",
     medication: "617310",
   });
@@ -3481,32 +3458,21 @@ test("the trend round-trips through its address: the state read from it draws th
   assert.equal(count(page, 'class="mark start"'), 1);
   assert.equal(count(page, 'class="mark stop"'), 0);
   const name = story.changes[0]!.test.name!;
+  assert.equal(textAt(page, "trend-chart-title"), name);
   assert.match(
-    page,
-    new RegExp(`<title id="trend-chart-title">${name}</title>`),
+    textAt(page, "trend-chart-desc") ?? "",
+    /^6 results from Sep 1, 2023 to Dec 2, 2024/,
   );
-  assert.match(
-    page,
-    /<desc id="trend-chart-desc">6 results from Sep 1, 2023 to Dec 2, 2024/,
-  );
-  assert.equal(count(page, "<tr><td>"), 6);
-  assert.deepEqual(
-    [...page.matchAll(/aria-current="true">([^<]*)</g)].map(([, said]) => said),
-    [name, story.changes[0]!.medication.name],
-  );
+  assert.equal(rowsIn(page), 6);
+  assert.deepEqual(currentIn(page), [name, story.changes[0]!.medication.name]);
 
   assert.deepEqual(
-    view.trendInput({ changes: story.changes, labs: story.answers[LABS]! }, {}),
+    pure.trendInput({ changes: story.changes, labs: story.answers[LABS]! }, {}),
     asked,
   );
   const none = trendOf("ines-calloway", story, { test: "18262-6" });
   assert.equal(count(none, 'class="mark start"'), 0);
   assert.equal(count(none, 'class="marker"'), 6);
-
-  assert.match(
-    text(trendOf("ines-calloway", story, { test: "0000-0" })),
-    /This pod holds no results for the test 0000-0\./,
-  );
 });
 
 test("Ask about this: a click sends the kind's first question, and none for a kind it does not know", () => {
@@ -3582,7 +3548,7 @@ test("suggested questions: Ines Calloway's find a change and ask about it named 
   assert.deepEqual(view.suggestedQuestions({}, { changes: [] }), []);
 });
 
-test("Ask about this: with a model set, each What changed card and each Worth a look line, the trend and an entry draw a button naming the finding's key, the line's entry ID, the entry's ID or the trend's test and medication, and with none set they draw none", async () => {
+test("Ask about this: with a model set, each What changed card and each Worth a look line draw a button naming the finding's key or the line's entry ID, and with none set they draw none", async () => {
   const story = (await storyPods()).get("story-statin")!;
   const [finding] = story.changes;
   const draw = (ask?: boolean) =>
@@ -3634,24 +3600,6 @@ test("Ask about this: with a model set, each What changed card and each Worth a 
     );
   assert.deepEqual(asksOf(worth()), []);
   assert.deepEqual(asksOf(worth(true)), [{ kind: "worth", entry: "e1" }]);
-
-  const marked = { test: "18262-6", medication: "617310" };
-  assert.deepEqual(asksOf(trendOf("ines-calloway", story, marked)), []);
-  assert.deepEqual(asksOf(trendOf("ines-calloway", story, marked, true)), [
-    { kind: "trend", ...marked },
-  ]);
-  const [entry] = story.answers[LABS]!;
-  const page = render(
-    view.entryPage({
-      entry: view.entryOf(story.answers, view.entryId(entry!.entry!)),
-      pod: "ines-calloway",
-      back: "/",
-      ask: true,
-    }),
-  );
-  assert.deepEqual(asksOf(page), [
-    { kind: "entry", id: view.entryId(entry!.entry!) },
-  ]);
 });
 
 test("the new-pod box offers to encrypt; the six-words page shows the words numbered with the fields a password manager reads and asks for words 2 and 5; the open page says each outcome in its own sentence, with a field for the words only where words could open the pod; an encrypted pod's chat strip says so", () => {
