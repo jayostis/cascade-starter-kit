@@ -712,6 +712,26 @@ test("an encrypted pod's chat is kept in neither localStorage nor sessionStorage
   await page.locator(".chat-log .stopped").waitFor();
   const { all } = await storage(page);
   assert.equal(all.includes("long story about Grace"), false, all);
+
+  // A question sent before the app has said the pod is encrypted, whose answer moves the chat to another pod: the
+  // lookup is held until the chat has moved, so the follow happens with the encryption unknown.
+  let release = () => {};
+  const held = new Promise<void>((done) => (release = done));
+  await page.route("**/api/pod", async (route) => {
+    if (route.request().postData()?.includes(made.pod) === true) await held;
+    await route.continue();
+  });
+  await page.goto(`${modelled.origin}/pods/${made.pod}/`);
+  await page.getByLabel("Ask a question").waitFor();
+  await ask(page, ASKS);
+  await page.waitForURL(`${modelled.origin}/pods/ines-calloway/`);
+  await page.locator(".chat-log .model", { hasText: "Done." }).waitFor();
+  release();
+  await page.locator(".chat-recent li button", { hasText: ASKS }).waitFor({
+    state: "attached",
+  });
+  const followed = await storage(page);
+  assert.equal(followed.all.includes(ASKS), false, followed.all);
   await page.close();
 });
 
