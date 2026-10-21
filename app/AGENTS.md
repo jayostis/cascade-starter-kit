@@ -82,6 +82,15 @@ and the page's own links select by them, and an element's class names are its
 address in the DOM contract. A box opens by the address's hash with `hidden
 target:grid`. `.pending`'s shimmer is the one rule left in `@layer components`.
 
+Without Preflight, what Tailwind's docs assume is not so here: every `<button>`
+starts as the accent button of `@layer base`, so a utility-styled button keeps
+a 1 px accent border unless it says `border-0` or another `border-*`; `ul` and
+`ol` keep their bullets and padding; `p`, `h3` and `dl` keep the browser's
+margins and sizes. A semantic class the tests
+select by must not be a utility's name (`grid`, `table`, `hidden`, `block`):
+`.filter` on the pod page's filter box already collides, harmlessly because
+the utility's variables are empty, and stays because the tests select it.
+
 `npm run mcp` runs `mcp.ts`, an MCP server on stdio over the pods, for
 Claude Desktop, VS Code or any MCP client (the README says how to add it);
 the app, the chat, the MCP server and `npm run ask` reach the pods through
