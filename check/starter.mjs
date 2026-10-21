@@ -11,6 +11,7 @@ import { createRequire } from "node:module";
 import { dirname, join, relative, resolve } from "node:path";
 import { argv, cwd, env, execPath, kill, platform, stdout } from "node:process";
 import { pathToFileURL, URL } from "node:url";
+import { setTimeout } from "node:timers";
 import { parseArgs } from "node:util";
 import * as oxigraph from "oxigraph";
 import { chromium } from "playwright";
@@ -736,61 +737,6 @@ await behaviour("help lists every command", async () => {
   for (const [script, what] of listed)
     assert.ok(what !== undefined, `help says nothing of ${script}`);
 });
-
-await behaviour(
-  "npm run browser builds the app to run in a browser alone, the demo hospitals' worker with it, and a first visit copies Alex's pod from its sample and draws it from its kept answers, the engine held back, with no request to /api",
-  async () => {
-    const served = await started({}, "browser");
-    try {
-      const worker = await fetch(
-        new URL("demo-hospital-worker.js", served.address),
-      );
-      assert.equal(
-        worker.status,
-        200,
-        "the demo hospitals' worker is not served",
-      );
-      const page = await tab();
-      const held = [];
-      await page.route(/\/web_bg\.wasm$/, (route) => {
-        held.push(route);
-      });
-      const apiCalls = [];
-      page.on("request", (sent) => {
-        if (new URL(sent.url()).pathname.startsWith("/api/"))
-          apiCalls.push(sent.url());
-      });
-      await page.goto(served.address);
-      await settled(page);
-      assert.equal(
-        new URL(page.url()).pathname,
-        "/pods/alex-rivera/",
-        `the first visit opened no copy of Alex's pod: ${await heading(page)}`,
-      );
-      assert.equal(await heading(page), "Alex Rivera");
-      assert.equal(
-        await page.getAttribute("body", "data-engine"),
-        null,
-        "the engine was not held back",
-      );
-      const shown = await tiles(page);
-      for (const [kind, question] of Object.entries(TILES)) {
-        const rows = await asked(question, "alex-rivera");
-        assert.equal(
-          shown.get(kind),
-          rows.length === 0 ? undefined : rows.length,
-          `the ${kind} tile of the browser's copy of Alex's pod`,
-        );
-      }
-      assert.deepEqual(apiCalls, [], "the browser's app asked a server");
-      await page.unroute(/\/web_bg\.wasm$/);
-      for (const route of held) await route.continue().catch(() => undefined);
-      await page.close();
-    } finally {
-      await served.stop();
-    }
-  },
-);
 
 const server = await (async () => {
   /** @type {Awaited<ReturnType<typeof started>>} */
@@ -2582,6 +2528,75 @@ if (refused !== undefined) throw new Error(refused);
     );
   });
 }
+
+// Last, so that a broken browser build does not hide the results above it: the check stops at its first failure.
+await behaviour(
+  "npm run browser builds the app to run in a browser alone, the demo hospitals' worker with it, and a first visit copies Alex's pod from its sample and draws it from its kept answers, the engine held back, with no request to /api",
+  async () => {
+    const served = await started({}, "browser");
+    try {
+      const worker = await fetch(
+        new URL("demo-hospital-worker.js", served.address),
+      );
+      assert.equal(
+        worker.status,
+        200,
+        "the demo hospitals' worker is not served",
+      );
+      const page = await tab();
+      const held = [];
+      const requested = Promise.withResolvers();
+      await page.route(/\/web_bg\.wasm$/, (route) => {
+        held.push(route);
+        requested.resolve();
+      });
+      const apiCalls = [];
+      page.on("request", (sent) => {
+        if (new URL(sent.url()).pathname.startsWith("/api/"))
+          apiCalls.push(sent.url());
+      });
+      await page.goto(served.address);
+      await settled(page);
+      assert.equal(
+        new URL(page.url()).pathname,
+        "/pods/alex-rivera/",
+        `the first visit opened no copy of Alex's pod: ${await heading(page)}`,
+      );
+      assert.equal(await heading(page), "Alex Rivera");
+      // The engine warms only after the page's first ready: until it has asked for its wasm, and been held, a null
+      // data-engine says nothing.
+      await Promise.race([
+        requested.promise,
+        new Promise((_, failed) =>
+          setTimeout(
+            () => failed(new Error("the engine's wasm was never requested")),
+            60_000,
+          ).unref(),
+        ),
+      ]);
+      assert.equal(
+        await page.getAttribute("body", "data-engine"),
+        null,
+        "the engine was not held back",
+      );
+      const shown = await tiles(page);
+      for (const [kind, question] of Object.entries(TILES)) {
+        const rows = await asked(question, "alex-rivera");
+        assert.equal(
+          shown.get(kind),
+          rows.length === 0 ? undefined : rows.length,
+          `the ${kind} tile of the browser's copy of Alex's pod`,
+        );
+      }
+      assert.deepEqual(apiCalls, [], "the browser's app asked a server");
+      await page.unroute(/\/web_bg\.wasm$/);
+      for (const route of held) await route.continue().catch(() => undefined);
+      await page.close();
+    } finally {
+      await served.stop();
+    }
+  },
+);
 
 await browser?.close();
 stdout.write(`\nthe starter's check passed, in ${work}\n`);
