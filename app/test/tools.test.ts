@@ -16,7 +16,7 @@ const RUNS: Record<string, [Record<string, unknown>, string[]]> = {
   open_classes: [{ pod: "p" }, ["pod"]],
   open_panel: [{ pod: "p", panel: "24326-1" }, ["pod"]],
   open_table: [{ table: "t" }, ["table"]],
-  make_pod: [{ person: "Ann" }, ["makePod"]],
+  make_pod: [{ person: "Ann", encrypt: true }, ["makePod"]],
   check_tables: [{}, ["checkTables"]],
   set_world_date: [{ date: "2026-01-01" }, ["setWorldDate"]],
 };
