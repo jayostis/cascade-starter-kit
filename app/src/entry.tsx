@@ -23,6 +23,16 @@ import {
 import { useAddress } from "./address.tsx";
 import { AskButton } from "./ask.tsx";
 import { failed } from "./doing.ts";
+import {
+  bullet,
+  bullets,
+  card,
+  factName,
+  facts as factsLook,
+  factValue,
+  lead,
+  muted,
+} from "./look.ts";
 import { Pending, Tag } from "./parts.tsx";
 import { Back, NotFound, sourceOf, useLoaded, Wrong } from "./screen.tsx";
 import type { TablesHeld } from "./shell.tsx";
@@ -77,7 +87,7 @@ export function EntryPage({
           <Tag key={tag} tag={tag} />
         ))}
       </h1>
-      <p className="lead">
+      <p className={lead}>
         {capitalised(kind)}
         <AskButton
           about={{ kind: "entry", id: entryId(entry.entry) }}
@@ -85,19 +95,21 @@ export function EntryPage({
         />
       </p>
       {(facts.length > 0 || codes.length > 0) && (
-        <div className="card entry">
+        <div className={`${card} entry`}>
           <h2>What it is</h2>
-          <dl className="facts">
+          <dl className={factsLook}>
             {facts.map(({ head, text }) => (
               <Fragment key={head}>
-                <dt>{head}</dt>
-                <dd>{text}</dd>
+                <dt className={factName}>{head}</dt>
+                <dd className={factValue}>{text}</dd>
               </Fragment>
             ))}
             {codes.length > 0 && (
               <>
-                <dt>{codes.length === 1 ? "Code" : "Codes"}</dt>
-                <dd>
+                <dt className={factName}>
+                  {codes.length === 1 ? "Code" : "Codes"}
+                </dt>
+                <dd className={factValue}>
                   {codes.map(({ series, notation }, at) => {
                     const source =
                       series === undefined
@@ -126,14 +138,17 @@ export function EntryPage({
           </dl>
         </div>
       )}
-      <div className="card entry">
+      <div className={`${card} entry`}>
         <h2>Where it came from</h2>
-        <ul>
+        <ul className={bullets}>
           {entry.where.map(
             ({ place, issued, retrieved, arrived, importLabel, records }) => (
-              <li key={`${place} ${issued ?? ""} ${arrived ?? ""}`}>
+              <li
+                className={bullet}
+                key={`${place} ${issued ?? ""} ${arrived ?? ""}`}
+              >
                 <strong>{place}</strong>{" "}
-                <span className="muted">
+                <span className={muted}>
                   {[
                     issued !== undefined && `report of ${day(issued)}`,
                     retrieved !== undefined &&
@@ -151,17 +166,17 @@ export function EntryPage({
         </ul>
       </div>
       {known.length > 0 && (
-        <div className="card entry">
+        <div className={`${card} entry`}>
           <h2>What else is known</h2>
-          <ul>
+          <ul className={bullets}>
             {known.map(({ sentence, tag, from, fromLead = "From" }, at) => (
-              <li key={`${at} ${sentence ?? ""}`}>
+              <li className={bullet} key={`${at} ${sentence ?? ""}`}>
                 {sentence}
                 {tag !== undefined && <Tag tag={tag} />}
                 {from !== undefined && (
                   <>
                     {" "}
-                    <span className="muted from">
+                    <span className={`${muted} from block`}>
                       {fromLead} {from.series.label},{" "}
                       <a href={tableHref(from.series)}>
                         {versionName(from.version)}
@@ -174,14 +189,14 @@ export function EntryPage({
             ))}
           </ul>
           {credits.map((credit) => (
-            <p key={credit} className="muted">
+            <p key={credit} className={muted}>
               {credit}
             </p>
           ))}
         </div>
       )}
       {panels.map(({ series, version, total, panels: listing }) => (
-        <div key={`${series.iri} ${version.iri}`} className="card entry">
+        <div key={`${series.iri} ${version.iri}`} className={`${card} entry`}>
           <h2>In LOINC panels</h2>
           <p>
             {series.label} lists this test in{" "}
@@ -189,16 +204,16 @@ export function EntryPage({
             . A panel's page shows the results you have in it; it does not say
             this result was drawn as part of one.
           </p>
-          <ul className="members">
+          <ul className={`members ${bullets}`}>
             {listing.map((each) => (
-              <li key={each.code}>
+              <li className={bullet} key={each.code}>
                 <a href={address.panel(pod, each.code)}>
                   {each.about?.name?.label ?? each.notation}
                 </a>
                 {each.required !== undefined && (
                   <>
                     {" "}
-                    <span className="muted">
+                    <span className={muted}>
                       {REQUIRED[each.required] ?? each.required}
                     </span>
                   </>
@@ -207,14 +222,14 @@ export function EntryPage({
             ))}
           </ul>
           {total > listing.length && (
-            <p className="muted">
+            <p className={muted}>
               and {(total - listing.length).toLocaleString("en")} more.
             </p>
           )}
           {series.credit !== undefined && (
-            <p className="muted">{series.credit}</p>
+            <p className={muted}>{series.credit}</p>
           )}
-          <p className="muted from">
+          <p className={`${muted} from block`}>
             From {series.label},{" "}
             <a href={tableHref(series)}>{versionName(version)}</a>.
           </p>

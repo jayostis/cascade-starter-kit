@@ -24,6 +24,15 @@ import { useActions } from "./actions.tsx";
 import { BASE, ROUTED, useAddress } from "./address.tsx";
 import { useHost, type ConnectionNow, type Hospital } from "./api.tsx";
 import { isBusy, ready } from "./doing.ts";
+import {
+  card,
+  lead,
+  muted,
+  note,
+  noteWarm,
+  quiet,
+  row as rowLook,
+} from "./look.ts";
 import { Box, PostButton } from "./parts.tsx";
 import { NotFound, useLoaded, Wrong } from "./screen.tsx";
 
@@ -79,13 +88,15 @@ export function WorldDate({ asOf }: { asOf: string | undefined }) {
       : new Date(Date.parse(asOf)).toISOString().slice(0, 10);
   return (
     <div className="world-date">
-      <p className="muted">{worldDateSaid(asOf)}</p>
-      <details id="world-date" ref={opened}>
-        <summary>Change the world's date</summary>
+      <p className={muted}>{worldDateSaid(asOf)}</p>
+      <details className="mb-3" id="world-date" ref={opened}>
+        <summary className="cursor-pointer text-accent">
+          Change the world's date
+        </summary>
         <form
           method="post"
           action="world-date"
-          className="inline"
+          className="mr-[0.4rem] inline"
           data-doing="Setting the date…"
           onSubmit={(event) => {
             event.preventDefault();
@@ -107,7 +118,7 @@ export function WorldDate({ asOf }: { asOf: string | undefined }) {
         <PostButton
           action="world-date"
           fields={{ date: "" }}
-          className="quiet"
+          className={quiet}
           doing="Setting the date…"
           onPost={() => set("")}
         >
@@ -117,6 +128,12 @@ export function WorldDate({ asOf }: { asOf: string | undefined }) {
     </div>
   );
 }
+
+const STEP = {
+  done: "done text-text before:text-accent before:content-['✓_']",
+  now: "now font-semibold text-text before:content-['…_']",
+  later: "text-muted before:content-['○_']",
+};
 
 /** Where a connection has got to, as a list of steps: those done ticked, the one under way marked. */
 export function Steps({
@@ -139,12 +156,12 @@ export function Steps({
       : []),
   ];
   return (
-    <ul className="steps">
+    <ul className="steps m-0 list-none p-0">
       {items.map((text, index) => {
         const state =
-          index < at || at === 2 ? "done" : index === at ? "now" : undefined;
+          index < at || at === 2 ? "done" : index === at ? "now" : "later";
         return (
-          <li key={index} className={state}>
+          <li key={index} className={`py-[0.15rem] ${STEP[state]}`}>
             {text}
           </li>
         );
@@ -204,15 +221,15 @@ export function ConnectionBox({
   );
   if (now.step === "bringing in")
     return box(
-      <div className="card">
+      <div className={card}>
         <Steps connection={now} />
       </div>,
     );
   if (now.step === "signing in" || now.step === "pulling")
     return box(
-      <div className="card">
+      <div className={card}>
         <Steps connection={now} />
-        <p className="muted">This refreshes itself until the record is here.</p>
+        <p className={muted}>This refreshes itself until the record is here.</p>
       </div>,
     );
   if (now.failed !== undefined) {
@@ -221,14 +238,16 @@ export function ConnectionBox({
         ? undefined
         : failureSaid(now.failure, name, failures);
     return box(
-      <div className="card">
+      <div className={card}>
         {person === undefined ? (
           <p>{now.failed}</p>
         ) : (
           <>
             <p role="alert">{person.said}</p>
             {person.again && signInAgain(`Sign in again at ${name}`)}
-            <p className="muted detail">{now.failed}</p>
+            <p className="muted detail text-[0.85rem] text-muted">
+              {now.failed}
+            </p>
           </>
         )}
         {now.retry && bring("Try again")}
@@ -243,33 +262,33 @@ export function ConnectionBox({
   const asOf = pulledAsOfSaid(now.asOf);
   return box(
     <>
-      <div className="card">
+      <div className={card}>
         <Steps connection={now} />
       </div>
       {about !== undefined &&
         (grade === undefined ? (
           slug(about) !== pod && (
-            <p className="note">
+            <p className={note}>
               This record is {about}'s. Bringing it in makes this {about}'s pod.
             </p>
           )
         ) : grade === "possible" ? (
-          <p className="muted">This record is {about}'s.</p>
+          <p className={muted}>This record is {about}'s.</p>
         ) : (
           grade === "certainly-not" && (
-            <p className="note warm" role="alert">
+            <p className={noteWarm} role="alert">
               This record is {about}'s, not {who}'s.
             </p>
           )
         ))}
-      <div className="card">
+      <div className={card}>
         {(now.sources ?? []).map((source, at) => (
           <div key={at}>
             <p>
               <strong>What {name} has:</strong>{" "}
               {counted(source.records) || "nothing"}.
             </p>
-            <p className="muted">
+            <p className={muted}>
               {who}'s pod{" "}
               {source.claimed
                 ? "already has records from here"
@@ -279,14 +298,14 @@ export function ConnectionBox({
           </div>
         ))}
         {missing.length > 0 && (
-          <p className="muted">Mentioned, but not sent: {missing.join(", ")}</p>
+          <p className={muted}>Mentioned, but not sent: {missing.join(", ")}</p>
         )}
         {denied.length > 0 && (
-          <p className="muted">Not allowed to read: {denied.join(", ")}</p>
+          <p className={muted}>Not allowed to read: {denied.join(", ")}</p>
         )}
-        {asOf !== undefined && <p className="muted">{asOf}</p>}
+        {asOf !== undefined && <p className={muted}>{asOf}</p>}
         {grade === "certainly-not"
-          ? bring(`Bring ${about}'s records into ${who}'s pod anyway`, "quiet")
+          ? bring(`Bring ${about}'s records into ${who}'s pod anyway`, quiet)
           : grade === "possible"
             ? bring(`Bring ${about}'s records into ${who}'s pod`)
             : bring(`Bring it into ${who}'s pod`)}
@@ -389,7 +408,7 @@ export function HospitalsPage({
   return (
     <>
       <h1>Find a hospital</h1>
-      <p className="lead">
+      <p className={lead}>
         Sign in on the hospital's own page, see what it has, and bring it into{" "}
         {who}'s pod.
       </p>
@@ -397,7 +416,7 @@ export function HospitalsPage({
       <form
         method="get"
         action={address.hospitals(pod)}
-        className="row card"
+        className={`${rowLook} ${card}`}
         data-doing="Searching…"
         onSubmit={(event) => {
           event.preventDefault();
@@ -408,6 +427,7 @@ export function HospitalsPage({
         }}
       >
         <input
+          className="min-w-40 flex-1"
           key={q}
           name="q"
           defaultValue={q}
@@ -417,30 +437,30 @@ export function HospitalsPage({
         <button>Search</button>
       </form>
       {read.rows.length === 0 ? (
-        <p className="muted">No hospital matches.</p>
+        <p className={muted}>No hospital matches.</p>
       ) : (
         read.rows.map((row) => {
           const here = byFamily(people).filter((person) =>
             person.at.some((each) => each.fhirBase === row.fhirBase),
           );
           return (
-            <div className="card" key={row.fhirBase}>
-              <div className="row">
-                <h2>{hospitalName(row.name)}</h2>
+            <div className={card} key={row.fhirBase}>
+              <div className={rowLook}>
+                <h2 className="m-0 flex-1">{hospitalName(row.name)}</h2>
                 <SignIn pod={pod} fhirBase={row.fhirBase}>
                   Sign in
                 </SignIn>
               </div>
               {row.places !== undefined && (
-                <p className="muted">{row.places.join("; ")}</p>
+                <p className={muted}>{row.places.join("; ")}</p>
               )}
               {here.length === 0 ? (
-                <p className="muted">
+                <p className={muted}>
                   A test server: you choose a patient on its own sign-in page.
                 </p>
               ) : (
                 <>
-                  <p className="muted">Sample patients here:</p>
+                  <p className={muted}>Sample patients here:</p>
                   <ul>
                     {here.map((person) => {
                       const elsewhere = person.at
@@ -452,7 +472,7 @@ export function HospitalsPage({
                           {elsewhere.length > 0 && (
                             <>
                               {" "}
-                              <span className="muted">
+                              <span className={muted}>
                                 also at {listed(elsewhere)}
                               </span>
                             </>

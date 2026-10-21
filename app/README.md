@@ -262,7 +262,8 @@ which Node runs as it is.
   carries beside its bundle). `src/App.tsx` holds the routes, and each screen
   has its file: `pod.tsx`, `entry.tsx`, `trend.tsx`, `classes.tsx`,
   `panel.tsx`, `tables.tsx`, `hospitals.tsx`, `newpod.tsx`; `AGENTS.md` says
-  how to add one. A screen reads the pods through
+  how to add one. The look is Tailwind 4: utilities on the elements, the
+  colours and their dark values in `src/style.css`. A screen reads the pods through
   PodApi, `usePodApi()` of `src/api.tsx`, from the host the build chose: on
   Node `src/hosts/http.ts`, which calls the server's `/api/` through Hono's
   typed client, and in a browser `src/hosts/browser.ts`, which runs

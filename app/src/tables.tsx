@@ -23,6 +23,18 @@ import { ROUTED, useAddress, useGeneration } from "./address.tsx";
 import { Notice, useActions } from "./actions.tsx";
 import { isRefusal, useHost } from "./api.tsx";
 import { ready } from "./doing.ts";
+import {
+  bullet,
+  bullets,
+  card,
+  factName,
+  facts as factsLook,
+  factValue,
+  lead,
+  muted,
+  row as rowLook,
+  tag,
+} from "./look.ts";
 
 /** A code as the tables say it: its notation and what they name it. */
 export interface CodeSaid {
@@ -138,11 +150,11 @@ function Published({
   heading?: string | false;
 }) {
   return (
-    <div className="card">
+    <div className={card}>
       {heading && <h2>{heading}</h2>}
-      <dl className="facts">
-        <dt>Source</dt>
-        <dd>
+      <dl className={factsLook}>
+        <dt className={factName}>Source</dt>
+        <dd className={factValue}>
           {series.publisher !== undefined &&
             linked(
               series.publisher,
@@ -152,12 +164,12 @@ function Published({
           {series.credit !== undefined && (
             <>
               {" "}
-              <span className="muted">{series.credit}</span>
+              <span className={muted}>{series.credit}</span>
             </>
           )}
         </dd>
-        <dt>Licence</dt>
-        <dd>
+        <dt className={factName}>Licence</dt>
+        <dd className={factValue}>
           {series.licence === undefined
             ? "Not stated"
             : linked(
@@ -165,8 +177,8 @@ function Published({
                 LICENCES[series.licence] ?? series.licence,
               )}
         </dd>
-        <dt>Fresh</dt>
-        <dd>{freshness(series, now)}</dd>
+        <dt className={factName}>Fresh</dt>
+        <dd className={factValue}>{freshness(series, now)}</dd>
       </dl>
     </div>
   );
@@ -180,7 +192,7 @@ function SearchBox({ id, text }: { id?: string; text: string }) {
     <form
       method="get"
       action={address.table(id)}
-      className="row card"
+      className={`${rowLook} ${card}`}
       data-doing="Searching…"
       onSubmit={(event) => {
         event.preventDefault();
@@ -189,6 +201,7 @@ function SearchBox({ id, text }: { id?: string; text: string }) {
       }}
     >
       <input
+        className="min-w-40 flex-1"
         key={text}
         name="q"
         defaultValue={text}
@@ -221,7 +234,7 @@ function CodesFound({
   row: (found: Found) => ReactNode;
 }) {
   const { found, total, offset = 0, size } = searched;
-  if (total === 0) return <p className="muted">No code matches.</p>;
+  if (total === 0) return <p className={muted}>No code matches.</p>;
   const shown =
     found.length === 0
       ? `None on page ${page} of ${counted(total)}.`
@@ -235,9 +248,9 @@ function CodesFound({
   const after = offset + found.length < total;
   return (
     <>
-      <p className="muted">{shown}</p>
+      <p className={muted}>{shown}</p>
       {found.length > 0 && (
-        <div className="scroll">
+        <div className="scroll max-h-[60vh] overflow-auto pr-3">
           <table className="codes">
             <thead>
               <tr>
@@ -255,7 +268,7 @@ function CodesFound({
         </div>
       )}
       {(before || after) && (
-        <p className="pages">
+        <p className="pages mt-[0.6rem] mb-5 flex gap-4">
           {before && (
             <a href={pageHref(previous)} rel="prev">
               Previous
@@ -281,7 +294,7 @@ function NamesOf({ about }: { about: About | undefined }) {
       {others.length > 0 && (
         <>
           {" "}
-          <span className="muted">{others.join("; ")}</span>
+          <span className={muted}>{others.join("; ")}</span>
         </>
       )}
     </>
@@ -293,7 +306,7 @@ function NoTables() {
   return (
     <>
       <h1>No reference tables yet</h1>
-      <p className="lead">
+      <p className={lead}>
         Reference tables name codes and join records that say the same thing
         differently. This app keeps the ones its feeds publish; Check now reads
         them.
@@ -336,7 +349,7 @@ export function TablePage({
   return (
     <>
       <h1>{series.label}</h1>
-      <p className="lead">Using {versionName(series.current)}</p>
+      <p className={lead}>Using {versionName(series.current)}</p>
       <Published series={series} now={now} />
       <SearchBox id={id} text={text} />
       <CodesFound
@@ -359,25 +372,25 @@ export function TablePage({
           </>
         )}
       />
-      <div className="card versions">
+      <div className={`${card} versions`}>
         <h2>Which pods use which version</h2>
-        <ul>
+        <ul className={bullets}>
           {series.versions.map((version) => {
             const using = (uses[version.iri] ?? []).filter((pod) =>
               pods.includes(pod),
             );
             return (
-              <li key={version.iri}>
+              <li className={bullet} key={version.iri}>
                 <strong>{versionName(version)}</strong>
                 {version.iri === series.current.iri && (
                   <>
                     {" "}
-                    <span className="tag">current</span>
+                    <span className={tag}>current</span>
                   </>
                 )}
                 {": "}
                 {using.length === 0 ? (
-                  <span className="muted">no pod</span>
+                  <span className={muted}>no pod</span>
                 ) : (
                   using.map((pod, index) => (
                     <Fragment key={pod}>
@@ -457,11 +470,11 @@ export function SourcePage({
           </>
         )}
       />
-      <div className="card versions">
+      <div className={`${card} versions`}>
         <h2>What this source publishes</h2>
-        <ul>
+        <ul className={bullets}>
           {source.series.map((series) => (
-            <li key={series.iri}>
+            <li className={bullet} key={series.iri}>
               <a href={address.table(tableId(series.iri))}>{series.label}</a>
               {": "}
               {versionName(series.current)}
@@ -492,7 +505,7 @@ export function CodePage({
     const table = tableOf(series);
     const found = table?.versions.find(({ iri }) => iri === version);
     return (
-      <p className="muted">
+      <p className={muted}>
         From {table?.label ?? series},{" "}
         {found === undefined ? version : versionName(found)}.
       </p>
@@ -519,7 +532,7 @@ export function CodePage({
   const credit = (series: string) => {
     const table = tableOf(series);
     return (
-      table?.credit !== undefined && <p className="muted">{table.credit}</p>
+      table?.credit !== undefined && <p className={muted}>{table.credit}</p>
     );
   };
   const placed = (each: Placed) => (
@@ -528,7 +541,7 @@ export function CodePage({
       {each.required !== undefined && (
         <>
           {" "}
-          <span className="muted">
+          <span className={muted}>
             {REQUIRED[each.required] ?? each.required}
           </span>
         </>
@@ -563,7 +576,7 @@ export function CodePage({
         </p>
       )}
       {names.map((name) => (
-        <div className="card" key={`${name.series} ${name.version}`}>
+        <div className={card} key={`${name.series} ${name.version}`}>
           <h2>Names</h2>
           <p>
             <strong>{name.label}</strong>
@@ -579,7 +592,7 @@ export function CodePage({
         </div>
       ))}
       {status.map((said) => (
-        <div className="card" key={`${said.series} ${said.version}`}>
+        <div className={card} key={`${said.series} ${said.version}`}>
           <h2>Status</h2>
           <p>
             {said.deprecated ? "Retired" : "In use"}
@@ -600,7 +613,7 @@ export function CodePage({
         </div>
       ))}
       {mappings.map((mapping) => (
-        <div className="card" key={`${mapping.series} ${mapping.version}`}>
+        <div className={card} key={`${mapping.series} ${mapping.version}`}>
           <h2>{tableOf(mapping.series)?.label ?? mapping.series}</h2>
           {mapping.mapsTo.map((target) => (
             <p key={target.code}>
@@ -618,7 +631,7 @@ export function CodePage({
         </div>
       ))}
       {classifications.map((row) => (
-        <div className="card" key={`${row.series} ${row.version}`}>
+        <div className={card} key={`${row.series} ${row.version}`}>
           <h2>{tableOf(row.series)?.label ?? row.series}</h2>
           <p>{rowSaid(row)}</p>
           {credit(row.series)}
@@ -626,7 +639,7 @@ export function CodePage({
         </div>
       ))}
       {panels.map((panel) => (
-        <div className="card" key={`${panel.series} ${panel.version}`}>
+        <div className={card} key={`${panel.series} ${panel.version}`}>
           <h2>{tableOf(panel.series)?.label ?? panel.series}</h2>
           {panel.members.length > 0 && (
             <>
@@ -651,7 +664,7 @@ export function CodePage({
               </p>
               <ul className="members">{panel.heldBy.panels.map(placed)}</ul>
               {panel.heldBy.total > panel.heldBy.panels.length && (
-                <p className="muted">
+                <p className={muted}>
                   and{" "}
                   {(
                     panel.heldBy.total - panel.heldBy.panels.length
@@ -666,7 +679,7 @@ export function CodePage({
         </div>
       ))}
       {classes.map((classed) => (
-        <div className="card" key={`${classed.series} ${classed.version}`}>
+        <div className={card} key={`${classed.series} ${classed.version}`}>
           <h2>{tableOf(classed.series)?.label ?? classed.series}</h2>
           {classed.in.length > 0 && (
             <ul className="members">
@@ -677,7 +690,7 @@ export function CodePage({
                   {each.through !== undefined && (
                     <>
                       {" "}
-                      <span className="muted">
+                      <span className={muted}>
                         through {code(each.through)}
                       </span>
                     </>
@@ -704,7 +717,7 @@ export function CodePage({
         panels.length +
         classes.length ===
         0 && (
-        <p className="muted">
+        <p className={muted}>
           No table this app holds says anything of this code.
         </p>
       )}

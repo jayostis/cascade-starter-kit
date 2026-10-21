@@ -1,6 +1,7 @@
 // The page's own ask before a write a model asked for: a box naming the action and its input, with Allow and Cancel,
 // one at a time. Whoever offers a model a write (the chat, a browser agent's tools) awaits `confirm` and writes only on
 // a yes.
+import { dialogBox, factName, facts, factValue, quiet, row } from "./look.ts";
 import {
   createContext,
   Fragment,
@@ -101,7 +102,7 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
       {children}
       {shown !== undefined && (
         <div
-          className="dialog asking"
+          className="dialog asking fixed inset-0 z-20 grid place-items-center overflow-auto bg-black/45 p-4"
           role="alertdialog"
           aria-modal="true"
           aria-labelledby="asking-title"
@@ -109,26 +110,26 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
             if (event.key === "Escape") answer(false);
           }}
         >
-          <div className="box">
+          <div className={dialogBox}>
             <h2 id="asking-title">{shown.asking.action}?</h2>
             <p>A model asks to do this. Nothing is done unless you allow it.</p>
             {fields.length > 0 && (
-              <dl className="facts">
+              <dl className={facts}>
                 {fields.map(([name, value]) => (
                   <Fragment key={name}>
-                    <dt>{name}</dt>
-                    <dd>{said(value)}</dd>
+                    <dt className={factName}>{name}</dt>
+                    <dd className={factValue}>{said(value)}</dd>
                   </Fragment>
                 ))}
               </dl>
             )}
-            <p className="row">
+            <p className={row}>
               <button type="button" onClick={() => answer(true)}>
                 Allow
               </button>{" "}
               <button
                 type="button"
-                className="quiet"
+                className={quiet}
                 autoFocus
                 onClick={() => answer(false)}
               >

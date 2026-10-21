@@ -14,6 +14,8 @@ import {
   type Therapy,
 } from "../said.ts";
 
+const TICK = "tick fill-muted text-[11px] [font-family:inherit]";
+
 /**
  * A marker for each of `points` and the days in `marks` as dashed lines across them; with `axes` the days along the
  * bottom and the numbers at the left, in `unit`. The title and the description are what a screen reader says.
@@ -44,7 +46,7 @@ export function Chart({
   const days = (to - from) / DAY_MS;
   return (
     <svg
-      className={`chart ${axes ? "large" : "small"}`}
+      className={`chart block h-auto max-w-full ${axes ? "large w-full" : "small my-[0.4rem] w-60"}`}
       viewBox={`0 0 ${width} ${height}`}
       role="img"
       aria-labelledby={`${id}-title ${id}-desc`}
@@ -55,14 +57,14 @@ export function Chart({
         spread(4, low, high).map((value) => (
           <g key={`y${value}`}>
             <line
-              className="grid"
+              className="stroke-line stroke-1"
               x1={margin.left}
               x2={right}
               y1={near(y(value))}
               y2={near(y(value))}
             />
             <text
-              className="tick"
+              className={TICK}
               x={margin.left - 8}
               y={near(y(value)) + 4}
               textAnchor="end"
@@ -75,7 +77,7 @@ export function Chart({
         spread(5, from, to).map((time) => (
           <text
             key={`x${time}`}
-            className="tick"
+            className={TICK}
             x={near(x(time))}
             y={bottom + 20}
             textAnchor="middle"
@@ -85,7 +87,7 @@ export function Chart({
         ))}
       {axes && (
         <text
-          className="tick"
+          className={TICK}
           transform={`translate(14 ${near(margin.top + (bottom - margin.top) / 2)}) rotate(-90)`}
           textAnchor="middle"
         >
@@ -95,7 +97,7 @@ export function Chart({
       {marks.map(({ time, kind, text }) => (
         <g key={`${kind}${time}`}>
           <line
-            className={`mark ${kind}`}
+            className={`mark ${kind} stroke-text stroke-[1.5] [stroke-dasharray:5_4]`}
             x1={near(x(time))}
             x2={near(x(time))}
             y1={margin.top}
@@ -103,7 +105,7 @@ export function Chart({
           />
           {axes && (
             <text
-              className="tick"
+              className={TICK}
               x={near(x(time))}
               y={margin.top - 10}
               textAnchor={x(time) > width / 2 ? "end" : "start"}
@@ -114,7 +116,7 @@ export function Chart({
         </g>
       ))}
       <polyline
-        className="series"
+        className="series stroke-accent stroke-2"
         fill="none"
         points={sorted
           .map(({ time, value }) => `${near(x(time))},${near(y(value))}`)
@@ -123,7 +125,7 @@ export function Chart({
       {sorted.map(({ time, value }, at) => (
         <circle
           key={at}
-          className="marker"
+          className="marker fill-accent stroke-panel stroke-1"
           cx={near(x(time))}
           cy={near(y(value))}
           r={radius}
@@ -156,7 +158,7 @@ export function Lane({
   const height = drugs.length * rowHeight + 8;
   return (
     <svg
-      className="chart lane"
+      className="chart lane block h-auto w-full max-w-full"
       viewBox={`0 0 ${width} ${height}`}
       role="img"
       aria-labelledby={`${id}-title ${id}-desc`}
@@ -174,7 +176,7 @@ export function Lane({
         return (
           <g key={drug.key}>
             <text
-              className={`lane-label${on ? " chosen" : ""}`}
+              className={`lane-label ${on ? "chosen fill-text font-semibold" : "fill-muted"} text-[11px] [font-family:inherit]`}
               x={margin.left}
               y={top + 11}
             >
@@ -182,7 +184,7 @@ export function Lane({
             </text>
             {drawn && (
               <rect
-                className={`bar${on ? " chosen" : ""}`}
+                className={`bar ${on ? "chosen fill-accent opacity-100" : "fill-muted opacity-55"}`}
                 x={near(left)}
                 y={top + 16}
                 width={near(across)}

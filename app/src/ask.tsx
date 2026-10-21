@@ -26,7 +26,7 @@ export function AskButton({ about, label }: { about: Asked; label: string }) {
       {" "}
       <button
         type="button"
-        className="quiet ask"
+        className="quiet ask relative border-transparent bg-transparent px-[0.3em] py-[0.15em] align-middle text-[length:inherit] leading-none text-accent hover:border-line hover:bg-panel focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent pointer-coarse:after:absolute pointer-coarse:after:-inset-x-2 pointer-coarse:after:-inset-y-1.5 pointer-coarse:after:content-['']"
         data-ask={JSON.stringify(about)}
         data-ask-label={label}
         title="Ask about this"
@@ -41,6 +41,7 @@ export function AskButton({ about, label }: { about: Asked; label: string }) {
           strokeWidth="2"
           strokeLinecap="round"
           strokeLinejoin="round"
+          className="block size-[1.1em]"
           aria-hidden="true"
           focusable="false"
         >
