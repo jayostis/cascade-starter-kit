@@ -237,6 +237,10 @@ keeping the package and the pods, under `pods/<name>/`. It is made with four,
 - `npm run typecheck` checks the TypeScript of the app's pages
   (`tsconfig.json`) and of its server, its commands and its build
   (`tsconfig.node.json`).
+- `npm test` runs the app's own tests (`test/`, on Vitest) in seconds; see
+  "The app's tests" below.
+- `npm run test:e2e` runs the one browser test (`e2e/`, on Playwright), which
+  needs Chromium: `npx playwright install chromium` once.
 - `npm start` with `CASCADE_WORLD_DATE` set (`YYYY-MM-DD`, or an instant with
   its timezone) makes the demo hospitals answer with their records as they
   stood at the end of that day, and say so on their sign-in page; without it
@@ -294,6 +298,24 @@ keeping the package and the pods, under `pods/<name>/`. It is made with four,
   `MedicationStatement` or a `Condition` with `stopped` becomes two versions,
   and an entry without `shorthand` is placed at its own clinical date. It
   refuses a stop it cannot date, and a patient already there.
+
+## The app's tests
+
+Run `npm test` after a change; it takes a few seconds. The tests are examples to copy: each shows one behaviour, on the
+smallest input that shows it, and asserts what it means, never bytes or a whole file.
+
+- `test/api.test.ts` puts PodApi behind the server in the process: `appServer(...)` from `server/app.ts` over a pod
+  replayed from a kit into a temporary folder, called with `app.request()`, so no port is opened. Copy it to test a new
+  operation or route: the pods are listed, a pod's answers come back, an input the rules refuse is a 400 `{ refused }`.
+- `test/tools.test.ts` holds the tool list to its rules: every tool in `tools.ts` is `free` or `ask`, and none calls an
+  operation of `NEVER`. A tool you add needs a row in `RUNS`, or the test fails.
+- `e2e/pod.test.ts` is the one browser test, on Playwright: it starts the app with `npm start`, opens Alex Rivera's pod
+  and waits for the page to say it is ready (`body[data-state="ready"]`, never `main`'s text), then looks for its
+  tiles (`.tiles .tile`). A failure prints `body[data-trace]`, the page's last changes of state. Chromium is not
+  downloaded by `npm install`; `npx playwright install chromium` once, then `npm run test:e2e`.
+
+To add a test, write a `*.test.ts` in `test/` (`import { expect, test } from "vitest"`); Vitest runs everything there
+(`vitest.config.ts`). Import the app's files by their `.ts` names.
 
 ## WebMCP, the doors and the tiers
 

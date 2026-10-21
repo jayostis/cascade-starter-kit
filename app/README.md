@@ -251,6 +251,11 @@ script goes after `--`, or npm keeps it for itself.
 - `ask` and `console` need `--pod <name>` whenever the app has more than one
   pod, as a made app does; it may be left out only when there is exactly one.
 - `npm run typecheck` checks the TypeScript of every file of the app.
+- `npm test` runs the app's own tests (`test/`, on [Vitest](https://vitest.dev)): PodApi behind the server, in the
+  process, and the tool list's tiers. They take seconds, and they are short so you can copy one for your own change.
+- `npm run test:e2e` runs one browser test (`e2e/`, on [Playwright](https://playwright.dev)): it starts the app, opens
+  Alex Rivera's pod and checks its first tiles draw. Install the browser it uses once, with
+  `npx playwright install chromium`; `npm install` does not download it.
 
 ## The files
 

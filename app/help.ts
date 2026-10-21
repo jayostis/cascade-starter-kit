@@ -20,6 +20,14 @@ const SAID: Readonly<Record<string, readonly [string, string]>> = {
   ],
   build: ["npm run build", "build the app's pages into dist/"],
   typecheck: ["npm run typecheck", "check the app's TypeScript"],
+  test: [
+    "npm test",
+    "run the app's own tests, in test/, on Vitest; they take seconds",
+  ],
+  "test:e2e": [
+    "npm run test:e2e",
+    "run the browser test, in e2e/, on Playwright; needs Chromium: npx playwright install chromium",
+  ],
   reset: [
     "npm run reset",
     "remove every pod and load Alex's, Priya's, Martin's and Tamsin's again, as when the app was made",

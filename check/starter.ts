@@ -781,6 +781,16 @@ await behaviour("help lists every command", async () => {
     assert.ok(what !== undefined, `help says nothing of ${script}`);
 });
 
+await behaviour("the app's own tests pass: npm test", async () => {
+  const { code, out, err } = await npm("test");
+  assert.equal(code, 0, `npm test failed:\n${out}\n${err}`);
+});
+
+await behaviour("the app's browser test passes: npm run test:e2e", async () => {
+  const { code, out, err } = await npm("run", "test:e2e");
+  assert.equal(code, 0, `npm run test:e2e failed:\n${out}\n${err}`);
+});
+
 const server = await (async () => {
   let server: Awaited<ReturnType<typeof started>>;
   await setUp("a loaded pod is shown", async () => {

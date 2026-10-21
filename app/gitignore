@@ -3,3 +3,4 @@ pods/
 .env
 dist/
 dist-browser/
+test-results/
