@@ -56,6 +56,7 @@ import {
   firstReady,
   flight,
   isBusy,
+  isStepping,
   ready,
   type Outcome,
 } from "./doing.ts";
@@ -159,7 +160,7 @@ interface Locked {
   readonly outcome: string;
 }
 
-type Screen =
+type Screen = (
   | {
       readonly at: string;
       readonly page: PodShown;
@@ -168,7 +169,11 @@ type Screen =
     }
   | { readonly at: string; readonly page: "unknown" }
   | Locked
-  | { readonly at: string; readonly page: { readonly wrong: string } };
+  | { readonly at: string; readonly page: { readonly wrong: string } }
+) & {
+  /** The step's move it was read for, when it was read for one. */
+  readonly generation?: number;
+};
 
 /** The pod the address names, drawn from its answers, then filled in once the engine can say what the tables say. */
 function PodScreen({
@@ -192,6 +197,7 @@ function PodScreen({
   const generation = useGeneration();
   const stepped = byStep(state);
   const [shown, setShown] = useState<Screen>();
+  const saidReady = useRef<string>(undefined);
   useEffect(() => {
     let live = true;
     (async () => {
@@ -218,11 +224,12 @@ function PodScreen({
         },
       };
     })().then(
-      (screen: Screen) => live && setShown(screen),
+      (screen: Screen) => live && setShown({ ...screen, generation }),
       (error: unknown) =>
         live &&
         setShown({
           at,
+          generation,
           page: {
             wrong: error instanceof Error ? error.message : String(error),
           },
@@ -344,10 +351,13 @@ function PodScreen({
           : "Not found";
     document.title = `${title} · Cascade`;
     if (typeof page === "object" && page.connection?.retry)
-      failed(
+      return failed(
         `the connection failed: ${page.connection.failed ?? page.connection.step}`,
       );
-    else ready();
+    const drawing = `${at} ${shown.generation}`;
+    if (isStepping() && saidReady.current === drawing) return;
+    saidReady.current = drawing;
+    ready();
   }, [shown, at, page, titles, following]);
   if (shown === undefined) return null;
   if (shown.page === "locked")

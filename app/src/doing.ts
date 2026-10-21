@@ -35,6 +35,11 @@ export function failed(reason: string) {
 }
 export const isBusy = () => document.body.dataset.state === "busy";
 
+let stepping = 0;
+
+/** Whether a step's own work is under way: a screen drawn again meanwhile, at the address it was, is not the step's end. */
+export const isStepping = () => stepping > 0;
+
 /** What the doing line says, while the page is busy. */
 export const sayingNow = () => saying;
 
@@ -65,10 +70,14 @@ export async function flight(
 ): Promise<Outcome | undefined> {
   if (isBusy()) return undefined;
   busy(doing);
+  stepping += 1;
   try {
-    if ((await step()) !== true) ready();
+    const went = await step();
+    stepping -= 1;
+    if (went !== true) ready();
     return undefined;
   } catch (error) {
+    stepping -= 1;
     return {
       refused: refusal(error),
       said: error instanceof Error ? error.message : String(error),
