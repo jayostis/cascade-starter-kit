@@ -10,8 +10,8 @@ interface Doing {
   ): Promise<unknown>;
   ready(): void;
   failed(reason: string): void;
-  moved(mark: number): void;
-  landed(mark: number | undefined): void;
+  moved(mark: number, path: string): void;
+  landed(mark: number | undefined, path: string): void;
   isStepping(): boolean;
 }
 
@@ -38,16 +38,16 @@ test("while a step runs, a screen saying ready is ignored until the step's own m
   doing.ready();
   assert.equal(state(), "busy");
   assert.equal(doing.isStepping(), true);
-  doing.moved(7);
+  doing.moved(7, "/pods/b/");
   doing.ready();
   assert.equal(state(), "busy", "the screen left, drawn before the move");
-  doing.landed(undefined);
-  doing.landed(6);
+  doing.landed(undefined, "/pods/a/");
+  doing.landed(6, "/pods/a/");
   doing.ready();
   assert.equal(state(), "busy", "another location drawn meanwhile");
-  doing.landed(7);
+  doing.landed(undefined, "/pods/b/");
   doing.ready();
-  assert.equal(state(), "ready");
+  assert.equal(state(), "ready", "the move, its mark dropped by a redirect");
   assert.equal(doing.isStepping(), false);
   release(true);
   await run;

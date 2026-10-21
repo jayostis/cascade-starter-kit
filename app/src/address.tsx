@@ -49,7 +49,7 @@ export function useGeneration(): number {
  * it has landed, in the same layout phase, so that only screens drawn there say the step is done.
  */
 export function useOpening() {
-  const { pathname, search, state } = useLocation();
+  const { pathname, search, state, key } = useLocation();
   const first = useRef(true);
   useEffect(() => {
     const here = location.pathname + location.search;
@@ -63,7 +63,10 @@ export function useOpening() {
     if (first.current) first.current = false;
     else if (document.body.dataset.state === "ready") busy("Opening…");
   }, [pathname, search]);
-  useLayoutEffect(() => landed((state as { go?: number } | null)?.go), [state]);
+  useLayoutEffect(
+    () => landed((state as { go?: number } | null)?.go, pathname + search),
+    [key, pathname, search, state],
+  );
 }
 
 /**

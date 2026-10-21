@@ -35,7 +35,7 @@ export async function settled(page: Page, timeout = 120_000): Promise<void> {
     );
   } catch (error) {
     throw new Error(
-      `try/ never finished: ${(pageErrors.get(page) ?? []).join("; ") || String(error)}`,
+      `try/ never finished: ${(pageErrors.get(page) ?? []).join("; ") || String(error)}\n${await traceOf(page).catch(() => "")}`,
       { cause: error },
     );
   }

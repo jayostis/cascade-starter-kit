@@ -474,8 +474,8 @@ export function App() {
             const go = (to: string, text?: string) => {
               going = true;
               const state = goState();
-              moved(state.go);
               const [path = to, hash] = to.split("#");
+              moved(state.go, path);
               if (hash === undefined || location.hash !== `#${hash}`)
                 closeBox();
               setLocked(undefined);

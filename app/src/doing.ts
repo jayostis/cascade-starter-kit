@@ -9,7 +9,7 @@ type State = "opening" | "busy" | "ready" | "error";
 let saying: string | undefined;
 let stepping = false;
 let movedOn = false;
-let moving: number | undefined;
+let moving: { readonly mark: number; readonly path: string } | undefined;
 const listeners = new Set<() => void>();
 let drawn: () => void = () => undefined;
 
@@ -80,22 +80,23 @@ export function stayed() {
 }
 
 /**
- * The step under way has asked to move, to the location whose history state carries `mark`: the move is drawn in a
- * later commit, and until then the screen being left may still say ready.
+ * The step under way has asked to move to the router path `path`, in a location whose history state carries `mark`:
+ * the move is drawn in a later commit, and until then the screen being left may still say ready.
  */
-export function moved(mark: number) {
-  moving = mark;
-  trace(`moved ${mark}`);
+export function moved(mark: number, path: string) {
+  moving = { mark, path };
+  trace(`moved ${mark} to ${path}`);
 }
 
 /**
- * A commit has drawn the location whose history state carries `mark`: when it is the one the step under way moved to,
- * the screen drawn there may now say ready.
+ * A commit has drawn the router path `path`, in a location whose history state carries `mark`: when it is the step's
+ * own move, by its mark or, since a redirect drops the mark, by its path, the screen drawn there may now say ready.
  */
-export function landed(mark: number | undefined) {
-  if (!stepping || mark === undefined || mark !== moving) return;
+export function landed(mark: number | undefined, path: string) {
+  if (!stepping || moving === undefined) return;
+  if (mark !== moving.mark && path !== moving.path) return;
   movedOn = true;
-  trace(`landed ${mark}`);
+  trace(`landed ${mark ?? "unmarked"} at ${path}`);
 }
 
 /** What the doing line says, while the page is busy. */
