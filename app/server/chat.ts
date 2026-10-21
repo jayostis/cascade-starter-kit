@@ -130,6 +130,29 @@ function checked(schema: JSONSchema7) {
   });
 }
 
+const opened = z.object({ opened: z.string() });
+
+/**
+ * What the page answers each tool it runs with, which is what `run` in `tools.mjs` gives: `validateUIMessages` holds
+ * a client's answer to the model to these before the model sees it.
+ */
+export const CLIENT_OUTPUTS = {
+  open_pod: opened,
+  open_trend: opened,
+  open_entry: opened,
+  make_pod: z.object({
+    pod: z.string(),
+    made: z.boolean().optional(),
+    loaded: z.boolean().optional(),
+    waiting: z.boolean().optional(),
+  }),
+  check_tables: z.object({
+    checked: z.array(z.unknown()),
+    held: z.array(z.unknown()),
+  }),
+  set_world_date: z.object({ asOf: z.string().optional() }),
+};
+
 /** Runs a tool: a `Refusal` goes to the model as it is, any other error to the log and a fixed sentence. */
 async function running<T>(run: () => Promise<T>): Promise<T> {
   try {
@@ -154,7 +177,16 @@ export function chatTools(api: PodApi): ToolSet {
         description: each.description,
         inputSchema: checked(schema),
       };
-      if (each.tier !== "free" || each.opens) return [each.name, tool(offered)];
+      if (each.tier !== "free" || each.opens)
+        return [
+          each.name,
+          tool({
+            ...offered,
+            outputSchema: CLIENT_OUTPUTS[
+              each.name as keyof typeof CLIENT_OUTPUTS
+            ] as z.ZodType<object>,
+          }),
+        ];
       const { findings } = each;
       if (findings !== undefined)
         return [
@@ -234,9 +266,15 @@ const MESSAGE = z
       ),
   );
 
-const textOf = ({ parts }: z.output<typeof MESSAGE>) =>
-  parts.flatMap((part) =>
-    part.type === "text" && typeof part.text === "string" ? [part.text] : [],
+/** How much a message weighs against `MAX_CHARACTERS`: a text part its text, any other part (a tool's output, its error) its JSON. */
+const sizeOf = ({ parts }: z.output<typeof MESSAGE>) =>
+  parts.reduce(
+    (sum, part) =>
+      sum +
+      (part.type === "text" && typeof part.text === "string"
+        ? part.text.length
+        : JSON.stringify(part).length),
+    0,
   );
 
 /** A tool part of the model's whose answer the page has given. */
@@ -270,7 +308,10 @@ const BODY = z
     messageId: z.string().optional(),
   })
   .superRefine(({ messages }, context) => {
-    if (messages.flatMap(textOf).join("").length > MAX_CHARACTERS)
+    if (
+      messages.reduce((sum, message) => sum + sizeOf(message), 0) >
+      MAX_CHARACTERS
+    )
       context.addIssue({
         code: "custom",
         path: ["messages"],
@@ -372,14 +413,38 @@ function errorText(model: Model) {
 }
 
 /**
- * The model's turn as the UI message stream, with its end said: a refusal as a `data-refused` part, and a round of tool
- * calls past `MAX_ROUNDS` as an error, each before the stream's `finish`.
+ * The steps of this question already made: a request that continues a turn (the page answered a tool and sent again)
+ * carries every earlier step of it as the `step-start` parts of the trailing assistant message.
  */
-function ending(stream: ReadableStream<UIMessageChunk>) {
-  let steps = 0;
+const stepsBefore = (messages: UIMessage[]) => {
+  const last = messages.at(-1);
+  return last?.role === "assistant"
+    ? last.parts.filter(({ type }) => type === "step-start").length
+    : 0;
+};
+
+/** The stream of a question whose rounds are all spent: the error, and no call to the model. */
+const spent = () =>
+  new ReadableStream<UIMessageChunk>({
+    start(controller) {
+      controller.enqueue({ type: "start" });
+      controller.enqueue({ type: "error", errorText: ROUNDS });
+      controller.enqueue({ type: "finish", finishReason: "error" });
+      controller.close();
+    },
+  });
+
+/**
+ * The model's turn as the UI message stream, with its end said: a refusal as a `data-refused` part, and a round of tool
+ * calls past `MAX_ROUNDS` as an error, each before the stream's `finish`. `earlier` steps of the question were made
+ * already; the tool chunks of every step after the `MAX_ROUNDS`th are dropped, so that the page runs no tool past it.
+ */
+function ending(stream: ReadableStream<UIMessageChunk>, earlier: number) {
+  let steps = earlier;
   return stream.pipeThrough(
     new TransformStream<UIMessageChunk, UIMessageChunk>({
       transform(chunk, controller) {
+        if (steps >= MAX_ROUNDS && chunk.type.startsWith("tool-")) return;
         if (chunk.type === "finish-step") steps += 1;
         if (chunk.type === "finish") {
           if (chunk.finishReason === "content-filter")
@@ -445,12 +510,15 @@ export function chatRoutes({
             !names.pods.some(({ name }) => name === body.pod)
           )
             throw new Refusal(`there is no pod ${body.pod}`);
+          const earlier = stepsBefore(body.messages);
+          if (earlier > MAX_ROUNDS)
+            return createUIMessageStreamResponse({ stream: spent() });
           const result = streamText({
             model: model.language(),
             instructions: instructionsOf(body),
             messages: await convertToModelMessages(body.messages, { tools }),
             tools,
-            stopWhen: isStepCount(MAX_ROUNDS + 1),
+            stopWhen: isStepCount(MAX_ROUNDS + 1 - earlier),
             maxRetries: 0,
             abortSignal: c.req.raw.signal,
             onError: () => {},
@@ -461,6 +529,7 @@ export function chatRoutes({
                 originalMessages: body.messages,
                 onError: errorText(model),
               }),
+              earlier,
             ),
           });
         } catch (error) {

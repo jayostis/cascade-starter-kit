@@ -355,7 +355,7 @@ export async function flow(
     return 2;
   }
   say(
-    `\nSaved to .env: ${provider}, ${name}${typed === "" ? "" : ", and the key"}. \`npm start\` now offers the chat; \`npm run model -- --off\` removes it.\n`,
+    `\nSaved to .env: ${provider}, ${name}${typed === "" ? "" : ", and the key"}. the app's chat now uses it; \`npm run model -- --off\` removes it.\n`,
   );
   return 0;
 }
