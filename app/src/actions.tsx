@@ -1,6 +1,12 @@
 // What a screen does beyond reading: a step that writes or moves the app, run with the page busy, and what the shell
 // holds that a step changes. A screen asks for them here and never knows how the shell keeps them.
-import { createContext, useContext, useEffect, type ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useRef,
+  type ReactNode,
+} from "react";
 import type { Series } from "../said.ts";
 import { failed, ready } from "./doing.ts";
 
@@ -46,7 +52,9 @@ export function Notice({
   drawn?: number;
   children: ReactNode;
 }) {
-  useEffect(wrong ? failed : ready, [wrong, drawn]);
+  const reason = useRef("");
+  reason.current = `${heading}: ${typeof children === "string" ? children : "no sentence"}`;
+  useEffect(() => (wrong ? failed(reason.current) : ready()), [wrong, drawn]);
   return (
     <>
       <h1>{heading}</h1>

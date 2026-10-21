@@ -56,7 +56,8 @@ export function useLoaded<T>(
   }, [api, at, again, generation]);
   useEffect(() => {
     if (loaded?.at !== at) return;
-    if ("wrong" in loaded) return failed();
+    if ("wrong" in loaded)
+      return failed(`the screen could not be read: ${loaded.wrong}`);
     document.title = `${"refused" in loaded ? "Not found" : latest.current.titleOf(loaded.value)} · Cascade`;
     ready();
   }, [loaded, at]);

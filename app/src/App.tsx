@@ -56,7 +56,9 @@ import {
   firstReady,
   flight,
   isBusy,
+  moved,
   ready,
+  stayed,
   type Outcome,
 } from "./doing.ts";
 import { EntryScreen } from "./entry.tsx";
@@ -128,12 +130,9 @@ function Message({ heading, children }: { heading: string; children: string }) {
   );
 }
 
-function NotPorted() {
+function NoPage() {
   return (
-    <Message heading="Not ported yet">
-      This screen is still drawn by the app before React; it comes here in a
-      later step.
-    </Message>
+    <Message heading="Not found">This app has no page at this address.</Message>
   );
 }
 
@@ -162,7 +161,7 @@ interface Locked {
   readonly outcome: string;
 }
 
-type Screen =
+type Screen = (
   | {
       readonly at: string;
       readonly page: PodShown;
@@ -171,7 +170,11 @@ type Screen =
     }
   | { readonly at: string; readonly page: "unknown" }
   | Locked
-  | { readonly at: string; readonly page: { readonly wrong: string } };
+  | { readonly at: string; readonly page: { readonly wrong: string } }
+) & {
+  /** The step's move it was read for, when it was read for one. */
+  readonly generation?: number;
+};
 
 /** The pod the address names, drawn from its answers, then filled in once the engine can say what the tables say. */
 function PodScreen({
@@ -195,10 +198,11 @@ function PodScreen({
   const generation = useGeneration();
   const stepped = byStep(state);
   const [shown, setShown] = useState<Screen>();
+  const known = pods.includes(pod);
   useEffect(() => {
     let live = true;
     (async () => {
-      if (!pods.includes(pod)) return { at, page: "unknown" as const };
+      if (!known) return { at, page: "unknown" as const };
       const { locked } = await api.pod({ pod });
       if (locked !== undefined)
         return { at, page: "locked" as const, outcome: locked };
@@ -221,11 +225,12 @@ function PodScreen({
         },
       };
     })().then(
-      (screen: Screen) => live && setShown(screen),
+      (screen: Screen) => live && setShown({ ...screen, generation }),
       (error: unknown) =>
         live &&
         setShown({
           at,
+          generation,
           page: {
             wrong: error instanceof Error ? error.message : String(error),
           },
@@ -234,7 +239,7 @@ function PodScreen({
     return () => {
       live = false;
     };
-  }, [api, at, pod, pods, generation]);
+  }, [api, at, pod, known, generation]);
   const page = shown?.page;
   const unnamed =
     typeof page === "object" && "pod" in page && page.about === undefined
@@ -325,7 +330,8 @@ function PodScreen({
   );
   useEffect(() => {
     if (shown?.at !== at) return;
-    if (typeof page === "object" && "wrong" in page) return failed();
+    if (typeof page === "object" && "wrong" in page)
+      return failed(`the pod's page could not be read: ${page.wrong}`);
     if (following !== undefined) {
       if (!isBusy())
         busy(following.step === "bringing in" ? BRINGING : "Signing in…");
@@ -345,8 +351,11 @@ function PodScreen({
           ? "Open this pod"
           : "Not found";
     document.title = `${title} · Cascade`;
-    if (typeof page === "object" && page.connection?.retry) failed();
-    else ready();
+    if (typeof page === "object" && page.connection?.retry)
+      return failed(
+        `the connection failed: ${page.connection.failed ?? page.connection.step}`,
+      );
+    ready();
   }, [shown, at, page, titles, following]);
   if (shown === undefined) return null;
   if (shown.page === "locked")
@@ -464,6 +473,7 @@ export function App() {
           try {
             const go = (to: string, text?: string) => {
               going = true;
+              moved();
               const [path = to, hash] = to.split("#");
               if (hash === undefined || location.hash !== `#${hash}`)
                 closeBox();
@@ -478,6 +488,7 @@ export function App() {
               Object.assign(go, {
                 stay: () => {
                   going = true;
+                  stayed();
                 },
               }),
             );
@@ -542,8 +553,9 @@ export function App() {
       await host.firstVisit();
       setPods((await api.pods()).pods);
     })().catch((error: unknown) => {
-      console.error(error);
-      failed();
+      failed(
+        `the pods could not be listed: ${error instanceof Error ? error.message : String(error)}`,
+      );
     });
   }, [api, host]);
   useEffect(() => {
@@ -686,7 +698,7 @@ export function App() {
                     path="/encrypted-pods/:pod"
                     element={<WordsScreen />}
                   />
-                  <Route path="*" element={<NotPorted />} />
+                  <Route path="*" element={<NoPage />} />
                 </Routes>
               )}
             </Layout>

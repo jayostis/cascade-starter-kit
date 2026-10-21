@@ -88,6 +88,7 @@ interface Doing {
   ): Promise<{ refused: boolean; said: string } | undefined>;
   sayingNow(): string | undefined;
   ready(): void;
+  moved(): void;
 }
 
 test("a step turns every button off and says what it is doing until the page is ready, a second step meanwhile does not start, one that goes to another screen leaves the page busy for it, and one that fails says whether the rules refused it", async () => {
@@ -96,7 +97,7 @@ test("a step turns every button off and says what it is doing until the page is 
   Object.assign(globalThis, {
     document: { body, querySelectorAll: () => buttons },
   });
-  const { flight, sayingNow, ready } = (await import(
+  const { flight, sayingNow, ready, moved } = (await import(
     new URL("../../app/src/doing.ts", import.meta.url).href
   )) as Doing;
   const refusal = (error: unknown) =>
@@ -137,6 +138,7 @@ test("a step turns every button off and says what it is doing until the page is 
     ["busy", [true, true]],
     "a step that went to another screen leaves the page busy for it",
   );
+  moved();
   ready();
 
   const refused = new Error("Give a name with at least one letter.");
