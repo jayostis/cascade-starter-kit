@@ -67,7 +67,7 @@ const { TOOLS } = (await import(
   new URL("../../app/tools.mjs", import.meta.url).href
 )) as { TOOLS: { name: string; tier: string; opens?: true }[] };
 const { changeSaid, entryId, HISTORY, SOURCES } = (await import(
-  new URL("../../app/summary.mjs", import.meta.url).href
+  new URL("../../app/said.ts", import.meta.url).href
 )) as {
   changeSaid: (finding: unknown, about: Map<string, unknown>) => string;
   entryId: (entry: string) => string;

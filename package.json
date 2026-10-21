@@ -5,7 +5,7 @@
   "description": "The app a person starts from on cascade-runtime: the template, try/ in a browser, and create-cascade-app.",
   "license": "Apache-2.0",
   "engines": {
-    "node": ">=22"
+    "node": ">=22.18.0"
   },
   "workspaces": [
     "app",
@@ -14,7 +14,7 @@
   ],
   "scripts": {
     "build": "tsc -b",
-    "typecheck": "tsc -b && tsc -p tsconfig.scripts.json",
+    "typecheck": "tsc -b && tsc -p tsconfig.scripts.json && tsc -p app/tsconfig.json && tsc -p app/tsconfig.node.json",
     "build:create": "tsc -b && node create/pack.mjs",
     "lint": "eslint . && prettier --check .",
     "format": "prettier --write .",

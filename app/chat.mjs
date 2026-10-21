@@ -4,10 +4,11 @@
 import { Buffer } from "node:buffer";
 import console from "node:console";
 import { checkInput, Refusal } from "cascade-runtime";
+import { addresses } from "./addresses.ts";
 import { callsMessage } from "./model-client.mjs";
 import { maps } from "./pod-api.mjs";
 import { podPath, trendPath } from "./pods.mjs";
-import { CHANGED, changeSaid, entryId } from "./summary.mjs";
+import { CHANGED, changeSaid, entryId } from "./said.ts";
 import { TOOLS, withPod } from "./tools.mjs";
 
 /** How many rounds of tool calls a chat runs before it ends with an error. */
@@ -114,8 +115,7 @@ export function checkBody(body) {
 }
 
 /** An entry's address: `entry` as `ask` gives it, an IRI, or just its ID. */
-export const entryPath = (name, entry) =>
-  `${podPath(name)}entries/${encodeURIComponent(entryId(entry))}`;
+export const entryPath = addresses().entry;
 
 /** What the page says of a finding (`changeSaid`), named by `about`; nothing where there were not enough results. */
 function saidOf(finding, about) {

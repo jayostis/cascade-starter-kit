@@ -3,7 +3,7 @@
 // reads or moves the app, `ask` writes once the person has said yes. What no tool ever calls is `NEVER`.
 import { Refusal } from "cascade-runtime";
 import { POD_TOOLS, trendOf } from "./pod-api.mjs";
-import { entryId, SOURCES, TREND_VIEW } from "./summary.mjs";
+import { entryId, SOURCES, TREND_VIEW } from "./said.ts";
 
 /** The questions `ask` offers: the person's own records, who they are and where an entry came from. Never free SPARQL. */
 export const QUESTIONS = [

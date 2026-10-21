@@ -1,10 +1,19 @@
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  copyFile,
+  mkdir,
+  readdir,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
+import { env } from "node:process";
 import { fileURLToPath } from "node:url";
 import { parseArgs, promisify } from "node:util";
 import { publishedSamples } from "cascade-runtime/published";
+import { build } from "vite";
 import { runtimePackageRoot } from "./package-root.js";
 import { servePages } from "./serve.js";
 import { TRY_PACKAGE } from "./try-page.js";
@@ -14,6 +23,9 @@ const ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 const PAGES = join(ROOT, "build", "pages");
 const PACKAGE = runtimePackageRoot();
 const TRY = "try/";
+/** The app's browser target, beside try/ until it replaces it, at a base Pages sets with `CASCADE_NEXT_BASE`. */
+const NEXT = "next";
+const APP = join(ROOT, "app");
 /** The package's starter copies of the feeds' series, which the samples' answers are computed with. */
 const STARTER_TABLES = "components/tables";
 
@@ -103,16 +115,36 @@ const REDIRECT = `<!DOCTYPE html>
 `;
 
 /**
- * Writes build/pages: try/ over the installed package, each kit's sample beside it where try/ copies it from, and a
- * root page that sends a visitor to try/.
+ * The app's browser build in build/pages/next/, by its own Vite config, offering the samples published beside it; its
+ * page is also the site's `404.html`, which Pages answers a path with no file with, so a screen's address opens it.
+ */
+async function buildNext(samples: readonly string[], version: string) {
+  Object.assign(env, {
+    CASCADE_NAME: "Cascade try",
+    CASCADE_VERSION: version,
+    CASCADE_CODE: "https://github.com/jayostis/cascade-starter-kit",
+    CASCADE_SAMPLES: samples.join(" "),
+  });
+  await build({
+    root: APP,
+    configFile: join(APP, "vite.config.ts"),
+    mode: "browser",
+    base: env.CASCADE_NEXT_BASE ?? `/${NEXT}/`,
+    logLevel: "warn",
+    build: { outDir: join(PAGES, NEXT), emptyOutDir: true },
+  });
+  await copyFile(join(PAGES, NEXT, "index.html"), join(PAGES, "404.html"));
+}
+
+/**
+ * Writes build/pages: try/ over the installed package, each kit's sample beside it where try/ copies it from, the
+ * app's browser build in next/, and a root page that sends a visitor to try/.
  */
 async function buildPages(): Promise<number> {
   const samples = await publishedSamples({ look: tryLooks });
+  const version = await builtFrom();
   const tree = new Map<string, Uint8Array>(samples.files);
-  for (const [path, bytes] of await tryFiles(
-    [...samples.kits.keys()],
-    await builtFrom(),
-  ))
+  for (const [path, bytes] of await tryFiles([...samples.kits.keys()], version))
     tree.set(TRY + path, bytes);
   for (const [path, bytes] of await packageFiles())
     tree.set(TRY + TRY_PACKAGE + path, bytes);
@@ -123,7 +155,8 @@ async function buildPages(): Promise<number> {
     await mkdir(dirname(file), { recursive: true });
     await writeFile(file, bytes);
   }
-  console.error(`${tree.size} files written to ${PAGES}`);
+  await buildNext([...samples.kits.keys()], version);
+  console.error(`${tree.size} files and ${NEXT}/ written to ${PAGES}`);
   return 0;
 }
 

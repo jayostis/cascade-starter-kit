@@ -16,9 +16,9 @@ const PAGES = join(ROOT, "build", "pages");
 const LAUNCHER = "https://launch.smarthealthit.org";
 const POD = "Launcher Patient";
 
-/** The starter's view, the module try/ renders, as far as this test reads it. */
+/** What the starter's pages say, as far as this test reads it. */
 const view = (await import(
-  pathToFileURL(join(ROOT, "app", "summary.mjs")).href
+  pathToFileURL(join(ROOT, "app", "said.ts")).href
 )) as { hospitalName(name: string): string };
 
 let served: Served;

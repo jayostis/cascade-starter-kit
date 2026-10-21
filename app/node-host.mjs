@@ -15,6 +15,7 @@ import { deletePod, podNames, podTitle, restoreKits } from "./pods.mjs";
 /**
  * The pods in `folder` and their tables, for `podApi`. With `opensEncrypted` false, an encrypted pod is refused rather
  * than asked for its words; `unsaid(kind, error)` is told when the tables cannot say what a page would name.
+ * @param {{ folder: string, opensEncrypted?: boolean, unsaid?: (kind: string, error: Error) => void }} options
  */
 export function nodeHost({ folder, opensEncrypted = true, unsaid = () => {} }) {
   return {

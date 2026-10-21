@@ -5,6 +5,7 @@ import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test, type TestContext } from "node:test";
+import { getRequestListener } from "@hono/node-server";
 import { loadHospital, loadStories } from "@the-cascade-protocol/sandbox/node";
 import {
   ConnectionFailure,
@@ -58,16 +59,40 @@ const { podApi, maps, trendOf, notOpenedHere } = (await import(
   trendOf: (finding: unknown) => Input;
   notOpenedHere: (name: string) => string;
 };
-const { apiRoute, podApiOver } = (await import(
-  new URL("../../app/pod-api-http.mjs", import.meta.url).href
+/** The Node target's server, as far as this test serves it, and what it answers as. */
+interface Own {
+  hosts: Set<string>;
+  origins: Set<string>;
+}
+interface App {
+  fetch(request: Request): Response | Promise<Response>;
+  request(input: RequestInfo | URL, init?: RequestInit): Promise<Response>;
+}
+const { appServer } = (await import(
+  new URL("../../app/server/app.ts", import.meta.url).href
 )) as {
-  apiRoute: (
-    api: Api,
-    request: unknown,
-    response: unknown,
-    options: { origins: Set<string> },
-  ) => Promise<void>;
-  podApiOver: (origin: string) => Api;
+  appServer: (served: {
+    api: Api;
+    own: () => Own;
+    chat: () => Promise<void>;
+    back: () => undefined;
+    pages: string;
+  }) => App;
+};
+/** PodApi at a server, through the app's own typed client. */
+const { remoteApi } = (await import(
+  new URL("../../app/src/hosts/remote.ts", import.meta.url).href
+)) as {
+  remoteApi: (
+    base: string,
+    options: {
+      fetch: (
+        input: RequestInfo | URL,
+        init?: RequestInit,
+      ) => Promise<Response>;
+      headers: Record<string, string>;
+    },
+  ) => Api;
 };
 const { nodeHost } = (await import(
   new URL("../../app/node-host.mjs", import.meta.url).href
@@ -79,7 +104,7 @@ const { nodeHost } = (await import(
   };
 };
 const { entryId, testsIn } = (await import(
-  new URL("../../app/summary.mjs", import.meta.url).href
+  new URL("../../app/said.ts", import.meta.url).href
 )) as {
   entryId: (entry: string) => string;
   testsIn: (labs: unknown[]) => { code: string; notation?: string }[];
@@ -216,9 +241,8 @@ const servers: Server[] = [];
 /** What each call that reached the server's instance came back with, in order, for `both()` to compare. */
 type Call = PromiseSettledResult<Output>;
 
-/** Serves `built` at `POST /api/...` on an ephemeral port, and gives the address and what `built` answered each call. */
-async function serve(built: Api): Promise<[string, Call[]]> {
-  const origins = new Set<string>();
+/** The Node target's server over `built`, answering as `own()` names it, and what `built` answered each call. */
+function served(built: Api, own: () => Own): [App, Call[]] {
   const calls: Call[] = [];
   const recording = { ...built } as Api;
   for (const name of Object.keys(built) as (keyof Api)[]) {
@@ -234,32 +258,72 @@ async function serve(built: Api): Promise<[string, Call[]]> {
       }
     };
   }
-  const server = createServer((request, response) => {
-    void apiRoute(recording, request, response, { origins });
+  const app = appServer({
+    api: recording,
+    own,
+    chat: async () => undefined,
+    back: () => undefined,
+    pages: folder,
   });
+  return [app, calls];
+}
+
+/** Serves `built` on an ephemeral port, as `npm run next` does, and gives the address and what `built` answered each call. */
+async function serve(built: Api): Promise<[string, Call[]]> {
+  let origin = "";
+  const [app, calls] = served(built, () => ({
+    hosts: new Set([new URL(origin).host]),
+    origins: new Set([origin]),
+  }));
+  const server = createServer(getRequestListener(app.fetch));
   servers.push(server);
   await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
   const { port } = server.address() as { port: number };
-  const origin = `http://127.0.0.1:${port}`;
-  origins.add(origin);
+  origin = `http://127.0.0.1:${port}`;
   return [origin, calls];
 }
 
+/** A refusal as the app tells it, by its name; an `Unopened` carries its `outcome`. */
+const isRefusal = (error: unknown): error is Error & { outcome?: string } =>
+  error instanceof Error &&
+  (error.name === "Refusal" || error.name === "Unopened");
+const unopened = (error: unknown, outcome: string) =>
+  isRefusal(error) && error.outcome === outcome;
+
 /**
- * `built` in-process, and over HTTP. A call over HTTP runs once, on `built`; what comes back must be what `built`
- * answered that call, after a JSON round trip, and what is thrown the same kind with the same message. What `built`
- * threw other than a `Refusal` crosses as a 500 naming the operation.
+ * `built` in-process, and over HTTP: through the Node target's server, by `app.request()`, with the app's own client.
+ * A call over HTTP runs once, on `built`, unless its route refuses the input first, as PodApi would refuse it; what
+ * comes back must be what `built` answered that call, after a JSON round trip, and what is thrown a refusal of the
+ * same name with the same message. What `built` threw other than a `Refusal` crosses as a 500 naming the operation.
  */
 async function both(built: Api): Promise<[string, Api][]> {
-  const [origin, calls] = await serve(built);
-  const remote = podApiOver(origin);
+  const origin = "http://app.test";
+  const [app, calls] = served(built, () => ({
+    hosts: new Set(["app.test"]),
+    origins: new Set([origin]),
+  }));
+  const remote = remoteApi(`${origin}/`, {
+    fetch: (input: RequestInfo | URL, init?: RequestInit) =>
+      app.request(input, init),
+    headers: { origin },
+  });
   const over = {} as Api;
   for (const name of Object.keys(remote) as (keyof Api)[]) {
     if (name === "close") continue;
     over[name] = async (input: Input) => {
       const [crossed] = await Promise.allSettled([remote[name](input)]);
-      const direct = calls.pop()!;
+      const direct = calls.pop();
       assert.equal(calls.length, 0, `${name} ran once`);
+      if (direct === undefined) {
+        if (crossed.status === "fulfilled")
+          assert.fail(`${name} answered, never reaching PodApi`);
+        const [own] = await Promise.allSettled([built[name](input)]);
+        if (own.status === "fulfilled")
+          assert.fail(`${name} refused over HTTP only`);
+        assert.equal(crossed.reason.name, "Refusal");
+        assert.equal(crossed.reason.message, own.reason.message);
+        throw crossed.reason;
+      }
       if (crossed.status === "fulfilled") {
         assert.equal(direct.status, "fulfilled", `${name} over HTTP`);
         assert.deepStrictEqual(
@@ -272,7 +336,7 @@ async function both(built: Api): Promise<[string, Api][]> {
       assert.equal(direct.status, "rejected", `${name} over HTTP`);
       const [was, is] = [direct.reason, crossed.reason];
       if (was instanceof Refusal) {
-        assert.equal(is.constructor, was.constructor);
+        assert.equal(is.name, was instanceof Unopened ? "Unopened" : "Refusal");
         assert.equal(is.message, was.message);
         if (was instanceof Unopened) assert.equal(is.outcome, was.outcome);
       } else assert.equal(is.message, `${name}: the server answered 500`);
@@ -473,14 +537,12 @@ for (const via of HOSTS) {
 
   test(`${via}: an encrypted pod is locked until its words are given, and refused where no words are asked`, async () => {
     assert.equal((await shared.pod({ pod: SEALED })).locked, "secret needed");
-    await assert.rejects(
-      shared.answers({ pod: SEALED }),
-      (error) => error instanceof Unopened && error.outcome === "secret needed",
+    await assert.rejects(shared.answers({ pod: SEALED }), (error) =>
+      unopened(error, "secret needed"),
     );
     await assert.rejects(
       shared.unlock({ pod: SEALED, secret: "  " }),
-      (error) =>
-        error instanceof Unopened && error.outcome === "incorrect secret",
+      (error) => unopened(error, "incorrect secret"),
     );
     const elsewhere = new Map(
       await both(api({ ...host(), opensEncrypted: false })),
@@ -492,8 +554,8 @@ for (const via of HOSTS) {
     await assert.rejects(
       elsewhere.answers({ pod: SEALED }),
       (error) =>
-        error instanceof Refusal &&
-        !(error instanceof Unopened) &&
+        isRefusal(error) &&
+        error.outcome === undefined &&
         error.message === notOpenedHere(SEALED),
     );
   });
@@ -610,8 +672,8 @@ for (const via of HOSTS) {
       await assert.rejects(
         shared[operation](input),
         (error) =>
-          error instanceof Refusal &&
-          !(error instanceof Unopened) &&
+          isRefusal(error) &&
+          error.outcome === undefined &&
           reason.test(error.message),
         `${operation} ${JSON.stringify(input)}`,
       );
@@ -665,9 +727,8 @@ for (const via of HOSTS) {
 
     await built.close();
     const later = new Map(await both(api(given))).get(via)!;
-    await assert.rejects(
-      later.answers({ pod: "ines" }),
-      (error) => error instanceof Unopened && error.outcome === "secret needed",
+    await assert.rejects(later.answers({ pod: "ines" }), (error) =>
+      unopened(error, "secret needed"),
     );
     const opened = { pod: "ines", opened: true };
     assert.deepEqual(
@@ -1039,4 +1100,33 @@ test("over HTTP, a request the route cannot take gets its status, and a broken r
     JSON.stringify({ error: "the server failed; its log says why" }),
   );
   assert.ok(!text.includes("/secret/path"));
+});
+
+test("the server answers its page to an address a person opens, even with a dot in it, and a missing file with a 404", async () => {
+  const pages = await mkdtemp(join(tmpdir(), "pages-"));
+  await writeFile(join(pages, "index.html"), "<h1>the app</h1>");
+  await writeFile(join(pages, "app.js"), "1");
+  const app = appServer({
+    api: apis.get("in-process")!,
+    own: () => ({ hosts: new Set(["localhost"]), origins: new Set() }),
+    chat: async () => undefined,
+    back: () => undefined,
+    pages,
+  });
+  const get = async (path: string, headers: Record<string, string> = {}) => {
+    const response = await app.request(`http://localhost${path}`, { headers });
+    return [response.status, await response.text()] as const;
+  };
+  const navigate = { "sec-fetch-mode": "navigate" };
+  assert.deepEqual(await get("/pods/a/entries/x.1", navigate), [
+    200,
+    "<h1>the app</h1>",
+  ]);
+  assert.deepEqual(await get("/pods/a/entries/x.1", { accept: "text/html" }), [
+    200,
+    "<h1>the app</h1>",
+  ]);
+  assert.deepEqual(await get("/app.js"), [200, "1"]);
+  assert.equal((await get("/nope.json"))[0], 404);
+  assert.equal((await get("/pods/a/entries/x.1"))[0], 404);
 });

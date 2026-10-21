@@ -97,7 +97,7 @@ test("given a folder, it makes the project and names it, with the template's pac
   const ignored = (await readFile(join(folder, ".gitignore"), "utf8")).split(
     /\r?\n/,
   );
-  for (const entry of ["pods/", ".env"])
+  for (const entry of ["pods/", ".env", "dist/"])
     assert.ok(ignored.includes(entry), `.gitignore does not list ${entry}`);
   assert.deepEqual(terminal.done, [
     `install ${folder}`,

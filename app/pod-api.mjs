@@ -30,6 +30,7 @@ import {
   HISTORY,
   joinedBy,
   LABS,
+  maps,
   MEDICATIONS,
   NOT_WORDS,
   pageNumber,
@@ -49,7 +50,9 @@ import {
   withMechanism,
   worldInstant,
   worthALook,
-} from "./summary.mjs";
+} from "./said.ts";
+
+export { maps };
 
 /** Why a host that opens no encrypted pod refuses the pod `name`, in one line. */
 export function notOpenedHere(name) {
@@ -76,24 +79,6 @@ const DEVICES = /^(con|prn|aux|nul|com\d|lpt\d)$/;
 
 const NOT_WAITING =
   "These six words are not waiting any more. Make the pod again.";
-
-/** The paths of an operation's output that hold a `Map` as `[key, value]` pairs. */
-const MAPPED = ["about", "joined", "elsewhere", "classes", "panelAbout"];
-const MAPPED_SAID = ["says", "labels", "names"];
-
-/** An operation's `output` with each of its pairs a `Map` again, as the view takes them. */
-export function maps(output) {
-  const mapped = { ...output };
-  for (const key of MAPPED)
-    if (output[key] !== undefined) mapped[key] = new Map(output[key]);
-  if (output.said !== undefined) {
-    mapped.said = { ...output.said };
-    for (const key of MAPPED_SAID)
-      if (output.said[key] !== undefined)
-        mapped.said[key] = new Map(output.said[key]);
-  }
-  return mapped;
-}
 
 const pairs = (map) => (map === undefined ? undefined : [...map]);
 
@@ -147,7 +132,7 @@ const CHECKS = {
 const { string, boolean, positiveInteger, object, waitFor } = CHECKS;
 
 /** The check each input a client may send must pass when it is given, by operation. */
-const INPUTS = {
+export const INPUTS = {
   pods: {},
   held: {},
   pod: { pod: string },
@@ -182,14 +167,20 @@ const INPUTS = {
 /** The operations a client may call, which is every member of `podApi(host)` but `close`. */
 export const OPERATIONS = Object.keys(INPUTS);
 
+/** Why the operation `name` refuses `input`, an input that is no object or holds a field of the wrong type; else nothing. */
+export function inputRefusal(name, input) {
+  if (!object[1](input)) return "the input must be an object";
+  for (const [field, [what, is]] of Object.entries(INPUTS[name]))
+    if (input[field] !== undefined && !is(input[field]))
+      return `${field} must be ${what}`;
+  return undefined;
+}
+
 /** `operation`, refusing an input that is no object or holds a field of the wrong type. */
 function typed(name, operation) {
   return async (input = {}) => {
-    if (!object[1](input)) throw new Refusal("the input must be an object");
-    for (const [field, [what, is]] of Object.entries(INPUTS[name])) {
-      if (input[field] !== undefined && !is(input[field]))
-        throw new Refusal(`${field} must be ${what}`);
-    }
+    const refused = inputRefusal(name, input);
+    if (refused !== undefined) throw new Refusal(refused);
     return operation(input);
   };
 }

@@ -4,6 +4,8 @@ import { Html, markup } from "./html.js";
 export const TRY_PACKAGE = "cascade-runtime/";
 /** The view the page renders, the starter's `summary.mjs`, beside the page as `.js`, a name every server types. */
 export const SUMMARY = "summary.js";
+/** What the pages say, the starter's `said.ts`, beside the page as plain `.js`, which the view, PodApi and the tools import. */
+export const SAID = "said.js";
 /** What the app reads its pods and tables through: the starter's PodApi, and the host it is given in a browser. */
 export const POD_API = "pod-api.js";
 export const BROWSER_HOST = "browser-host.js";
@@ -30,6 +32,7 @@ function head(title: string): Html {
     imports: {
       "cascade-runtime": `./${TRY_PACKAGE}dist/browser/index.js`,
       "./summary.mjs": `./${SUMMARY}`,
+      "./said.ts": `./${SAID}`,
       "./pod-api.mjs": `./${POD_API}`,
       ...Object.fromEntries(
         Object.entries(VIEW_PACKAGES).map(([name, file]) => [

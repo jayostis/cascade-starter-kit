@@ -11,6 +11,20 @@ const SAID = {
     "serve the app, then open the address it prints; stop it with Ctrl+C",
   ],
   dev: ["npm run dev", "serve the app, restarting it whenever a file is saved"],
+  build: ["npm run build", "build the app's React pages into dist/"],
+  "build:browser": [
+    "npm run build:browser",
+    "build the same pages to run in a browser alone, with the pods kept in it",
+  ],
+  next: [
+    "npm run next",
+    "build the React pages and serve them at the address it prints (port 3001)",
+  ],
+  "dev:next": [
+    "npm run dev:next",
+    "serve the React pages from their sources, rebuilt whenever a file is saved",
+  ],
+  typecheck: ["npm run typecheck", "check the app's TypeScript"],
   reset: [
     "npm run reset",
     "remove every pod and load Alex's, Priya's, Martin's and Tamsin's again, as when the app was made",

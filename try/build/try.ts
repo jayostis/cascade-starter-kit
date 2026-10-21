@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { build } from "esbuild";
+import { build, transform } from "esbuild";
 import { brandsBundle, hospitalId } from "@the-cascade-protocol/sandbox";
 import { loadHospitals } from "@the-cascade-protocol/sandbox/node";
 import type { Pod, Tables } from "cascade-runtime/published";
@@ -11,6 +11,7 @@ import {
   BROWSER_HOST,
   PEOPLE,
   POD_API,
+  SAID,
   SIGNED_IN,
   signedInPage,
   SUMMARY,
@@ -29,6 +30,9 @@ const HOST = fileURLToPath(
 const RUNTIME_PACKAGE = join(runtimePackageRoot(), "package.json");
 const VIEW = fileURLToPath(
   new URL("../../../app/summary.mjs", import.meta.url),
+);
+const SAID_SOURCE = fileURLToPath(
+  new URL("../../../app/said.ts", import.meta.url),
 );
 const API = fileURLToPath(new URL("../../../app/pod-api.mjs", import.meta.url));
 const TOOL_LIST = fileURLToPath(
@@ -123,6 +127,7 @@ export async function tryFiles(
     app,
     host,
     view,
+    said,
     api,
     tools,
     worker,
@@ -135,11 +140,16 @@ export async function tryFiles(
     readFile(APP),
     readFile(HOST),
     readFile(VIEW),
+    readFile(SAID_SOURCE, "utf8").then(async (source) =>
+      encoder.encode(
+        (await transform(source, { loader: "ts", format: "esm" })).code,
+      ),
+    ),
     readFile(API),
     readFile(TOOL_LIST),
     bundled(SANDBOX_WEB.worker, "iife"),
     bundled(SANDBOX_WEB.page, "esm"),
-    import(pathToFileURL(VIEW).href) as Promise<{
+    import(pathToFileURL(SAID_SOURCE).href) as Promise<{
       demoPeople(demo: unknown): unknown;
     }>,
     readFile(RUNTIME_PACKAGE, "utf8").then(
@@ -155,6 +165,7 @@ export async function tryFiles(
     ["index.html", encoder.encode(tryPage(samples, { version, runtime }))],
     ["app.js", app],
     [SUMMARY, view],
+    [SAID, said],
     [POD_API, api],
     [TOOLS, tools],
     [BROWSER_HOST, host],

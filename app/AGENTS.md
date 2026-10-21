@@ -135,6 +135,16 @@ keeping the package and the pods, under `pods/<name>/`. It is made with four,
 - `npm run help` lists every command.
 - `npm run reset` removes every pod and loads those four again.
 - `npm run dev` serves the app as `npm start` does, restarting it on every save.
+- `npm run next` builds the app being ported to React (`index.html`, `src/`, by
+  `vite.config.ts`) into `dist/` and serves it with PodApi at `/api/` from
+  `server/main.ts`, on `PORT` (3001 if unset). Screens not ported yet say so.
+- `npm run dev:next` serves that app through Vite instead, in the same
+  process, rebuilt on every save.
+- `npm run build` builds that app for `server/main.ts`.
+- `npm run build:browser` builds it for a browser, PodApi in the page and the
+  runtime beside it as files.
+- `npm run typecheck` checks the TypeScript of the app (`tsconfig.json`) and of
+  its server and build (`tsconfig.node.json`).
 - `npm start` serves the app; stop it with Ctrl+C or by its process, never by
   killing every Node process. A pod's page links to bringing in a record from a
   hospital of the test directory: the app's `hospitals.mjs` signs in, receiving
