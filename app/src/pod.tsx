@@ -19,10 +19,8 @@ import {
   LAB_SECTION,
   LABS,
   localDay,
-  monthAt,
   named,
   namingCredits,
-  near,
   opening,
   type Person,
   personName,
@@ -41,17 +39,16 @@ import {
   slug,
   SMALL,
   SOURCES,
-  spread,
   timeOf,
   trendOfFinding,
   valuesSaid,
   type VariantsSaid,
   worthALook,
   leftSaid,
-  DAY_MS,
 } from "../said.ts";
 import { useAddress } from "./address.tsx";
-import { Box, Pending, PostButton, Tag } from "./parts.tsx";
+import { Chart } from "./chart.tsx";
+import { Box, Pending, PostButton, Tag, useReopenedBox } from "./parts.tsx";
 
 /** What a pod's page is drawn from: its answers, and once the tables can say, what they say of them. */
 export interface PodShown {
@@ -257,125 +254,6 @@ function Worth({
       </ul>
       {waiting && <Pending lines={2} pitch="1.8rem" said="Checking ClinVar…" />}
     </div>
-  );
-}
-
-interface Point {
-  readonly time: number;
-  readonly value: number;
-}
-interface Mark {
-  readonly time: number;
-  readonly kind: string;
-  readonly text: string;
-}
-
-/** A line of results over time, as SVG: a marker for each point and the days in `marks` as dashed lines across it. */
-function Chart({
-  id,
-  plot,
-  points,
-  marks = [],
-  unit,
-  title,
-  desc,
-  axes = false,
-}: {
-  id: string;
-  plot: ReturnType<typeof plotOf>;
-  points: readonly Point[];
-  marks?: readonly Mark[];
-  unit: string;
-  title: string;
-  desc: string;
-  axes?: boolean;
-}) {
-  const { width, height, margin, radius, from, to, low, high, x, y } = plot;
-  const sorted = [...points].sort((a, b) => a.time - b.time);
-  const right = width - margin.right;
-  const bottom = height - margin.bottom;
-  const days = (to - from) / DAY_MS;
-  return (
-    <svg
-      className={`chart ${axes ? "large" : "small"}`}
-      viewBox={`0 0 ${width} ${height}`}
-      role="img"
-      aria-labelledby={`${id}-title ${id}-desc`}
-    >
-      <title id={`${id}-title`}>{title}</title>
-      <desc id={`${id}-desc`}>{desc}</desc>
-      {axes &&
-        spread(4, low, high).map((value) => (
-          <g key={`y${value}`}>
-            <line
-              className="grid"
-              x1={margin.left}
-              x2={right}
-              y1={near(y(value))}
-              y2={near(y(value))}
-            />
-            <text
-              className="tick"
-              x={margin.left - 8}
-              y={near(y(value)) + 4}
-              textAnchor="end"
-            >
-              {rounded(value)}
-            </text>
-          </g>
-        ))}
-      {axes &&
-        spread(5, from, to).map((time) => (
-          <text
-            key={`x${time}`}
-            className="tick"
-            x={near(x(time))}
-            y={bottom + 20}
-            textAnchor="middle"
-          >
-            {days >= 150 ? monthAt(time) : dayAt(time)}
-          </text>
-        ))}
-      {marks.map(({ time, kind, text }) => (
-        <g key={`${kind}${time}`}>
-          <line
-            className={`mark ${kind}`}
-            x1={near(x(time))}
-            x2={near(x(time))}
-            y1={margin.top}
-            y2={bottom}
-          />
-          {axes && (
-            <text
-              className="tick"
-              x={near(x(time))}
-              y={margin.top - 10}
-              textAnchor={x(time) > width / 2 ? "end" : "start"}
-            >
-              {text}
-            </text>
-          )}
-        </g>
-      ))}
-      <polyline
-        className="series"
-        fill="none"
-        points={sorted
-          .map(({ time, value }) => `${near(x(time))},${near(y(value))}`)
-          .join(" ")}
-      />
-      {sorted.map(({ time, value }, at) => (
-        <circle
-          key={at}
-          className="marker"
-          cx={near(x(time))}
-          cy={near(y(value))}
-          r={radius}
-        >
-          <title>{`${dayAt(time)}: ${rounded(value)} ${unit}`}</title>
-        </circle>
-      ))}
-    </svg>
   );
 }
 
@@ -610,6 +488,7 @@ export function PodPage({
   held: readonly Series[];
 }) {
   const address = useAddress();
+  useReopenedBox(shown.pod);
   const {
     pod,
     answers: asked,

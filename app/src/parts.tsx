@@ -1,7 +1,19 @@
 // The pieces every screen draws with: a box over the page opened by the address's hash, a part still to come, a tag,
 // and a button that is a form of its own.
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import { TAGS } from "../said.ts";
+
+/**
+ * Opens the box the address's hash names, once the screen holding it is drawn: the browser matches `:target` when it
+ * goes to an address, not for an element drawn after, as when the page is loaded at `#<id>` or Back returns to it.
+ */
+export function useReopenedBox(screen: string) {
+  useEffect(() => {
+    const { hash } = location;
+    if (hash.length > 1 && document.getElementById(hash.slice(1)) !== null)
+      location.replace(hash);
+  }, [screen]);
+}
 
 /**
  * A box over the page, shown when the page's address ends `#<id>`, with `children` under `heading`; its close link and

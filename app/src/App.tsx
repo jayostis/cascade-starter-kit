@@ -13,9 +13,14 @@ import {
 } from "../said.ts";
 import { useInPlace } from "./address.tsx";
 import { useHost, type PodApi, type PodListed } from "./api.tsx";
+import { ClassesScreen } from "./classes.tsx";
 import { failed, firstReady, ready } from "./doing.ts";
+import { EntryScreen } from "./entry.tsx";
+import { PanelScreen } from "./panel.tsx";
 import { PodPage, type PodShown } from "./pod.tsx";
 import { Layout, type TablesHeld } from "./shell.tsx";
+import { usePodTools } from "./tools.ts";
+import { TrendScreen } from "./trend.tsx";
 
 type Engine = "waiting" | "ready" | "failed";
 
@@ -237,6 +242,8 @@ export function App() {
       );
   }, [api, host]);
   const names = useMemo(() => (pods ?? []).map(({ name }) => name), [pods]);
+  const shown = current === undefined ? undefined : decodeURIComponent(current);
+  usePodTools(shown !== undefined && names.includes(shown) ? shown : undefined);
   if (pods === undefined) return null;
   return (
     <Layout
@@ -268,6 +275,24 @@ export function App() {
               engine={engine}
             />
           }
+        />
+        <Route
+          path="/pods/:pod/entries/:id"
+          element={
+            <EntryScreen titles={titles} held={tables} engine={engine} />
+          }
+        />
+        <Route
+          path="/pods/:pod/trend"
+          element={<TrendScreen titles={titles} engine={engine} />}
+        />
+        <Route
+          path="/pods/:pod/classes"
+          element={<ClassesScreen titles={titles} />}
+        />
+        <Route
+          path="/pods/:pod/panel"
+          element={<PanelScreen titles={titles} />}
         />
         <Route path="*" element={<NotPorted />} />
       </Routes>
