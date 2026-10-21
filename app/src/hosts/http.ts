@@ -19,6 +19,13 @@ const api: PodApi = {
   answers: (input) => as<"answers">(remote.answers(input)),
   said: (input) => as<"said">(remote.said(input)),
   makePod: (input) => as<"makePod">(remote.makePod(input)),
+  table: (input) => as<"table">(remote.table(input)),
+  checkTables: (input) => as<"checkTables">(remote.checkTables(input)),
+  waitingWords: (input) => as<"waitingWords">(remote.waitingWords(input)),
+  confirmWords: (input) => as<"confirmWords">(remote.confirmWords(input)),
+  unlock: (input) => as<"unlock">(remote.unlock(input)),
+  deleteAll: (input) => as<"deleteAll">(remote.deleteAll(input)),
+  resetAll: (input) => as<"resetAll">(remote.resetAll(input)),
 };
 
 const { dataset } = document.body;
@@ -31,6 +38,7 @@ export const host: Host = {
     runtime: dataset.runtime ?? "",
   },
   people: async () => [],
+  samples: [],
   firstVisit: async () => undefined,
   engine: async () => undefined,
   tables: async () => undefined,

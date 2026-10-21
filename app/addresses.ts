@@ -40,7 +40,29 @@ export function addresses(base = "/") {
       `${pod(name)}hospitals${query({ q })}`,
     table: (id?: string, asked: TableQuery = {}) =>
       `${base}tables/${id === undefined ? "" : `${encodeURIComponent(id)}/`}${query({ ...asked })}`,
+    words: (name: string) =>
+      `${base}encrypted-pods/${encodeURIComponent(name)}`,
   };
 }
 
 export type Addresses = ReturnType<typeof addresses>;
+
+/** The first path segments of the screens; any other path under the base is a file or one the server answers itself. */
+const SCREENS = /^(pods|tables|encrypted-pods)(\/|$)/;
+
+/**
+ * Whether a click on `link` moves the app to `to` without leaving the page: an address of one of its screens under
+ * `base`, on `from`'s origin, and not a download, a link that opens another window, or a file (`signed-in.html`, a
+ * `.json`) or a route (`/api/…`, `/callback`) the server answers, all of which the browser follows.
+ */
+export function movesInPlace(
+  link: { readonly target: string; readonly download: boolean },
+  to: URL,
+  from: URL,
+  base: string,
+): boolean {
+  if (link.download || (link.target !== "" && link.target !== "_self"))
+    return false;
+  if (to.origin !== from.origin || !to.pathname.startsWith(base)) return false;
+  return SCREENS.test(to.pathname.slice(base.length)) || to.pathname === base;
+}

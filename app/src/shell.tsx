@@ -1,11 +1,22 @@
 // What every screen sits in: the title bar with its File and Help menus, the pods and the reference tables down the
 // side, the screen in `main`, and the line that says what the page is doing.
 import { useEffect, type ReactNode } from "react";
-import { personName, sourcesOf, tableId, type Series } from "../said.ts";
-import { useAddress } from "./address.tsx";
-import type { About } from "./api.tsx";
+import {
+  checkedNote,
+  didNote,
+  personName,
+  sourcesOf,
+  tableId,
+  type Person,
+  type Series,
+} from "../said.ts";
+import { useActions } from "./actions.tsx";
+import { ROUTED, useAddress } from "./address.tsx";
+import { useHost, type About } from "./api.tsx";
 import { useSaying } from "./doing.ts";
+import { NewPod } from "./newpod.tsx";
 import { Box, Pending, PostButton } from "./parts.tsx";
+import { currentSource } from "./tables.tsx";
 
 /** What the reference tables down the side are: the series the app holds, or that they are still being read or failed. */
 export interface TablesHeld {
@@ -65,6 +76,27 @@ function Menu({ name, items }: { name: string; items: [string, string][] }) {
 
 /** File's two items each open a box asking to confirm; Help, About says what the app is and what it runs on. */
 function MenuBoxes({ about }: { about: About }) {
+  const { api } = useHost();
+  const { act, refreshPods } = useActions();
+  const deleteAll = () =>
+    act(async (go) => {
+      const { deleted } = await api.deleteAll().finally(refreshPods);
+      go(
+        ROUTED.home,
+        didNote(new URLSearchParams({ deleted: String(deleted.length) }), []),
+      );
+    }, "Deleting all data…");
+  const resetAll = () =>
+    act(async (go) => {
+      const { pods } = await api.resetAll().finally(refreshPods);
+      const [first] = pods;
+      go(
+        first === undefined ? ROUTED.home : ROUTED.pod(first),
+        pods.length === 0
+          ? undefined
+          : didNote(new URLSearchParams("reset"), pods),
+      );
+    }, "Resetting all data…");
   return (
     <>
       <Box id="delete-all" heading="Delete all data?">
@@ -73,6 +105,7 @@ function MenuBoxes({ about }: { about: About }) {
           action="delete-all"
           className="warm"
           doing="Deleting all data…"
+          onPost={deleteAll}
         >
           Delete all data
         </PostButton>
@@ -86,6 +119,7 @@ function MenuBoxes({ about }: { about: About }) {
           action="reset-all"
           className="warm"
           doing="Resetting all data…"
+          onPost={resetAll}
         >
           Reset all data
         </PostButton>
@@ -107,7 +141,7 @@ function MenuBoxes({ about }: { about: About }) {
 }
 
 /** The reference tables under the pods: each source the app holds, the one shown marked, and Check now. */
-function TablesNav({
+export function TablesNav({
   tables,
   current,
 }: {
@@ -115,7 +149,15 @@ function TablesNav({
   current?: string;
 }) {
   const address = useAddress();
+  const { api } = useHost();
+  const { act, heldNow } = useActions();
   const sources = sourcesOf(tables.held);
+  const checkNow = () =>
+    act(async (go) => {
+      const { checked, held } = await api.checkTables();
+      heldNow(held);
+      go(ROUTED.table(), checkedNote(checked, held));
+    }, "Checking the feeds…");
   return (
     <section className="tables" aria-label="Reference tables">
       <h2>Reference tables</h2>
@@ -147,6 +189,7 @@ function TablesNav({
         action="check-tables"
         className="quiet wide"
         doing="Checking the feeds…"
+        onPost={checkNow}
       >
         Check now
       </PostButton>
@@ -165,20 +208,32 @@ function Doing() {
   );
 }
 
-/** The page around a screen: `pods` by name, the one shown `current`, with the titles they were made under. */
+/**
+ * The page around a screen: `pods` by name, the one shown `current`, with the titles they were made under; `table`,
+ * when the screen shown is a reference table's, its id in the address (empty for the first source); `note` above the
+ * screen when a step left one; `people` and `samples` for the new-pod box.
+ */
 export function Layout({
   pods,
   titles,
   current,
+  table,
   tables,
   about,
+  people,
+  samples,
+  note,
   children,
 }: {
   pods: readonly string[];
   titles: ReadonlyMap<string, string>;
   current?: string;
+  table?: string;
   tables: TablesHeld;
   about: About;
+  people: readonly Person[];
+  samples: readonly string[];
+  note?: string;
   children: ReactNode;
 }) {
   const address = useAddress();
@@ -217,10 +272,26 @@ export function Layout({
           <a className="button wide" href="#new-pod">
             + New pod
           </a>
-          <TablesNav tables={tables} />
+          <TablesNav
+            tables={tables}
+            current={
+              table === undefined
+                ? undefined
+                : currentSource(tables.held, table === "" ? undefined : table)
+                    ?.iri
+            }
+          />
         </aside>
-        <main>{children}</main>
+        <main>
+          {note !== undefined && (
+            <p className="note" role="status">
+              {note}
+            </p>
+          )}
+          {children}
+        </main>
       </div>
+      <NewPod people={people} pods={pods} samples={samples} />
       <MenuBoxes about={about} />
       <Doing />
     </>
