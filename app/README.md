@@ -162,17 +162,21 @@ script goes after `--`, or npm keeps it for itself.
 Every file of the app is TypeScript: `.tsx` for the pages, `.ts` for the rest,
 which Node runs as it is.
 
-- `index.html`, `src/`: the app, in React, routed by React Router and built by
-  Vite (`vite.config.ts`, with `vite/cascade.ts`, which adds what each target
-  carries beside its bundle). `src/App.tsx` holds the routes, and each screen
-  has its file: `pod.tsx`, `entry.tsx`, `trend.tsx`, `classes.tsx`,
-  `panel.tsx`, `tables.tsx`, `hospitals.tsx`, `newpod.tsx`; `AGENTS.md` says
-  how to add one. The look is Tailwind 4: utilities on the elements, the
-  colours and their dark values in `src/style.css`. A screen reads the pods through
-  PodApi, `usePodApi()` of `src/api.tsx`, from the host the build chose: on
-  Node `src/hosts/http.ts`, which calls the server's `/api/` through Hono's
-  typed client, and in a browser `src/hosts/browser.ts`, which runs
-  `pod-api.ts` in the page. Under the pods, the sidebar lists
+- `index.html`, `src/`: the app, in React, routed by React Router in data
+  mode and built by Vite (`vite.config.ts`, with `vite/cascade.ts`, which adds
+  what each target carries beside its bundle). `src/App.tsx` holds the routes,
+  and each screen has its file: `pod.tsx`, `entry.tsx`, `trend.tsx`,
+  `classes.tsx`, `panel.tsx`, `tables.tsx`, `hospitals.tsx`, `newpod.tsx`;
+  `AGENTS.md` says how to add one. The look is Tailwind 4: utilities on the
+  elements, the colours and their dark values in `src/style.css`. A screen
+  reads in its route's loader and writes in its route's action (a form that
+  posts a step, `src/actions.tsx`), through PodApi from the host the build
+  chose: on Node `src/hosts/http.ts`, which calls the server's `/api/` through
+  Hono's typed client, and in a browser `src/hosts/browser.ts`, which runs
+  `pod-api.ts` in the page. A step the rules refuse is drawn as "Not done", with
+  why. The page's state is on its body, `data-state`: `opening`, `busy` while
+  the router reads or a step runs, `ready` once what it read is drawn, and
+  `error`, with `data-error` saying why. Under the pods, the sidebar lists
   the reference tables the pods are matched with; `/tables/<id>/` shows one
   with a search, and Check now reads their feeds again.
 - `said.ts`: what the pages say, as plain functions with no imports, from a

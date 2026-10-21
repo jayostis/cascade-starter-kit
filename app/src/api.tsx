@@ -221,9 +221,6 @@ export function useHost(): Host {
   return host;
 }
 
-/** PodApi, as the host gives it. */
-export const usePodApi = (): PodApi => useHost().api;
-
 /** An error PodApi threw for an input the rules refused, told by its name: `Refusal`, or `Unopened` with its `outcome`. */
 export const isRefusal = (error: unknown): error is Error =>
   error instanceof Error &&

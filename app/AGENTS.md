@@ -40,31 +40,65 @@ app has two targets:
   plugin copies beside the bundle with the demo hospitals' service worker, and
   the pods are kept in the browser's storage. It has no chat.
 
-`src/main.tsx` picks the host by the build's mode, and every screen reads
-through `usePodApi()` of `src/api.tsx`, knowing neither. The screens are in
-`src/`: `App.tsx` (the routes, and what the shell holds), `shell.tsx` (the title
-bar, the sidebar and the boxes), `pod.tsx` (a pod's page), `entry.tsx`,
-`trend.tsx`, `classes.tsx`, `panel.tsx`, `tables.tsx`, `hospitals.tsx`
-(bringing in a record, the world's date) and `newpod.tsx` (a new pod, and an
-encrypted one's six words), with `parts.tsx`, `chart.tsx`, `screen.tsx`,
-`actions.tsx`, `doing.ts`, `look.ts` and `style.css`. What they say comes from `said.ts`:
-plain functions with no imports, from a pod's question rows to what a page
-says. `addresses.ts` makes every address; a screen never builds one. Rewrite
-any of it as you like.
+`src/main.tsx` picks the host by the build's mode and makes the router, React
+Router in data mode (`createBrowserRouter`, `<RouterProvider>`), from the
+routes of `App.tsx`. A screen reads in its route's `loader` and writes in its
+route's `action`, both over the host's PodApi, knowing neither host. The
+screens are in `src/`: `App.tsx` (the routes, and the shell around every
+screen), `shell.tsx` (the title bar, the sidebar and the boxes), `pod.tsx` (a
+pod's page), `entry.tsx`, `trend.tsx`, `classes.tsx`, `panel.tsx`,
+`tables.tsx`, `hospitals.tsx` (bringing in a record, the world's date) and
+`newpod.tsx` (a new pod, and an encrypted one's six words), with `parts.tsx`,
+`chart.tsx`, `screen.tsx`, `actions.tsx`, `doing.ts`, `engine.ts`, `look.ts`
+and `style.css`. What they say comes from `said.ts`: plain functions with no
+imports, from a pod's question rows to what a page says. `addresses.ts` makes
+every address; a screen never builds one. Rewrite any of it as you like.
+
+**Reading.** Each screen's file has its loader (`podLoader`, `entryLoader`, …),
+wrapped in `screen(…)` of `screen.tsx`, and its `…Screen`, which draws
+`useRead()`, what the loader read, through a `…Page` that takes it as props.
+The loader returns the screen's `value` and the tab's `title`; a `Refusal` it
+meets is the screen's own "Not found", and an encrypted pod that will not open
+its unlock screen, drawn at the address asked for. What the tables say comes
+once the engine has warmed (`engine.ts`): while it warms, a loader hands the
+screen a promise for it, which `useLate()` draws once it settles, the part
+still to come marked `aria-busy` (`Pending` of `parts.tsx`) meanwhile.
+
+**Writing.** Every route has one action, `steps(host)` of `actions.tsx`, and
+a step is a form posted to the address shown: `PostButton` of `parts.tsx`, or
+a `StepForm` with `StepFields`, whose `intent` names the step and `doing` says
+what the page is doing while it runs. A step that moves the app returns the
+router's `redirect` (with `leaveNote` for a note above the next screen); one
+that stays returns nothing, and the router reads the screen again. A `Refusal`
+is returned as data, `{ refused }`, which the screen draws as "Not done" with
+its sentence, never as something gone wrong. A model's tools move and write
+through the router too (`useToolSteps`).
+
+**What the body says.** `body[data-state]` is written by `doing.ts` from the
+router: `watch(router)` and the component `PageState`. It is `opening` until
+the first screen is drawn, `busy` (every button off, the doing line saying
+what) from the moment the router starts to read or run anything, and while a
+read says it is still under way (a connection followed), `ready` in the commit
+that draws what the router read, and `error`, with why in `data-error`, when a
+read or a step went wrong, a part that fills late among them. After a step,
+`ready` waits as well for the screen's `aria-busy` parts, so that nothing a
+step brought is drawn after it; after a plain move they fill in after it.
+Three other places write it, each for a moment the router does not see:
+`main.tsx` (an address outside the base, an app that could not start), the
+browser host's `busy("Waiting for the pods to close…")` during a deletion,
+and `Screen`'s `ready()` just before it leaves for a hospital's sign-in page.
+`data-trace` keeps the last eight changes of state, each with where and who
+asked: a test that fails prints it.
 
 To add a screen:
 
 1. Give it an address in `addresses.ts`. A path that starts with none of
    `pods/`, `tables/` and `encrypted-pods/` also goes in `SCREENS` there, or
    a link to it loads the page again instead of moving in place.
-2. Write it in a file of `src/`: a `…Screen` that reads through
-   `useLoaded(at, load, titleOf)` of `screen.tsx`, which says the page is busy,
-   sets the tab's title and says `ready` once the answer is drawn, and a
-   `…Page` that draws what was read. A part still to come is `aria-busy`
-   (`Pending` of `parts.tsx`) until it is in: `ready` with no busy part means
-   drawn for good. Anything that moves the app or writes goes through
-   `useActions().act` of `actions.tsx`.
-3. Give it a route in `App.tsx`.
+2. Write it in a file of `src/`: its loader in `screen(…)`, its `…Screen` and
+   its `…Page`, as above.
+3. Give it a route in `App.tsx`, `leaf(path, loader, Screen)`, which gives it
+   the steps and the shell. A step of its own is one more entry of `steps`.
 4. An operation of PodApi it needs that the screens do not call yet: its line
    in `PodApi` of `src/api.tsx`. A new operation is a function of
    `podApi(host)` in `pod-api.ts`, its input's schema in `server/inputs.ts` and
@@ -297,11 +331,12 @@ On both targets the page offers a browser agent the same tools on every screen, 
 `document.modelContext` where it has one (`useTools` in `src/tools.ts`, mounted once in `App.tsx`; with none, the page
 offers nothing). The tools are the whole of `TOOLS`, every tool by its tier:
 
-- **free** tools run at once: the reads, and the `open_*` tools, which move the app in place through a step, as a click
-  does.
+- **free** tools run at once: the reads, and the `open_*` tools, which move the app in place through the router, as a
+  click does, and answer once the screen they open is drawn.
 - **ask** tools (`make_pod`, `check_tables`, `set_world_date`) show the page's own box (`useConfirm` in
-  `src/confirm.tsx`), one at a time, which the chat's writes use too when it is added. Allow runs the write; Cancel, or leaving the pod,
-  rejects the call with `Refusal` and the sentence "The person said no", and writes nothing.
+  `src/confirm.tsx`), one at a time, which the chat's writes use too when it is added. Allow runs the write as the
+  route's action, which reads the screen again; Cancel, or leaving the pod, answers `{ refused: "The person said no" }`
+  and writes nothing.
 - the **never** list (`NEVER` in `tools.ts`) is no tool in any door.
 
 With a pod shown, a tool of one pod takes it as given; on a screen with none (the tables, a locked pod) it takes the

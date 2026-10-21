@@ -1,145 +1,64 @@
-// The app: the shell around the screen the address names. It reads the pods there are and, once the first screen is
-// drawn, warms the engine in the background; `data-engine` on the body says when it is ready, and the screen then
-// fills in what the tables say.
+// The app: its routes, each screen's loader and the one action every route has, and the shell around the screen the
+// address names. The root route reads the pods there are and the reference tables held, the tables once the engine,
+// warmed in the background after the first screen is drawn, can say.
 import {
   Suspense,
-  useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
   useState,
+  type ComponentType,
 } from "react";
-import { flushSync } from "react-dom";
 import {
-  Navigate,
-  Route,
-  Routes,
+  Outlet,
+  replace,
   useLocation,
-  useNavigate,
-  useParams,
+  useRouteLoaderData,
+  type LoaderFunctionArgs,
+  type RouteObject,
+  type ShouldRevalidateFunction,
 } from "react-router";
-import {
-  BRINGING,
-  maps,
-  personName,
-  slug,
-  type Abouts,
-  type Person,
-  type VariantsSaid,
-} from "../said.ts";
-import { Notice, ActionsProvider, type Actions } from "./actions.tsx";
-import {
-  byStep,
-  goState,
-  ROUTED,
-  useGeneration,
-  useInPlace,
-  useOpening,
-} from "./address.tsx";
-import {
-  HostProvider,
-  isRefusal,
-  useHost,
-  type ChatModel,
-  type ConnectionNow,
-  type Host,
-  type PodApi,
-  type PodListed,
-} from "./api.tsx";
+import type { Person } from "../said.ts";
+import { steps, type Stayed } from "./actions.tsx";
+import { ROUTED, useInPlace } from "./address.tsx";
+import { useHost, type ChatModel, type Host } from "./api.tsx";
 import { AskProvider } from "./ask.tsx";
-import { ClassesScreen } from "./classes.tsx";
+import { ClassesScreen, classesLoader } from "./classes.tsx";
 import { ConfirmProvider } from "./confirm.tsx";
+import { PageState } from "./doing.ts";
+import { warming, whenNamed } from "./engine.ts";
+import { EntryScreen, entryLoader } from "./entry.tsx";
+import { HospitalsScreen, hospitalsLoader } from "./hospitals.tsx";
 import { button, lead } from "./look.ts";
+import { WordsScreen, wordsLoader } from "./newpod.tsx";
+import { PanelScreen, panelLoader } from "./panel.tsx";
+import { closeBox } from "./parts.tsx";
+import { PodScreen, podLoader } from "./pod.tsx";
 import {
-  busy,
-  failed,
-  firstReady,
-  flight,
-  isBusy,
-  moved,
-  ready,
-  stayed,
-  type Outcome,
-} from "./doing.ts";
-import { EntryScreen } from "./entry.tsx";
-import { HospitalsScreen } from "./hospitals.tsx";
-import { Unlock, WordsScreen } from "./newpod.tsx";
-import { PanelScreen } from "./panel.tsx";
-import { PodPage, type PodShown } from "./pod.tsx";
-import { NotFound, Wrong } from "./screen.tsx";
+  Broken,
+  Screen,
+  screen,
+  useApp,
+  useLate,
+  type AppRead,
+  type Read,
+} from "./screen.tsx";
 import { Layout, type TablesHeld } from "./shell.tsx";
-import { TableScreen } from "./tables.tsx";
+import { TableScreen, tableLoader, type TableAsked } from "./tables.tsx";
 import { WebTools } from "./tools.ts";
-import { TrendScreen } from "./trend.tsx";
+import { TrendScreen, trendLoader } from "./trend.tsx";
 
-type Engine = "waiting" | "ready" | "failed";
-
-/** What the tables say of the pod's codes and variants: nothing while the engine warms, no names once it cannot say. */
-async function saidOf(
-  api: PodApi,
-  pod: string,
-  engine: Engine,
-): Promise<Pick<PodShown, "about" | "said">> {
-  if (engine !== "ready")
-    return engine === "failed" ? { about: new Map() } : {};
-  try {
-    const { about, said } = maps(await api.said({ pod })) as {
-      about?: Abouts;
-      said?: VariantsSaid;
-    };
-    return { about: about ?? new Map(), ...(said !== undefined && { said }) };
-  } catch {
-    return { about: new Map() };
-  }
-}
-
-/** The pod's connection numbered `n` in the address, as `connection` gives it; none for no number, or one it has not. */
-async function connectionAt(
-  api: PodApi,
-  pod: string,
-  n: string | null,
-): Promise<ConnectionNow | undefined> {
-  if (n === null || !/^\d+$/.test(n)) return undefined;
-  try {
-    return await api.connection({ pod, connection: Number(n) });
-  } catch (error) {
-    if (error instanceof Error && error.name === "Refusal") return undefined;
-    throw error;
-  }
-}
-
-/** The old address of a pod's connection, which goes to the pod's page with the connection's box over it. */
-function ConnectionAddress() {
-  const { pod = "", n = "" } = useParams();
-  return (
-    <Navigate
-      to={/^\d+$/.test(n) ? ROUTED.connection(pod, Number(n)) : ROUTED.pod(pod)}
-      replace
-    />
-  );
-}
-
-function Message({ heading, children }: { heading: string; children: string }) {
-  const generation = useGeneration();
-  useEffect(ready, [generation]);
+function NoPage() {
   return (
     <>
-      <h1>{heading}</h1>
-      <p>{children}</p>
+      <h1>Not found</h1>
+      <p>This app has no page at this address.</p>
     </>
   );
 }
 
-function NoPage() {
-  return (
-    <Message heading="Not found">This app has no page at this address.</Message>
-  );
-}
-
 function NoPods() {
-  const generation = useGeneration();
-  useEffect(ready, [generation]);
   return (
     <>
       <h1>No pods yet</h1>
@@ -155,424 +74,156 @@ function NoPods() {
   );
 }
 
-interface Locked {
-  readonly at: string;
-  readonly page: "locked";
-  /** How the pod last failed to open. */
-  readonly outcome: string;
-}
-
-type Screen = (
-  | {
-      readonly at: string;
-      readonly page: PodShown;
-      /** Whether a step's move read it, which then says it is drawn only once the tables have named it. */
-      readonly stepped?: boolean;
-    }
-  | { readonly at: string; readonly page: "unknown" }
-  | Locked
-  | { readonly at: string; readonly page: { readonly wrong: string } }
-) & {
-  /** The step's move it was read for, when it was read for one. */
-  readonly generation?: string;
+/**
+ * Whether a route reads again: never for a move between a box's address and its screen's, nor for a step whose
+ * action stayed to say something (a refusal, a hospital's page to leave for, the six words' or the unlock's outcome);
+ * else as the router does, after every other step and for a move to another address.
+ */
+const reread: ShouldRevalidateFunction = ({
+  currentUrl,
+  nextUrl,
+  formMethod,
+  actionResult,
+  defaultShouldRevalidate,
+}) => {
+  if (
+    formMethod === undefined &&
+    currentUrl.pathname === nextUrl.pathname &&
+    currentUrl.search === nextUrl.search &&
+    currentUrl.hash !== nextUrl.hash
+  )
+    return false;
+  const said = (actionResult ?? {}) as Stayed;
+  if (
+    [said.refused, said.leave, said.problem, said.unopened].some(
+      (each) => each !== undefined,
+    )
+  )
+    return false;
+  return defaultShouldRevalidate;
 };
 
-/** The pod the address names, drawn from its answers, then filled in once the engine can say what the tables say. */
-function PodScreen({
-  pods,
-  titles,
-  people,
-  held,
-  engine,
-}: {
-  pods: readonly string[];
-  titles: ReadonlyMap<string, string>;
-  people: readonly Person[];
-  held: TablesHeld;
-  engine: Engine;
-}) {
-  const { api } = useHost();
-  const navigate = useNavigate();
-  const { pod = "" } = useParams();
-  const { pathname, search, state } = useLocation();
-  const at = pathname + search;
-  const generation = useGeneration();
-  const stepped = byStep(state);
-  const [shown, setShown] = useState<Screen>();
-  const known = pods.includes(pod);
-  useEffect(() => {
-    let live = true;
-    (async () => {
-      if (!known) return { at, page: "unknown" as const };
-      const { locked } = await api.pod({ pod });
-      if (locked !== undefined)
-        return { at, page: "locked" as const, outcome: locked };
-      const [answered, { asOf }, connection] = await Promise.all([
-        api.answers({ pod }),
-        api.hospitals({}),
-        connectionAt(api, pod, new URLSearchParams(search).get("connection")),
-      ]);
-      return {
-        at,
-        stepped,
-        page: {
-          pod,
-          ...answered,
-          ...(asOf !== undefined && { asOf }),
-          ...(connection?.broughtIn
-            ? { from: connection.row.name }
-            : connection !== undefined && { connection }),
-          ...(await saidOf(api, pod, engine)),
-        },
-      };
-    })().then(
-      (screen: Screen) => live && setShown({ ...screen, generation }),
-      (error: unknown) =>
-        live &&
-        setShown({
-          at,
-          generation,
-          page: {
-            wrong: error instanceof Error ? error.message : String(error),
-          },
-        }),
-    );
-    return () => {
-      live = false;
-    };
-  }, [api, at, pod, known, generation]);
-  const page = shown?.page;
-  const unnamed =
-    typeof page === "object" && "pod" in page && page.about === undefined
-      ? page.answers
-      : undefined;
-  const unnamedPod =
-    typeof page === "object" && "pod" in page ? page.pod : undefined;
-  useEffect(() => {
-    if (
-      engine === "waiting" ||
-      unnamed === undefined ||
-      unnamedPod === undefined
-    )
-      return;
-    let live = true;
-    void saidOf(api, unnamedPod, engine).then((said) => {
-      if (live)
-        setShown((now) =>
-          typeof now?.page === "object" &&
-          "pod" in now.page &&
-          now.page.answers === unnamed
-            ? { ...now, page: { ...now.page, ...said } }
-            : now,
-        );
-    });
-    return () => {
-      live = false;
-    };
-  }, [api, engine, unnamed, unnamedPod]);
-  const following =
-    typeof page === "object" &&
-    !("wrong" in page) &&
-    page.connection?.settled === false
-      ? page.connection
-      : undefined;
-  const followed = following?.n;
-  const tracked = useRef<number>(undefined);
-  const looping = useRef<AbortController>(undefined);
-  const follow = useCallback(
-    (n: number) => {
-      if (tracked.current === n) return;
-      tracked.current = n;
-      const { signal } = (looping.current = new AbortController());
-      void (async () => {
-        for (let wait: "change" | undefined; ; wait = "change") {
-          const now = await api.connection({ pod, connection: n, wait });
-          if (signal.aborted) return;
-          if (now.broughtIn) {
-            tracked.current = undefined;
-            return navigate(at, { replace: true, state: goState() });
-          }
-          flushSync(() =>
-            setShown((was) =>
-              typeof was?.page === "object" &&
-              "pod" in was.page &&
-              was.page.connection?.n === n
-                ? { ...was, page: { ...was.page, connection: now } }
-                : was,
-            ),
-          );
-          if (now.settled) {
-            tracked.current = undefined;
-            return;
-          }
-        }
-      })().catch(
-        (error: unknown) =>
-          !signal.aborted &&
-          setShown({
-            at,
-            page: {
-              wrong: error instanceof Error ? error.message : String(error),
-            },
-          }),
-      );
-    },
-    [api, at, navigate, pod],
-  );
-  useEffect(() => {
-    if (followed !== undefined) follow(followed);
-  }, [follow, followed]);
-  useEffect(
-    () => () => {
-      tracked.current = undefined;
-      looping.current?.abort();
-    },
-    [at],
-  );
-  useEffect(() => {
-    if (shown?.at !== at) return;
-    if (typeof page === "object" && "wrong" in page)
-      return failed(`the pod's page could not be read: ${page.wrong}`);
-    if (following !== undefined) {
-      if (!isBusy())
-        busy(following.step === "bringing in" ? BRINGING : "Signing in…");
-      return;
-    }
-    if (
-      "stepped" in shown &&
-      shown.stepped &&
-      typeof page === "object" &&
-      page.about === undefined
-    )
-      return;
-    const title =
-      typeof page === "object"
-        ? personName(page.pod, titles)
-        : page === "locked"
-          ? "Open this pod"
-          : "Not found";
-    document.title = `${title} · Cascade`;
-    if (typeof page === "object" && page.connection?.retry)
-      return failed(
-        `the connection failed: ${page.connection.failed ?? page.connection.step}`,
-      );
-    ready();
-  }, [shown, at, page, titles, following]);
-  if (shown === undefined) return null;
-  if (shown.page === "locked")
-    return <Unlock pod={pod} titles={titles} outcome={shown.outcome} />;
-  const screen = shown.page;
-  if (screen === "unknown")
-    return <NotFound said={`This app keeps no pod named ${pod}.`} />;
-  if ("wrong" in screen) return <Wrong said={screen.wrong} />;
-  return (
-    <PodPage
-      shown={screen}
-      titles={titles}
-      person={people.find((each) => slug(each.name) === screen.pod)}
-      held={held.held}
-      follow={follow}
-    />
-  );
-}
-
-/** PodApi, with a pod that will not open drawing its unlock screen where it was asked for. */
-export function locking(
-  api: PodApi,
-  locked: (pod: string, outcome: string) => void,
-): PodApi {
-  type Operation = (input?: { pod?: string }) => Promise<unknown>;
-  return Object.fromEntries(
-    (Object.entries(api) as [string, Operation][]).map(([name, run]) => [
-      name,
-      name === "unlock"
-        ? run
-        : async (input?: { pod?: string }) => {
-            try {
-              return await run(input);
-            } catch (error) {
-              if (
-                error instanceof Error &&
-                error.name === "Unopened" &&
-                input?.pod !== undefined
-              )
-                locked(
-                  input.pod,
-                  (error as Error & { outcome?: string }).outcome ??
-                    "secret needed",
-                );
-              throw error;
-            }
-          },
-    ]),
-  ) as unknown as PodApi;
-}
-
-/**
- * Closes the box open by the address's hash, as its close link does, so that what a step shows is not hidden behind it.
- * A box the browser opened stays open after a move that drops the hash from the address, so it is closed too.
- */
-function closeBox() {
-  if (location.hash === "" && document.querySelector(":target") === null)
-    return;
-  location.replace("#");
-  history.replaceState(null, "", location.pathname + location.search);
-}
-
-/** What a step left for the address `at` to say: a note above its screen, or why it did not go through. */
-interface Left {
-  readonly at: string;
-}
-
-export function App() {
-  const host = useHost();
+/** The routes of the app over `host`: the root's shell around every screen, each with its loader and the steps. */
+export function routes(host: Host): RouteObject[] {
   const { api } = host;
-  const navigate = useNavigate();
-  const [pods, setPods] = useState<PodListed[]>();
-  const [people, setPeople] = useState<Person[]>([]);
-  const [tables, setTables] = useState<TablesHeld>({ held: [] });
-  const [engine, setEngine] = useState<Engine>("waiting");
-  const [note, setNote] = useState<Left & { readonly text: string }>();
-  const [outcome, setOutcome] = useState<Left & Outcome & { n: number }>();
-  const [locked, setLocked] = useState<
-    Left & { pod: string; outcome: string }
-  >();
-  const { pathname, search, hash } = useLocation();
-  const here = pathname + search;
-  const hereRef = useRef(here);
-  useLayoutEffect(() => {
-    hereRef.current = here;
+  let opened: Promise<Person[]> | undefined;
+  /** The demo people, once the samples a first visit copies are in: read once, before any screen is. */
+  const opening = () =>
+    (opened ??= host.people().then(async (people) => {
+      await host.firstVisit();
+      return people;
+    }));
+  const action = steps(host);
+  const leaf = <T,>(
+    path: string,
+    load: (args: LoaderFunctionArgs) => Promise<Read<T>>,
+    Drawn: ComponentType,
+    id?: string,
+  ): RouteObject => ({
+    ...(id !== undefined && { id }),
+    path,
+    loader: async (args) => {
+      await opening();
+      return load(args);
+    },
+    action,
+    shouldRevalidate: reread,
+    element: (
+      <Screen>
+        <Drawn />
+      </Screen>
+    ),
   });
-  useOpening();
+  const held = async (): Promise<TablesHeld> => {
+    try {
+      const { held, failed } = await api.held();
+      return { held, read: failed === true ? "failed" : "read" };
+    } catch {
+      return { held: [], read: "failed" };
+    }
+  };
+  const home = screen(async () => {
+    const [first] = (await api.pods()).pods;
+    if (first === undefined) return { value: null, title: "No pods yet" };
+    const loading =
+      typeof document !== "undefined" &&
+      document.body.dataset.state === "opening";
+    throw replace(`${ROUTED.pod(first.name)}${loading ? location.hash : ""}`);
+  });
+  return [
+    {
+      id: "root",
+      async loader(): Promise<AppRead> {
+        const people = await opening();
+        const { pods } = await api.pods();
+        const tables = whenNamed(
+          held,
+          { held: [], read: "failed" },
+          "the reference tables",
+        );
+        return { pods, people, held: warming() ? tables : await tables };
+      },
+      shouldRevalidate: reread,
+      element: <Shell />,
+      errorElement: <Broken />,
+      children: [
+        {
+          errorElement: <Broken />,
+          children: [
+            leaf("/", home, NoPods),
+            leaf("pods/:pod", podLoader(api), PodScreen),
+            leaf("pods/:pod/entries/:id", entryLoader(api), EntryScreen),
+            leaf("pods/:pod/trend", trendLoader(api), TrendScreen),
+            leaf("pods/:pod/classes", classesLoader(api), ClassesScreen),
+            leaf("pods/:pod/panel", panelLoader(api), PanelScreen),
+            leaf("pods/:pod/hospitals", hospitalsLoader(api), HospitalsScreen),
+            {
+              path: "pods/:pod/connections/:n",
+              loader({ params: { pod = "", n = "" } }) {
+                throw replace(
+                  /^\d+$/.test(n)
+                    ? ROUTED.connection(pod, Number(n))
+                    : ROUTED.pod(pod),
+                );
+              },
+            },
+            leaf("tables/:id?", tableLoader(api), TableScreen, "table"),
+            leaf("encrypted-pods/:pod", wordsLoader(api), WordsScreen),
+            leaf(
+              "*",
+              screen(async () => ({ value: null, title: "Not found" })),
+              NoPage,
+            ),
+          ],
+        },
+      ],
+    },
+  ];
+}
+
+/** The shell every screen sits in, with what it holds beside the screen: the page's state, the boxes, the tools, the chat. */
+function Shell() {
+  const host = useHost();
+  const { pods, people, titles, held } = useApp();
+  const table = useRouteLoaderData("table") as Read<TableAsked> | undefined;
+  const tables = useLate(held);
+  const { pathname, hash, key } = useLocation();
+  useInPlace();
   const current = /\/pods\/([^/]+)/.exec(pathname)?.[1];
   const onTable = /^\/tables(\/|$)/.test(pathname);
-  const table = /^\/tables\/([^/]+)/.exec(pathname)?.[1];
-  const titles = useMemo(
-    () => new Map((pods ?? []).map(({ name, title }) => [name, title])),
-    [pods],
-  );
-  useEffect(() => {
-    setNote((now) => (now?.at === here ? now : undefined));
-    setOutcome((now) => (now?.at === here ? now : undefined));
-    setLocked((now) => (now?.at === here ? now : undefined));
-  }, [here]);
-  const guarded = useMemo<Host>(
-    () => ({
-      ...host,
-      api: locking(api, (pod, outcome) =>
-        setLocked({ pod, outcome, at: hereRef.current }),
-      ),
-    }),
-    [host, api],
-  );
-  const act = useCallback<Actions["act"]>(
-    (step, doing = "Working…") => {
-      let unopened = false;
-      return flight(
-        async () => {
-          let going = false;
-          try {
-            const go = (to: string, text?: string) => {
-              going = true;
-              const state = goState();
-              const [path = to, hash] = to.split("#");
-              moved(state.go, path);
-              if (hash === undefined || location.hash !== `#${hash}`)
-                closeBox();
-              setLocked(undefined);
-              setNote(text === undefined ? undefined : { text, at: path });
-              navigate(to, { state, replace: path === hereRef.current });
-            };
-            await step(
-              Object.assign(go, {
-                stay: () => {
-                  going = true;
-                  stayed();
-                },
-              }),
-            );
-          } catch (error) {
-            unopened = error instanceof Error && error.name === "Unopened";
-            throw error;
-          }
-          return going;
-        },
-        doing,
-        isRefusal,
-      ).then((left) => {
-        if (left === undefined || unopened) return;
-        closeBox();
-        setOutcome((now) => ({
-          ...left,
-          at: hereRef.current,
-          n: (now?.n ?? 0) + 1,
-        }));
-      });
-    },
-    [navigate],
-  );
-  const refreshPods = useCallback(async () => {
-    const { pods: listed } = await api.pods();
-    setPods((now) =>
-      JSON.stringify(now) === JSON.stringify(listed) ? now : listed,
-    );
-    return listed.map(({ name }) => name);
-  }, [api]);
-  const heldNow = useCallback<Actions["heldNow"]>(
-    (held) => setTables({ held, read: "read" }),
-    [],
-  );
-  const actions = useMemo<Actions>(
-    () => ({ act, refreshPods, heldNow }),
-    [act, refreshPods, heldNow],
-  );
-  useInPlace(
-    useCallback(
-      (to: URL) => {
-        const name = /\/pods\/([^/]+)/.exec(to.pathname)?.[1];
-        return name === undefined
-          ? "Opening…"
-          : `Opening ${personName(decodeURIComponent(name), titles)}'s pod…`;
-      },
-      [titles],
-    ),
-  );
-  const opened = pods !== undefined;
+  const tableId = /^\/tables\/([^/]+)/.exec(pathname)?.[1];
   const told = useRef(false);
   useLayoutEffect(() => {
     // The shell is drawn once the pods are read, after the browser matched `:target`, so a load at `#about` is told
-    // again, once: `location.replace` wipes `history.state`, which a step's move and the router's keys live in.
-    if (!opened || told.current) return;
+    // again, once.
+    if (told.current) return;
     told.current = true;
     if (/^#[^/]+$/.test(location.hash)) location.replace(location.hash);
-  }, [opened]);
-  useEffect(() => {
-    void (async () => {
-      setPeople(await host.people());
-      await host.firstVisit();
-      setPods((await api.pods()).pods);
-    })().catch((error: unknown) => {
-      failed(
-        `the pods could not be listed: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    });
-  }, [api, host]);
-  useEffect(() => {
-    void firstReady
-      .then(() => host.engine())
-      .then(async () => {
-        document.body.dataset.engine = "ready";
-        const { held, failed: unread } = await api.held();
-        setTables({ held, read: unread ? "failed" : "read" });
-        setEngine("ready");
-        await host.tables().catch(() => undefined);
-        document.body.dataset.tables = "ready";
-      })
-      .catch(() => {
-        setTables((now) => ({ ...now, read: now.read ?? "failed" }));
-        setEngine("failed");
-      });
-  }, [api, host]);
+  }, []);
+  useLayoutEffect(() => {
+    const open = document.querySelector(".dialog:target");
+    if (open !== null && `#${open.id}` !== hash) closeBox();
+  }, [key, hash]);
   const [model, setModel] = useState<{ named?: ChatModel }>();
   useEffect(() => {
     void host.chat?.model().then(
@@ -580,130 +231,41 @@ export function App() {
       () => setModel({}),
     );
   }, [host]);
-  const names = useMemo(() => (pods ?? []).map(({ name }) => name), [pods]);
+  const names = useMemo(() => pods.map(({ name }) => name), [pods]);
   const shown = current === undefined ? undefined : decodeURIComponent(current);
   const known =
     shown !== undefined && names.includes(shown) ? shown : undefined;
-  if (pods === undefined) return null;
   const Chat = host.chat?.Window;
   return (
-    <HostProvider value={guarded}>
-      <ActionsProvider value={actions}>
-        <ConfirmProvider>
-          <WebTools pod={known} />
-          <AskProvider value={model?.named !== undefined}>
-            <Layout
-              pods={names}
-              titles={titles}
-              current={
-                current === undefined ? undefined : decodeURIComponent(current)
-              }
-              table={onTable ? decodeURIComponent(table ?? "") : undefined}
-              tables={tables}
-              about={host.about}
-              people={people}
-              samples={host.samples}
-              note={note?.at === here ? note.text : undefined}
-              chat={
-                Chat !== undefined &&
-                model !== undefined && (
-                  <Suspense fallback={null}>
-                    <Chat model={model.named} pod={known ?? ""} />
-                  </Suspense>
-                )
-              }
-            >
-              {outcome?.at === here ? (
-                <Notice
-                  heading={
-                    outcome.refused ? "Not done" : "Something went wrong"
-                  }
-                  wrong={!outcome.refused}
-                  drawn={outcome.n}
-                >
-                  {outcome.said}
-                </Notice>
-              ) : locked?.at === here ? (
-                <Unlock
-                  key={locked.pod}
-                  pod={locked.pod}
-                  titles={titles}
-                  outcome={locked.outcome}
-                />
-              ) : (
-                <Routes>
-                  <Route
-                    path="/"
-                    element={
-                      names[0] === undefined ? (
-                        <NoPods />
-                      ) : (
-                        <Navigate
-                          to={`/pods/${encodeURIComponent(names[0])}/${hash}`}
-                          replace
-                        />
-                      )
-                    }
-                  />
-                  <Route
-                    path="/pods/:pod"
-                    element={
-                      <PodScreen
-                        pods={names}
-                        titles={titles}
-                        people={people}
-                        held={tables}
-                        engine={engine}
-                      />
-                    }
-                  />
-                  <Route
-                    path="/pods/:pod/entries/:id"
-                    element={
-                      <EntryScreen
-                        titles={titles}
-                        held={tables}
-                        engine={engine}
-                      />
-                    }
-                  />
-                  <Route
-                    path="/pods/:pod/trend"
-                    element={<TrendScreen titles={titles} engine={engine} />}
-                  />
-                  <Route
-                    path="/pods/:pod/classes"
-                    element={<ClassesScreen titles={titles} />}
-                  />
-                  <Route
-                    path="/pods/:pod/panel"
-                    element={<PanelScreen titles={titles} />}
-                  />
-                  <Route
-                    path="/pods/:pod/hospitals"
-                    element={
-                      <HospitalsScreen titles={titles} people={people} />
-                    }
-                  />
-                  <Route
-                    path="/pods/:pod/connections/:n"
-                    element={<ConnectionAddress />}
-                  />
-                  <Route
-                    path="/tables/:id?"
-                    element={<TableScreen pods={names} titles={titles} />}
-                  />
-                  <Route
-                    path="/encrypted-pods/:pod"
-                    element={<WordsScreen />}
-                  />
-                  <Route path="*" element={<NoPage />} />
-                </Routes>
-              )}
-            </Layout>
-          </AskProvider>
-        </ConfirmProvider>
-      </ActionsProvider>
-    </HostProvider>
+    <ConfirmProvider>
+      <PageState />
+      <WebTools pod={known} />
+      <AskProvider value={model?.named !== undefined}>
+        <Layout
+          pods={names}
+          titles={titles}
+          current={shown}
+          table={onTable ? decodeURIComponent(tableId ?? "") : undefined}
+          tables={
+            table !== undefined && "value" in table
+              ? { held: table.value.read.held, read: "read" }
+              : (tables ?? { held: [] })
+          }
+          about={host.about}
+          people={people}
+          samples={host.samples}
+          chat={
+            Chat !== undefined &&
+            model !== undefined && (
+              <Suspense fallback={null}>
+                <Chat model={model.named} pod={known ?? ""} />
+              </Suspense>
+            )
+          }
+        >
+          <Outlet />
+        </Layout>
+      </AskProvider>
+    </ConfirmProvider>
   );
 }

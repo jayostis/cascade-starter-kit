@@ -1,13 +1,13 @@
 // The tools the chat's model calls that the page runs itself: `PAGE_TOOLS` over the host's PodApi. A navigation moves
-// the app in place; a write waits on the person's Allow, then the screen is drawn again.
+// the app in place through the router; a write waits on the person's Allow, then runs as the route's action, which
+// reads the screen again.
 import { useCallback, useLayoutEffect, useRef } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { PAGE_TOOLS, type PageDoor, type ToolInput } from "../../said.ts";
-import { useActions } from "../actions.tsx";
-import { goState, routed, useAddress } from "../address.tsx";
+import { useToolSteps } from "../actions.tsx";
+import { routed, useAddress } from "../address.tsx";
 import { isRefusal, useHost } from "../api.tsx";
 import { ACTIONS, SAID_NO, useConfirm } from "../confirm.tsx";
-import { busy, ready } from "../doing.ts";
 
 /** A tool's answer to the model: its output, or why it gave none. */
 export type Answer =
@@ -19,7 +19,7 @@ export type Answer =
  */
 export function usePageTools(opened: (address: string) => void) {
   const { api } = useHost();
-  const { refreshPods, heldNow } = useActions();
+  const { write } = useToolSteps();
   const confirm = useConfirm();
   const address = useAddress();
   const navigate = useNavigate();
@@ -39,7 +39,6 @@ export function usePageTools(opened: (address: string) => void) {
           const routedTo = routed(new URL(to, location.href));
           if (routedTo === here) return;
           opened(to);
-          busy("Opening…");
           void navigate(routedTo);
         },
       };
@@ -48,19 +47,7 @@ export function usePageTools(opened: (address: string) => void) {
           return { output: await tool.run(api, input, door) };
         if (!(await confirm({ action: ACTIONS[name] ?? name, input })))
           return { errorText: SAID_NO };
-        busy("Working…");
-        try {
-          const output = await tool.run(api, input, door);
-          if (name === "make_pod") await refreshPods();
-          if (name === "check_tables")
-            heldNow((output as { held: Parameters<typeof heldNow>[0] }).held);
-          const { navigate, here } = latest.current;
-          void navigate(here, { state: goState(), replace: true });
-          return { output };
-        } catch (error) {
-          ready();
-          throw error;
-        }
+        return { output: await write(name, input) };
       } catch (error) {
         if (isRefusal(error)) return { errorText: error.message };
         console.error(error);
@@ -69,6 +56,6 @@ export function usePageTools(opened: (address: string) => void) {
         };
       }
     },
-    [api, address, confirm, refreshPods, heldNow],
+    [api, address, confirm, write],
   );
 }

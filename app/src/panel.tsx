@@ -2,7 +2,7 @@
 // pod's results of it, newest first, a nested panel's tests under it, which required tests the pod has no result for,
 // and which version of the tables says so. It never says a result was drawn as part of the panel: only that LOINC
 // lists the test in it.
-import { useLocation, useParams, useSearchParams } from "react-router";
+import type { LoaderFunctionArgs } from "react-router";
 import {
   type Abouts,
   compare,
@@ -19,8 +19,9 @@ import {
   versionName,
 } from "../said.ts";
 import { useAddress } from "./address.tsx";
+import type { PodApi } from "./api.tsx";
 import { card, lead, muted, tagWarm } from "./look.ts";
-import { Back, NotFound, sourceOf, useLoaded, Wrong } from "./screen.tsx";
+import { Back, screen, sourceOf, useApp, useRead } from "./screen.tsx";
 
 /** What the page is drawn from: PodApi's `panel`, its pairs as `Map`s again. */
 interface PanelRead {
@@ -232,27 +233,22 @@ export function PanelPage({
   );
 }
 
-/** The pod's results in the LOINC panel the address's `panel` names. */
-export function PanelScreen({
-  titles,
-}: {
-  titles: ReadonlyMap<string, string>;
-}) {
-  const { pod = "" } = useParams();
-  const { pathname, search } = useLocation();
-  const [asked] = useSearchParams();
-  const panel = asked.get("panel") ?? undefined;
-  const loaded = useLoaded<PanelRead>(
-    pathname + search,
-    async (api) =>
-      maps(
-        await api.panel({ pod, ...(panel !== undefined && { panel }) }),
-      ) as unknown as PanelRead,
-    ({ panelAbout, panel }) =>
-      `Your results in ${panelAbout?.get(panel)?.name?.label ?? "a panel"}`,
-  );
-  if (loaded === undefined) return null;
-  if ("wrong" in loaded) return <Wrong said={loaded.wrong} />;
-  if ("refused" in loaded) return <NotFound said={loaded.refused} />;
-  return <PanelPage pod={pod} titles={titles} read={loaded.value} />;
+/** Reads the pod's results in the LOINC panel the address's `panel` names. */
+export const panelLoader = (api: PodApi) =>
+  screen(async ({ params, request }: LoaderFunctionArgs) => {
+    const pod = params.pod ?? "";
+    const panel = new URL(request.url).searchParams.get("panel");
+    const read = maps(
+      await api.panel({ pod, ...(panel !== null && { panel }) }),
+    ) as unknown as PanelRead;
+    return {
+      value: { pod, read },
+      title: `Your results in ${read.panelAbout?.get(read.panel)?.name?.label ?? "a panel"}`,
+    };
+  });
+
+export function PanelScreen() {
+  const { pod, read } = useRead<{ pod: string; read: PanelRead }>();
+  const { titles } = useApp();
+  return <PanelPage pod={pod} titles={titles} read={read} />;
 }
