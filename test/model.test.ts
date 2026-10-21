@@ -43,18 +43,28 @@ interface Terminal {
   secret(question: string): Promise<string>;
 }
 
-const { modelClient, modelFrom } = (await import(
+/** A model as `models.ts` makes it, on the AI SDK. */
+interface Chosen {
+  provider: string;
+  name: string;
+  local: boolean;
+}
+
+const { modelClient } = (await import(
   new URL("../../app/model-client.mjs", import.meta.url).href
+)) as { modelClient(settings: Settings): Model };
+const { modelFrom, modelOf } = (await import(
+  new URL("../../app/models.ts", import.meta.url).href
 )) as {
-  modelClient(settings: Settings): Model;
-  modelFrom(env: Record<string, string>): Model | undefined;
+  modelOf(settings: Settings): Chosen;
+  modelFrom(env: Record<string, string>): Chosen | undefined;
 };
 const { check, flow, save, remove, secret } = (await import(
-  new URL("../../app/model.mjs", import.meta.url).href
+  new URL("../../app/model.ts", import.meta.url).href
 )) as {
   save(folder: string, values: Record<string, string>): Promise<void>;
   remove(folder: string): Promise<boolean>;
-  check(model: Model): Promise<{ ok: boolean; reason?: string }>;
+  check(model: Chosen): Promise<{ ok: boolean; reason?: string }>;
   flow(args: string[], terminal: Terminal, folder: string): Promise<number>;
   secret(
     question: string,
@@ -682,7 +692,7 @@ test("the settings make a model, none make nothing, and no property of a model s
   ];
   for (const [url, local] of hosts)
     assert.equal(
-      modelClient({ provider: "other", url, name: "m" }).local,
+      modelOf({ provider: "other", url, name: "m" }).local,
       local,
       url,
     );
@@ -720,7 +730,7 @@ test("the settings make a model, none make nothing, and no property of a model s
   );
 });
 
-test("the check passes only when the model calls the tool with arguments its schema accepts, and says why otherwise", async () => {
+test("the check passes only when the model calls the tool with arguments its schema accepts, and says why otherwise; only a model on this computer or at another address is told not to think", async () => {
   const cases: [string, "openai" | "anthropic", () => Reply, RegExp | true][] =
     [
       ["a call", "openai", openai.call, true],
@@ -756,13 +766,13 @@ test("the check passes only when the model calls the tool with arguments its sch
     const { url } = await serving(reply);
     const model =
       protocol === "openai"
-        ? modelClient({
+        ? modelOf({
             provider: "other",
             url: `${url}/v1`,
             name: "m",
             key: KEY,
           })
-        : modelClient({ provider: "anthropic", url, name: "m", key: KEY });
+        : modelOf({ provider: "anthropic", url, name: "m", key: KEY });
     const result = await check(model);
     const label = `${what} (${protocol})`;
     if (expected === true) assert.deepEqual(result, { ok: true }, label);
@@ -772,12 +782,27 @@ test("the check passes only when the model calls the tool with arguments its sch
       assert.ok(!result.reason!.includes(KEY), `${label} shows the key`);
     }
   }
+  for (const [provider, told] of [
+    ["local", true],
+    ["other", true],
+    ["groq", false],
+    ["gemini", false],
+  ] as const) {
+    const { url, bodies } = await serving(openai.text);
+    await check(modelOf({ provider, url: `${url}/v1`, name: "m", key: KEY }));
+    assert.equal(
+      JSON.stringify(bodies[0]!.chat_template_kwargs) ===
+        JSON.stringify({ enable_thinking: false }),
+      told,
+      provider,
+    );
+  }
 });
 
 test("a rejected key or a busy model is said plainly, with what to do, and no reply shows the key", async () => {
   const rejected =
     /^Google Gemini rejected the key: check CASCADE_MODEL_KEY in \.env, or run `npm run model` again\./;
-  const cases: [string, number, string, RegExp, string?][] = [
+  const cases: [string, number, string, RegExp, string?, true?][] = [
     ["401", 401, "Incorrect API key", rejected],
     ["403", 403, "Permission denied", rejected],
     ["a 400 naming the key", 400, "API key not valid", rejected],
@@ -793,12 +818,12 @@ test("a rejected key or a busy model is said plainly, with what to do, and no re
       "high demand",
       /^m is busy at Google Gemini \(503\): try again in a minute, or choose another model with `npm run model`$/,
     ],
-    ["another 400", 400, "Unknown field", /^400 .*Unknown field/],
+    ["another 400", 400, "Unknown field", /^Unknown field/],
     [
       "a 400 naming a property key",
       400,
       `Unknown name "key" at 'tools[0]'`,
-      /^400 .*Unknown name "key"/,
+      /^Unknown name "key"/,
     ],
     ["Invalid Auth key", 400, "Invalid Auth key.", rejected],
     [
@@ -815,23 +840,64 @@ test("a rejected key or a busy model is said plainly, with what to do, and no re
       /^m is busy at The model server \(503\): try again/,
       "local",
     ],
+    [
+      "429 sent mid-stream by an OpenAI-compatible server",
+      429,
+      "Quota",
+      /^m is busy at Google Gemini \(429\): try again/,
+      undefined,
+      true,
+    ],
+    [
+      "overloaded_error sent mid-stream by Anthropic",
+      529,
+      "Overloaded",
+      /^m is busy at Anthropic \(529\): try again/,
+      "anthropic",
+      true,
+    ],
   ];
-  for (const [what, status, message, expected, provider] of cases) {
-    const { url } = await serving(() => ({
-      status,
-      json: { error: { message: `${message} ${KEY}` } },
-    }));
-    const seen = await events(
-      modelClient({
+  for (const [what, status, message, expected, provider, streamed] of cases) {
+    const text = `${message} ${KEY}`;
+    const { url } = await serving(() =>
+      streamed
+        ? {
+            events:
+              provider === "anthropic"
+                ? [
+                    [
+                      "error",
+                      {
+                        type: "error",
+                        error: { type: "overloaded_error", message: text },
+                      },
+                    ],
+                  ]
+                : [
+                    [
+                      "message",
+                      {
+                        error: {
+                          message: text,
+                          type: "rate_limit",
+                          code: status,
+                        },
+                      },
+                    ],
+                  ],
+          }
+        : { status, json: { error: { message: text } } },
+    );
+    const { ok, reason } = await check(
+      modelOf({
         provider: provider ?? "gemini",
         url: provider === "anthropic" ? url : `${url}/v1`,
         name: "m",
         key: KEY,
       }),
     );
-    assert.equal(seen.length, 1, what);
-    const said = String(seen[0]!.message);
-    assert.equal(seen[0]!.status, status, what);
+    assert.equal(ok, false, what);
+    const said = String(reason);
     assert.match(said, expected, what);
     assert.ok(!said.includes(KEY), `${what} shows the key`);
     if (/^(another 400|a 400 naming a property key)$/.test(what))
@@ -875,7 +941,7 @@ test("the check sends the call's result back as the chat does, extra included, a
           },
         },
   );
-  const failed = await check(modelClient(settings(failing.url)));
+  const failed = await check(modelOf(settings(failing.url)));
   assert.equal(failed.ok, false);
   assert.match(failed.reason!, /second round.*thought_signature/);
   assert.equal(failing.bodies.length, 2);
@@ -892,7 +958,7 @@ test("the check sends the call's result back as the chat does, extra included, a
   const answering = await serving(() =>
     ++round === 1 ? call() : openai.text(),
   );
-  assert.deepEqual(await check(modelClient(settings(answering.url))), {
+  assert.deepEqual(await check(modelOf(settings(answering.url))), {
     ok: true,
   });
   assert.equal(answering.bodies.length, 2);
