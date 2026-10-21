@@ -376,7 +376,7 @@ test("every tool /chat offers is a free read the server runs, or a navigation or
       );
 });
 
-test("open_pod, open_trend and open_entry are offered to the model with their schemas as tools the page runs: a call to one ends the server's turn with the call for the page, unrun", async () => {
+test("the tools that move the app are offered to the model with their schemas as tools the page runs: a call to one ends the server's turn with the call for the page, unrun", async () => {
   const { model, calls } = fakeModel([
     calling(call("c1", "open_pod", { pod: STATIN })),
   ]);
@@ -390,7 +390,14 @@ test("open_pod, open_trend and open_entry are offered to the model with their sc
   const opening = TOOLS.filter(({ opens }) => opens);
   assert.deepEqual(
     opening.map(({ name }) => name),
-    ["open_pod", "open_trend", "open_entry"],
+    [
+      "open_pod",
+      "open_trend",
+      "open_entry",
+      "open_classes",
+      "open_panel",
+      "open_table",
+    ],
   );
   for (const { name, inputSchema } of opening)
     assert.deepEqual(offered.get(name), withPod(inputSchema), name);

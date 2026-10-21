@@ -19,7 +19,15 @@ import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { type Browser, chromium, type Page } from "playwright";
-import { inPlace } from "./shown.js";
+import {
+  called,
+  inPlace,
+  inputOf,
+  listed,
+  offered,
+  recordTools,
+  type Registered,
+} from "./shown.js";
 
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const KEY = "sk-test-key-that-must-not-leave";
@@ -295,6 +303,33 @@ test("a move within the pod shown does not make the chat follow the next click t
   assert.equal(await page.locator(".chat-log .you").count(), 0);
   assert.equal(await page.locator(".chat-recent li button").count(), 0);
   await page.close();
+});
+
+test("on the Node target the pod shown offers the one list to the model context, the pod filled in, and a read runs over the server", async () => {
+  const context = await browser.newContext();
+  await context.addInitScript(recordTools);
+  try {
+    const page = await context.newPage();
+    await page.goto(`${modelled.origin}/pods/ines-calloway/`);
+    const { names } = await listed();
+    await page.waitForFunction(
+      (count) =>
+        (globalThis as unknown as Registered).registered.length >= count,
+      names.length,
+    );
+    assert.deepEqual(await offered(page), names);
+    assert.deepEqual(await inputOf(page, "open_trend"), {
+      properties: ["test", "medication"],
+      required: ["test"],
+    });
+    const pods = await called(page, "list_pods");
+    assert.ok("result" in pods, JSON.stringify(pods));
+    assert.ok((pods.result as string[]).includes("ines-calloway"));
+    const rows = await called(page, "ask", { question: "pod/My lab results" });
+    assert.ok("result" in rows, JSON.stringify(rows));
+  } finally {
+    await context.close();
+  }
 });
 
 test("Stop ends the call to the model, not just the spinner", async () => {
