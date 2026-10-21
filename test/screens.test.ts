@@ -388,6 +388,59 @@ test("tables are browsed by source: a source's page searches all its tables and 
     assert.ok(code.includes(sentence), `${sentence} in ${code}`);
 });
 
+test("a code's page gives a variation's classification as ClinVar's sentence with the table's credit, links ClinVar's own page when it has one, and no outside link when it has none", () => {
+  const VERSION = "ni:///clinvar-1";
+  const VARIATION = "http://www.ncbi.nlm.nih.gov/clinvar/90011";
+  const clinvar = {
+    ...GROUPS,
+    iri: "urn:test:clinvar",
+    label: "ClinVar variant classifications",
+    credit: "ClinVar, NCBI.",
+    source: "urn:test:ncbi",
+    versions: [{ iri: VERSION, label: "1", issued: "2026-10-01T00:00:00Z" }],
+  };
+  const [source] = said.sourcesOf([clinvar]);
+  assert.ok(source);
+  const facts = {
+    code: VARIATION,
+    notation: "90011",
+    names: [],
+    status: [],
+    mappings: [],
+    classifications: [
+      {
+        series: clinvar.iri,
+        version: VERSION,
+        variation: VARIATION,
+        classification: [
+          {
+            iri: "https://ns.cascadeprotocol.org/genomics/v1#VUS",
+            label: "Uncertain significance",
+          },
+        ],
+      },
+    ],
+  };
+  const shown = (extra: object) =>
+    drawn.codePage({ source, held: [clinvar], facts: { ...facts, ...extra } });
+  const bare = shown({});
+  const text = textOf(bare);
+  assert.ok(text.includes("ClinVar today says uncertain significance."));
+  assert.ok(text.includes("ClinVar, NCBI."), "the table's credit");
+  assert.ok(
+    !linksOf(bare).some(({ rel }) => rel === "external"),
+    "no page, no outside link",
+  );
+  const outside = "https://example.org/variation/90011/";
+  const linked = linksOf(
+    shown({ page: { href: outside, system: "ClinVar" } }),
+  ).filter(({ rel }) => rel === "external");
+  assert.deepEqual(
+    linked.map(({ href, text }) => [href, textOf(text)]),
+    [[outside, "ClinVar's page for 90011"]],
+  );
+});
+
 test("the new-pod box offers to encrypt and lists the demo people with no pod yet family name first, sorted, and each sample not yet loaded", () => {
   const north = { name: "Cascade North Demo Hospital", fhirBase: "https://n" };
   const south = { name: "Cascade South Demo Hospital", fhirBase: "https://s" };
