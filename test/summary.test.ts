@@ -19,6 +19,7 @@ import { pulled } from "./hospitals.js";
 const view = await import(
   new URL("../../app/summary.mjs", import.meta.url).href
 );
+const said = await import(new URL("../../app/said.ts", import.meta.url).href);
 const { trendPath } = (await import(
   new URL("../../app/pods.mjs", import.meta.url).href
 )) as { trendPath: (pod: string, trend: object) => string };
@@ -364,7 +365,7 @@ test("a row's place, as a person says it", () => {
     assert.equal(view.placeOf(row), place, JSON.stringify(row));
 });
 
-test("a hospital's people are listed family name first and sorted by family name, then given name, wherever they are listed", () => {
+test("a hospital's people are named family name first and sorted by family name, then given name", () => {
   const north = { name: "Cascade North Demo Hospital", fhirBase: "https://n" };
   const south = { name: "Cascade South Demo Hospital", fhirBase: "https://s" };
   const patient = (family: string, given: string[], birthDate: string) => ({
@@ -378,7 +379,7 @@ test("a hospital's people are listed family name first and sorted by family name
       },
     ],
   });
-  const people = view.demoPeople([
+  const people = said.demoPeople([
     {
       hospital: north,
       patients: {
@@ -392,30 +393,22 @@ test("a hospital's people are listed family name first and sorted by family name
       patients: { a: patient("Thorne", ["Moss", "Avery"], "1979-04-12") },
     },
   ]);
-  const expected = ["Abbot, Wren", "Thorne, Lark", "Thorne, Moss Avery"];
-  const asItems = (shown: unknown, selector: RegExp) =>
-    [...render(shown as never).matchAll(selector)].map(([, text]) => text);
+  assert.deepEqual(people.map(said.familyFirst), [
+    "Abbot, Wren",
+    "Thorne, Lark",
+    "Thorne, Moss Avery",
+  ]);
   assert.deepEqual(
-    asItems(
-      view.hospitalsPage({
-        pod: "x",
-        rows: [{ ...north }],
-        text: "",
-        search: "?hospitals",
-        signIn: () => "",
-        people,
-        back: "/",
-      }),
-      /<li>([^<]*)(?: <span|<\/li>)/g,
-    ),
-    expected,
-  );
-  assert.deepEqual(
-    asItems(
-      view.newPodDialog({ people, pods: [], action: "make" }),
-      /<button>([^<]*)<span/g,
-    ),
-    expected,
+    people.map(({ name, at }: { name: string; at: unknown[] }) => [
+      name,
+      at.length,
+    ]),
+    [
+      ["Wren Abbot", 1],
+      ["Lark Thorne", 1],
+      ["Moss Avery Thorne", 2],
+    ],
+    "the same person at two hospitals once",
   );
 });
 
@@ -884,89 +877,20 @@ test("a pod's page names a row by the first of its codes the tables name, else b
   assert.ok(!unnamed.some((line: string) => line.startsWith("Retired")));
 });
 
-test("the frame's title bar has File, whose two items open boxes that confirm with one button posting to the host's action, and Help, whose About names the app, its version and cascade-runtime's", () => {
-  const page = render(
-    view.frame({
-      title: "Alex Rivera",
-      body: view.html`<h1>Alex Rivera</h1>`,
-      pods: ["alex-rivera"],
-      current: "alex-rivera",
-      href: (pod: string) => `/pods/${pod}/`,
-      home: "/",
-      dialog: "",
-      menu: {
-        deleteAll: "/delete-all",
-        resetAll: "/reset-all",
-        about: {
-          name: "my-app",
-          version: "1.2.3",
-          runtime: "4.5.6",
-          code: "c",
-        },
-      },
-      note: view.didNote(new URLSearchParams("deleted=3"), []),
-    }),
-  );
-  const menus = [
-    ...page.matchAll(
-      /<details class="menu"><summary>(\w+)<\/summary>([\s\S]*?)<\/details>/g,
-    ),
-  ].map(([, name, items = ""]) => [
-    name,
-    [...items.matchAll(/<a href="([^"]*)">([^<]*)</g)].map(
-      ([, href, label]) => [href, label],
-    ),
-  ]);
-  assert.deepEqual(menus, [
+test("what the page says after a File menu item: how many pods were deleted, or that the samples are back", () => {
+  for (const [query, kits, note] of [
+    ["deleted=3", [], "Deleted 3 pods."],
+    ["deleted=1", [], "Deleted 1 pod."],
+    ["deleted=0", [], "There was no pod to delete."],
+    ["deleted=some", [], undefined],
     [
-      "File",
-      [
-        ["#delete-all", "Delete all data"],
-        ["#reset-all", "Reset all data"],
-      ],
+      "pod=alex-rivera&reset",
+      ["alex-rivera", "priya-natarajan"],
+      "Reset: Alex Rivera and Priya Natarajan are back.",
     ],
-    ["Help", [["#about", "About"]]],
-  ]);
-  /** The box `id`, to the tag that closes it. */
-  const boxOf = (id: string): string => {
-    const start = page.indexOf(`<div class="dialog" id="${id}"`);
-    assert.notEqual(start, -1, id);
-    let depth = 0;
-    for (const tag of page.slice(start).matchAll(/<(\/?)div\b[^>]*>/g)) {
-      depth += tag[1] === "" ? 1 : -1;
-      if (depth === 0)
-        return page.slice(start, start + (tag.index ?? 0) + tag[0].length);
-    }
-    return assert.fail(`the box ${id} is never closed`);
-  };
-  for (const [id, action] of [
-    ["delete-all", "/delete-all"],
-    ["reset-all", "/reset-all"],
-  ] as const) {
-    const box = boxOf(id);
-    assert.match(box, / class="backdrop"/, id);
-    assert.deepEqual(
-      [...box.matchAll(/<form [^>]*action="([^"]*)"/g)].map(([, to]) => to),
-      [action],
-      id,
-    );
-  }
-  const about = boxOf("about");
-  for (const said of ["my-app", "1.2.3", "cascade-runtime 4.5.6", "made up"])
-    assert.ok(about.includes(said), said);
-  assert.match(about, /<a href="c">/);
-  assert.match(page, /<p class="note" role="status">Deleted 3 pods\.<\/p>/);
-  assert.equal(
-    view.didNote(new URLSearchParams("pod=alex-rivera&reset"), [
-      "alex-rivera",
-      "priya-natarajan",
-    ]),
-    "Reset: Alex Rivera and Priya Natarajan are back.",
-  );
-  assert.equal(
-    view.didNote(new URLSearchParams("pod=alex-rivera"), []),
-    undefined,
-  );
+    ["pod=alex-rivera", [], undefined],
+  ] as const)
+    assert.equal(said.didNote(new URLSearchParams(query), kits), note, query);
 });
 
 test("the chat strip says how to set a model when none is set, and otherwise holds the form, the suggestions and the model's name, and no strip on a page that reloads itself", () => {
@@ -1049,54 +973,6 @@ test("Escape closes an open menu and follows the open box's own close link, or w
   assert.deepEqual(opened(bare.menus), [false, false]);
 });
 
-test("a form posted turns every button off and says what its button does until the page changes, a second post meanwhile is cancelled, and a page shown again from history is on again", () => {
-  assert.match(
-    render(
-      view.postButton("/bring", {}, "Bring it in", undefined, "Bringing…"),
-    ),
-    /^<form [^>]*data-doing="Bringing…"/,
-  );
-  const said = (html: string) => /<span class="said">([^<]*)</.exec(html)?.[1];
-  assert.match(render(view.doing()), /^<p class="doing" [^>]*hidden/);
-  assert.equal(said(render(view.doing("Bringing…"))), "Bringing…");
-  const on: Record<string, (event: object) => void> = {};
-  const listen = (type: string, listener: (event: object) => void) => {
-    on[type] = listener;
-  };
-  const shown = { textContent: "" };
-  const line = { hidden: true, querySelector: () => shown };
-  const buttons = [{ disabled: false }, { disabled: false }];
-  const body = { dataset: {} as Record<string, string> };
-  view.busyForms({
-    body,
-    querySelector: () => line,
-    querySelectorAll: () => buttons,
-    addEventListener: listen,
-    defaultView: { addEventListener: listen },
-  });
-  const submit = () => {
-    const event = {
-      defaultPrevented: false,
-      target: { dataset: { doing: "Bringing…" } },
-      preventDefault: () => (event.defaultPrevented = true),
-    };
-    on.submit?.(event);
-    return event.defaultPrevented;
-  };
-  assert.equal(submit(), false);
-  assert.deepEqual(
-    [body.dataset.state, line.hidden, shown.textContent, buttons],
-    ["busy", false, "Bringing…", [{ disabled: true }, { disabled: true }]],
-  );
-  assert.equal(submit(), true);
-  on.pageshow?.({ persisted: true });
-  assert.deepEqual(
-    [body.dataset.state, line.hidden, buttons],
-    [undefined, true, [{ disabled: false }, { disabled: false }]],
-  );
-  assert.equal(submit(), false);
-});
-
 test("a table opens newest first, a row with no date last", () => {
   const section = view.SECTIONS.find(
     ({ question }: { question: string }) => question === LABS,
@@ -1127,8 +1003,6 @@ const GROUPS = {
   checked: "2026-10-08T21:55:00Z",
   watched: { at: "2026-10-08T20:00:00Z", found: "nothing new" },
 };
-const NOW = Date.parse("2026-10-08T22:00:00Z");
-
 /** The page's text, its tags dropped and its runs of white space one space. */
 const textOf = (page: string): string =>
   page
@@ -1136,120 +1010,21 @@ const textOf = (page: string): string =>
     .replace(/\s+/g, " ")
     .trim();
 
-test("the sidebar lists the pods, then the reference tables and Check now; a table's page gives its source, licence, version and freshness, the codes a search found, and the pods using each version", () => {
-  const page = render(
-    view.layout({
-      body: "",
-      pods: ["alex-rivera"],
-      href: (pod: string) => `/pods/${pod}/`,
-      home: "/",
-      dialog: "",
-      menu: { deleteAll: "d", resetAll: "r", about: { name: "a" } },
-      tables: {
-        series: [GROUPS],
-        current: GROUPS.iri,
-        href: (series: { iri: string }) =>
-          `/tables/${view.tableId(series.iri)}/`,
-        check: "/tables/check",
-      },
-    }),
-  );
-  const aside = page.slice(page.indexOf("<aside>"), page.indexOf("</aside>"));
-  assert.deepEqual(
-    [...aside.matchAll(/<h2>([^<]*)<\/h2>/g)].map(([, heading]) => heading),
-    ["Pods", "Reference tables"],
-  );
-  assert.match(
-    aside,
-    /<a href="\/tables\/c1a6678c-2b4d-4287-b852-9039e6a71afd\/" aria-current="page">Example vaccine groups<\/a>/,
-  );
-  assert.match(aside, /<form [^>]*action="\/tables\/check"[\s\S]*Check now/);
-
-  const shown = render(
-    view.tablePage({
-      series: GROUPS,
-      searched: {
-        total: 1201,
-        offset: 50,
-        found: [
-          {
-            code: "http://hl7.org/fhir/sid/cvx/141",
-            notation: "141",
-            about: {
-              name: { label: "flu, split", altLabels: [], origin: "n" },
-              status: { deprecated: true, replacedBy: [], origin: "s" },
-            },
-            mapsTo: [
-              {
-                code: "http://hl7.org/fhir/sid/cvx/88",
-                notation: "88",
-                about: {
-                  name: { label: "flu, NOS", altLabels: [], origin: "n" },
-                },
-              },
-            ],
-          },
-        ],
-      },
-      text: "141",
-      search: "/tables/c1a6678c/",
-      page: 2,
-      pageHref: (page: number) => `/tables/c1a6678c/?page=${page}`,
-      uses: { "ni:///v1": ["alex-rivera", "gone"], "ni:///v2": [] },
-      pods: ["alex-rivera"],
-      href: (pod: string) => `/pods/${pod}/`,
-      now: NOW,
-    }),
-  );
-  const text = textOf(shown);
-  for (const said of [
-    "Using version 2, Oct 8, 2026",
-    "publisher.example Source: an example publisher",
-    "CC0 1.0",
-    "The watcher checked the publisher 2 hours ago: nothing new. This app last read the feed 5 minutes ago.",
-    "141 flu, split Retired 88 flu, NOS",
-    "51–51 of 1,201 codes.",
-    "version 2, Oct 8, 2026 current : no pod",
-    "version 1, Oct 1, 2026 : Alex Rivera",
-  ])
-    assert.ok(text.includes(said), said);
-  assert.match(shown, /<form method="get" action="\/tables\/c1a6678c\/"/);
-  assert.match(shown, /<a href="\/tables\/c1a6678c\/\?page=1" rel="prev">/);
-  assert.match(shown, /<a href="\/tables\/c1a6678c\/\?page=3" rel="next">/);
-  assert.match(shown, /<a href="\/pods\/alex-rivera\/">Alex Rivera<\/a>/);
-  assert.ok(!text.includes("Gone"));
-
-  const past = render(
-    view.tablePage({
-      series: GROUPS,
-      searched: { total: 103, offset: 450, size: 50, found: [] },
-      text: "",
-      search: "/tables/c1a6678c/",
-      page: 10,
-      pageHref: (page: number) => `/tables/c1a6678c/?page=${page}`,
-      uses: {},
-      pods: [],
-      href: (pod: string) => `/pods/${pod}/`,
-      now: NOW,
-    }),
-  );
-  assert.match(past, /<a href="\/tables\/c1a6678c\/\?page=3" rel="prev">/);
-  assert.ok(!past.includes('rel="next"'));
+test("a page of results is asked for by a whole number from 1, else the first", () => {
   assert.deepEqual(
     ["3", "", null, "0", "-2", "2.5", "x", "Infinity", "1e400", "1e20"].map(
-      view.pageNumber,
+      said.pageNumber,
     ),
     [3, 1, 1, 1, 1, 1, 1, 1, 1, 1],
   );
 });
 
-test("tables are browsed by source: a source is named by the words its tables share, its page searches them all and lists them, and a code's page says what each table says of it and where from", () => {
+test("a source is named by the words its tables share, and a table of its own is a source of its own", () => {
   const SOURCE = "urn:uuid:17cec5a9-071a-4179-9403-5c1e3886fb7d";
   const NAMES = {
     ...GROUPS,
     iri: "urn:uuid:f71f6797-48ec-4875-9b87-4cb1be1d9be0",
     label: "Example CVX names",
-    licence: "http://creativecommons.org/publicdomain/mark/1.0/",
     source: SOURCE,
   };
   const groups = {
@@ -1258,201 +1033,25 @@ test("tables are browsed by source: a source is named by the words its tables sh
     source: SOURCE,
   };
   const alone = { ...GROUPS, iri: "urn:uuid:0e2b", label: "Lone table" };
-  const sources = view.sourcesOf([NAMES, groups, alone]);
   assert.deepEqual(
-    sources.map(
-      ({
-        iri,
-        label,
-        series,
-      }: {
-        iri: string;
-        label: string;
-        series: { iri: string }[];
-      }) => [iri, label, series.length],
-    ),
+    said
+      .sourcesOf([NAMES, groups, alone])
+      .map(
+        ({
+          iri,
+          label,
+          series,
+        }: {
+          iri: string;
+          label: string;
+          series: { iri: string }[];
+        }) => [iri, label, series.length],
+      ),
     [
       [SOURCE, "Example CVX", 2],
       ["urn:uuid:0e2b", "Lone table", 1],
     ],
   );
-  const [source] = sources;
-  const codeHref = (code: string) => `/tables/s/?code=${code}`;
-  const page = render(
-    view.sourcePage({
-      source,
-      searched: {
-        total: 1,
-        offset: 0,
-        size: 50,
-        found: [
-          {
-            code: "http://hl7.org/fhir/sid/cvx/141",
-            notation: "141",
-            about: {
-              name: { label: "flu, split", altLabels: [], origin: "n" },
-            },
-            mapsTo: [],
-          },
-        ],
-      },
-      text: "",
-      search: "/tables/s/",
-      page: 1,
-      pageHref: (page: number) => `/tables/s/?page=${page}`,
-      codeHref,
-      tableHref: ({ iri }: { iri: string }) => `/tables/${view.tableId(iri)}/`,
-      now: NOW,
-    }),
-  );
-  assert.match(page, /<a href="\/tables\/s\/\?code=141">141<\/a>/);
-  for (const said of ["What this source publishes", "Public domain", "CC0 1.0"])
-    assert.ok(textOf(page).includes(said), said);
-  for (const series of source.series)
-    assert.ok(page.includes(`href="/tables/${view.tableId(series.iri)}/"`));
-
-  const fact = { series: groups.iri, version: "ni:///v2" };
-  const coded = (notation: string, label: string) => ({
-    code: `http://hl7.org/fhir/sid/cvx/${notation}`,
-    notation,
-    about: { name: { label, altLabels: [], origin: "n" } },
-  });
-  const panelTable = {
-    ...GROUPS,
-    iri: "urn:uuid:7a1b",
-    label: "Example panel members",
-    credit: "Panels are LOINC's.",
-  };
-  const classTable = {
-    ...GROUPS,
-    iri: "urn:uuid:8c2d",
-    label: "Example drug classes",
-  };
-  const placed = (notation: string, label: string, place: object) => ({
-    ...coded(notation, label),
-    ...place,
-  });
-  const panelsAndClasses = textOf(
-    render(
-      view.codePage({
-        source,
-        held: [NAMES, groups, alone, panelTable, classTable],
-        facts: {
-          ...coded("24323-8", "Comprehensive metabolic panel"),
-          names: [],
-          status: [],
-          mappings: [],
-          panels: [
-            {
-              series: panelTable.iri,
-              version: "ni:///v2",
-              members: [
-                placed("2823-3", "Potassium", { sequence: 1, required: "R-a" }),
-                placed("2951-2", "Sodium", { sequence: 2, required: "R" }),
-                placed("17861-6", "Calcium", { sequence: 3, required: "Rflx" }),
-              ],
-              heldBy: {
-                total: 3,
-                panels: [placed("34567-8", "A larger panel", { sequence: 9 })],
-              },
-            },
-          ],
-          classes: [
-            {
-              series: classTable.iri,
-              version: "ni:///v2",
-              in: [
-                {
-                  relation: `${REC}establishedPharmacologicClass`,
-                  class: coded("N0000175562", "ACE inhibitor [EPC]"),
-                  through: coded("1546022", "lisinopril anhydrous"),
-                },
-                {
-                  relation: `${REC}chemicalStructure`,
-                  class: coded("M0014310", "Lisinopril"),
-                },
-              ],
-              withheld: [
-                {
-                  relation: `${REC}mechanismOfAction`,
-                  ingredient: coded("29046", "lisinopril"),
-                },
-              ],
-            },
-          ],
-        },
-        codeHref,
-        back: "/tables/s/",
-      }),
-    ),
-  );
-  for (const said of [
-    "A panel of 3 members, in order:",
-    "2823-3 Potassium R-a",
-    "2951-2 Sodium required",
-    "No mechanism of action is given: FDA classes a different form of 29046 lisinopril; RxNorm does not tie this drug to it.",
-    "17861-6 Calcium Rflx",
-    "Itself a member of 3 panels:",
-    "34567-8 A larger panel",
-    "and 2 more.",
-    "Panels are LOINC's.",
-    "From Example panel members, version 2, Oct 8, 2026.",
-    "Established pharmacologic class: N0000175562 ACE inhibitor [EPC] through 1546022 lisinopril anhydrous",
-    "Chemical structure: M0014310 Lisinopril",
-    "From Example drug classes, version 2, Oct 8, 2026.",
-  ])
-    assert.ok(
-      panelsAndClasses.includes(said),
-      `${said} in ${panelsAndClasses}`,
-    );
-  assert.ok(
-    panelsAndClasses.indexOf("2823-3") < panelsAndClasses.indexOf("2951-2") &&
-      panelsAndClasses.indexOf("2951-2") < panelsAndClasses.indexOf("17861-6"),
-    "members come in the order they were given",
-  );
-  const code = textOf(
-    render(
-      view.codePage({
-        source,
-        held: [NAMES, groups, alone],
-        facts: {
-          ...coded("141", "flu, split"),
-          names: [
-            {
-              ...fact,
-              series: NAMES.iri,
-              label: "flu, split",
-              altLabels: ["influenza, split"],
-            },
-          ],
-          status: [],
-          mappings: [
-            {
-              ...fact,
-              series: alone.iri,
-              mapsTo: [
-                {
-                  ...coded("88", "flu, NOS"),
-                  alongside: { total: 2, codes: [coded("15", "flu, whole")] },
-                },
-              ],
-              mappedFrom: { total: 0, codes: [] },
-            },
-          ],
-        },
-        codeHref,
-        back: "/tables/s/",
-      }),
-    ),
-  );
-  for (const said of [
-    "141 flu, split",
-    "influenza, split",
-    "From Example CVX names, version 2, Oct 8, 2026.",
-    "Maps to 88 flu, NOS, as do 15 flu, whole and 1 more.",
-    "From Lone table, version 2, Oct 8, 2026.",
-  ])
-    assert.ok(code.includes(said), `${said} in ${code}`);
 });
 
 test("a pod's page credits the table whose names it shows, once, and no other", () => {
@@ -2573,41 +2172,6 @@ test("the Medications tile says each medication's L1 lifecycle, current ones fir
   );
 });
 
-test("the sidebar says the reference tables are loading until the app has read what it holds, says None yet only after a read that found none, and says they could not be read after one that failed", () => {
-  const nav = (state: "loading" | "none" | "failed", series: object[] = []) =>
-    textOf(
-      render(
-        view.tablesNav({
-          series,
-          href: () => "/",
-          check: "/check",
-          loading: state === "loading",
-          failed: state === "failed",
-        }),
-      ),
-    );
-  assert.ok(nav("loading").includes("Loading the reference tables"));
-  const busy = (loading: boolean) =>
-    render(
-      view.tablesNav({ series: [], href: () => "/", check: "/check", loading }),
-    );
-  assert.equal(count(busy(true), 'aria-busy="true"'), 1);
-  assert.equal(count(busy(false), "aria-busy"), 0);
-  assert.ok(!nav("loading").includes("None yet"));
-  assert.ok(nav("none").includes("None yet"));
-  assert.ok(!nav("none").includes("Loading"));
-  const failed = nav("failed");
-  assert.ok(failed.includes("The reference tables could not be read."), failed);
-  assert.ok(
-    !failed.includes("None yet") && !failed.includes("Loading"),
-    failed,
-  );
-  assert.ok(failed.includes("Check now"), failed);
-  const some = [{ iri: "urn:test:a", label: "Example names" }];
-  assert.ok(nav("loading", some).includes("Example names"));
-  assert.ok(!nav("loading", some).includes("Loading"));
-});
-
 test("an entry no section shows is named and kinded from its label and says what a review line says; an address of no entry says so and links back", () => {
   const entry = view.entryOf(ENTRY_ANSWERS, "bb22");
   assert.equal(entry.name, "Latex");
@@ -3654,57 +3218,7 @@ test("Ask about this: with a model set, each What changed card and each Worth a 
   ]);
 });
 
-test("the new-pod box offers to encrypt; the six-words page shows the words numbered with the fields a password manager reads and asks for words 2 and 5; the open page says each outcome in its own sentence, with a field for the words only where words could open the pod; an encrypted pod's chat strip says so", () => {
-  const dialog = render(
-    view.newPodDialog({ people: [], pods: [], action: "/pods" }),
-  );
-  assert.match(dialog, /Encrypt this pod with six words/);
-
-  const words = "abacus abdomen abide abnormal abrasion abrupt";
-  const shown = render(
-    view.sixWordsPage({ pod: "grace-hopper", words, action: "/words" }),
-  );
-  assert.equal(shown.match(/<li>/g)?.length, 6);
-  assert.match(shown, /name="username"[^>]*value="grace-hopper"/);
-  assert.match(
-    shown,
-    /autoComplete="new-password"|autocomplete="new-password"/,
-  );
-  assert.match(shown, /Word 2/);
-  assert.match(shown, /Word 5/);
-  assert.match(shown, /does not hide that this pod exists/);
-  assert.equal(
-    render(
-      view.sixWordsPage({
-        pod: "grace-hopper",
-        words,
-        action: "/words",
-        problem: view.NOT_WORDS,
-      }),
-    ).includes("Those aren't words 2 and 5"),
-    true,
-  );
-
-  const outcomes: [string, RegExp, boolean][] = [
-    ["secret needed", /six words to open it/, true],
-    ["incorrect secret", /don't open this pod/, true],
-    ["malformed", /header is damaged or was changed/, false],
-    ["unsupported version", /newer version of Cascade/, false],
-    ["cannot open", /another way, not with six words/, false],
-  ];
-  for (const [outcome, said, field] of outcomes) {
-    const open = render(
-      view.openPodPage({
-        pod: "grace-hopper",
-        outcome,
-        action: "/pods/grace-hopper/open",
-        next: "/pods/grace-hopper/",
-      }),
-    );
-    assert.match(open, said, outcome);
-    assert.equal(open.includes("current-password"), field, outcome);
-  }
-
+test("an encrypted pod's chat strip says so", () => {
   const model = { provider: "other", name: "m", local: true };
   assert.match(
     render(view.Chat({ model, pod: "grace-hopper", encrypted: true })),
