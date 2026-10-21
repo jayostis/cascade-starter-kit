@@ -1,5 +1,5 @@
 // The one list of tools a model reaches the app by, over PodApi alone: the MCP server (`mcp-server.mjs`), the chat
-// (`chat.mjs`) and try/'s WebMCP each offer those their door may. A tool's `tier` is the person's consent: `free`
+// (`server/chat.ts`) and the browser target's WebMCP each offer those their door may. A tool's `tier` is the person's consent: `free`
 // reads or moves the app, `ask` writes once the person has said yes. What no tool ever calls is `NEVER`.
 import { Refusal } from "cascade-runtime";
 import { POD_TOOLS, trendOf } from "./pod-api.mjs";

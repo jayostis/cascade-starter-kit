@@ -739,7 +739,11 @@ await behaviour(
       const worker = await fetch(
         new URL("demo-hospital-worker.js", served.address),
       );
-      assert.equal(worker.status, 200, "the demo hospitals' worker is not served");
+      assert.equal(
+        worker.status,
+        200,
+        "the demo hospitals' worker is not served",
+      );
       const page = await tab();
       const held = [];
       await page.route(/\/web_bg\.wasm$/, (route) => {
@@ -1954,7 +1958,10 @@ if (release === undefined) {
               answer.status >= 300 && answer.status < 400,
               `${back}: /world-date answered ${answer.status}, no redirect`,
             );
-            return new URL(answer.headers.get("location") ?? "", server.address);
+            return new URL(
+              answer.headers.get("location") ?? "",
+              server.address,
+            );
           };
           const own = await sentBack("/pods/hospital/");
           assert.equal(

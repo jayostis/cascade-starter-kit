@@ -104,7 +104,7 @@ for (const file of ["create.js", "create-cli.js"])
 await cp(TEMPLATE, join(STAGE, "app"), {
   recursive: true,
   filter: (source) =>
-    ![".env", "dist", "node_modules", "pods"].includes(
+    ![".env", "dist", "dist-browser", "node_modules", "pods"].includes(
       relative(TEMPLATE, source),
     ),
 });

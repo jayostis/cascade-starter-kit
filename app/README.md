@@ -1,7 +1,8 @@
 # cascade-app
 
-An app on a Cascade pod: a small web server that shows what a pod holds, and
-commands to load, make, remove and ask pods. It depends only on
+An app on a Cascade pod: a React app that shows what a pod holds, served on
+Node over the pods in `pods/` or built to run in a browser alone, and commands
+to load, make, remove and ask pods. It depends only on
 `cascade-runtime`, which keeps the pods; this app never writes a pod's files
 itself.
 
@@ -20,7 +21,20 @@ puts the app back as it was made.
 npm start
 ```
 
-then open <http://127.0.0.1:3000/>. The pods are on the left, named as their
+then open <http://127.0.0.1:3000/>. The first start builds the app's pages into
+`dist/`, and a start after you change one of its files builds them again. Or
+run the same app in your browser alone, with no server behind it:
+
+```sh
+npm run browser
+```
+
+which builds it into `dist-browser/` with a sample of each kit's pod, in about
+a minute, and serves those files at the same address. A first visit copies the
+samples into the browser, which then keeps its pods itself; the pods in `pods/`
+are not used, and there is no chat.
+
+The pods are on the left, named as their
 people. A pod's page reads as that person's health record: how many records,
 from which places; what is worth a look, such as two hospitals disagreeing on
 how severe an allergy is, or a genetic report that differs from ClinVar today,
@@ -64,7 +78,8 @@ and lists each demo hospital's sample patients. Press Sign in:
 1. Your browser goes to the hospital's own sign-in page. A demo hospital's
    asks whom to sign in as and offers Allow and Cancel.
 2. The hospital sends you back to this app, at `/callback`, which opens a box
-   over the pod's page.
+   over the pod's page. With `npm run browser` the hospital's page opens in a
+   window of its own instead.
 3. The box shows the connection's steps while the record is fetched, then what
    the hospital has, and whether the pod already has records from there.
 4. "Bring it into … pod" imports it as the pod's person's; when the record names
@@ -88,21 +103,25 @@ dates in short included.
 
 ## Chat with the pods in the app
 
-Run `npm run model` once, then `npm start`: every page has a chat strip at the
-bottom. Ask "find anything interesting" and it answers from the pod's records,
+Run `npm run model` once, then `npm start`: every page has a chat window, made
+with [assistant-ui](https://www.assistant-ui.com) over the
+[Vercel AI SDK](https://ai-sdk.dev). Ask "find anything interesting" and it answers from the pod's records,
 with the numbers of each change and the lab results behind it as a card under
 the answer, and "Open the trend" draws it. Ask it to "open Ines Calloway's pod"
-and the app goes there, with your chat. Stop ends the model's answer. Chats are
-kept by your browser, under the pod they are about. Each question goes to the
+and the app goes there, with your chat open. Stop ends the model's answer. Chats are
+kept by your browser, under the pod they are about, and an encrypted pod's are
+kept nowhere. Each question goes to the
 model you chose with the newest part of the chat (its last 24,000 characters)
 and what its tools read from the pod. Without a model the
-strip only says to run `npm run model`. The chat can only read: it never
-changes a pod.
+window only says to run `npm run model`. The chat reads, and moves the app; when
+the model asks to make a pod, check the tables or move the world's date, the
+page asks you first, and Cancel tells the model no. The chat is the Node
+app's only: `npm run browser` has none.
 
 ## The tools a model reaches
 
 `tools.mjs` is the one list of tools a model reaches the app by, the chat, an
-MCP client and try/'s WebMCP alike. Each calls the app's PodApi only, and each
+MCP client and the browser target's WebMCP alike. Each calls the app's PodApi only, and each
 has a consent tier:
 
 - **free**, reads: `list_pods`, `find_changes`, `finding_rows`, `lab_series`,
@@ -115,10 +134,10 @@ has a consent tier:
   (`connect`), bringing a record in (`bring`: the person does it from its box),
   and Delete all and Reset all.
 
-The MCP server offers the free reads. `npm start`'s chat offers the free tools, and
-try/'s WebMCP the free tools of the pod shown. The chat of `npm run next` runs on the
-[Vercel AI SDK](https://ai-sdk.dev): its server runs the free reads, and offers the
-moves and the `ask` writes as tools the page runs, so a write waits for the person.
+The MCP server offers the free reads, and `npm run browser`'s WebMCP the free
+tools of the pod shown. `npm start`'s chat runs on the AI SDK: its server runs
+the free reads, and offers the moves and the `ask` writes as tools the page
+runs, so a write waits for the person.
 
 An empty chat offers up to four questions worked out from the pod's own records
 (not by a model), such as "Did LDL cholesterol change after atorvastatin 20 MG Oral Tablet
@@ -198,8 +217,10 @@ server from the file's Start link or from Chat in Agent mode:
 `npm run help` lists every command with what it does. An option to an npm
 script goes after `--`, or npm keeps it for itself.
 
-- `npm run dev` serves the app as `npm start` does, restarting it whenever a
-  file is saved.
+- `npm run dev` serves the app as `npm start` does, from its sources through
+  Vite, the pages redrawn whenever a file is saved.
+- `npm run build` builds the pages into `dist/`, as `npm start` does when they
+  are older than their sources.
 - `npm run reset` removes every pod and loads Alex's, Priya's, Martin's and Tamsin's again, as
   the File menu's "Reset all data" does: both load the kits through
   `restoreKits` in `pods.mjs`.
@@ -216,7 +237,7 @@ script goes after `--`, or npm keeps it for itself.
   on this computer, Anthropic, or another OpenAI-compatible address. It says
   what that provider does with what it is sent, makes one real request to
   check that the model calls a tool, and keeps the choice and the key in
-  `.env` beside `server.mjs`, which git ignores. A free hosted tier is for the
+  `.env` in this folder, which git ignores. A free hosted tier is for the
   example and story pods, not a person's own. Run it again to change the
   choice; `npm run model -- --off` removes it.
 - `ask` and `console` need `--pod <name>` whenever the app has more than one
@@ -224,31 +245,36 @@ script goes after `--`, or npm keeps it for itself.
 
 ## The files
 
-- `server.mjs`: the app, on `node:http`, with no build step: it answers
-  requests, reads the pods through `pod-api.mjs`, and renders each page to HTML
-  with `preact-render-to-string`. It also serves every operation of
-  `pod-api.mjs` as `POST /api/<operation>`, JSON in and out. Under the pods,
-  the sidebar lists the reference tables the pods are matched with, kept in
-  `pods/.tables/`; `/tables/<id>/` shows one with a search, and Check now
-  reads their feeds again.
+- `index.html`, `src/`: the app, in React, built by Vite (`vite.config.ts`,
+  with `vite/cascade.ts`, which adds what each target carries beside its
+  bundle). `src/App.tsx` holds the routes, and each screen has its file:
+  `pod.tsx`, `entry.tsx`, `trend.tsx`, `classes.tsx`, `panel.tsx`,
+  `tables.tsx`, `hospitals.tsx`, `newpod.tsx`. A screen reads the pods through
+  PodApi, `usePodApi()` of `src/api.tsx`, from the host the build chose: on
+  Node `src/hosts/http.ts`, which calls the server's `/api/`, and in a
+  browser `src/hosts/browser.ts`, which runs `pod-api.mjs` in the page.
+  `src/chat/` is the chat window, Node only. Under the pods, the sidebar lists
+  the reference tables the pods are matched with; `/tables/<id>/` shows one
+  with a search, and Check now reads their feeds again.
+- `said.ts`: what the pages say, as plain functions with no imports, from a
+  pod's answers to sentences, rows and tags; `addresses.ts`, every address of
+  the app.
+- `server/`: `npm start`'s server, on [Hono](https://hono.dev): `main.ts`
+  starts it, `app.ts` answers, `api.ts` serves every operation of
+  `pod-api.mjs` as `POST /api/<operation>`, JSON in and out, with each input
+  checked by `inputs.ts`, `guard.ts` refuses another site's requests, and
+  `chat.ts` is the chat's `/chat`, on the AI SDK: `POST` answers with its UI
+  message stream, and `GET` names the model. `browser.ts` is
+  `npm run browser`.
 - `pod-api.mjs`: `podApi(host)`, every read and write the app makes of its
   pods and its reference tables, plain JSON in and out, refusing bad input
   with a `Refusal`. The server, the chat, the MCP server and `npm run ask` all
-  call it, and a browser can load the same file: it imports only
-  `cascade-runtime` and `summary.mjs`.
+  call it, and the browser target loads the same file: it imports only
+  `cascade-runtime` and `said.ts`.
 - `node-host.mjs`: the host `podApi` reads on Node: the pods are folders in
   `pods/`, with the reference tables beside them; `opensEncrypted: false`
   refuses an encrypted pod, as the MCP server and `npm run ask` do. Also the
   hospitals and the world's date the server gives it.
-- `pod-api-http.mjs`: `apiRoute`, which answers `POST /api/<operation>`, and
-  `podApiOver(origin)`, the same operations called over `fetch`.
-- `summary.mjs`: what the pages show, as [Preact](https://preactjs.com)
-  components written with [`htm`](https://github.com/developit/htm), plain
-  functions from a pod's answers to the page's elements, so a browser can
-  render them too. To change one, edit its `` html`…` `` template as HTML:
-  `${…}` puts in a value, escaped, or more elements; close every tag, `<input />`
-  too; a line break between two tags drops the spaces around it. Rewrite it
-  freely.
 - `hospitals.mjs`: the sign-in at a hospital, which waits for the redirect
   back to `/callback`, and the world's date the demo hospitals answer as of.
 - `demo-hospital/`: the pretend hospitals, a package of this app's own.
@@ -263,15 +289,12 @@ script goes after `--`, or npm keeps it for itself.
   settings, each provider through the AI SDK's own package for it:
   `@ai-sdk/anthropic`, `@ai-sdk/groq`, `@openrouter/ai-sdk-provider`, and
   `@ai-sdk/openai-compatible` for Gemini, Ollama, LM Studio and any other
-  OpenAI-compatible address. `model-client.mjs` is `npm start`'s door to the
-  same model.
+  OpenAI-compatible address.
 - `tools.mjs`: the one list of tools a model reaches, with their tiers and
-  what no tool calls, which the MCP server, the chat and try/ share. Each calls
-  the operations of `pod-api.mjs`.
-- `chat.mjs`: `npm start`'s `POST /chat`, the chat's loop: the model's tool
-  calls run over the pods, with tools that open the app's own pages.
-- `server/chat.ts`: `npm run next`'s `/chat`, on the AI SDK: `POST` answers
-  with its UI message stream, and `GET` names the model.
+  what no tool calls, which the MCP server, the chat and the browser's WebMCP
+  share. Each calls the operations of `pod-api.mjs`.
+- `server.mjs`, `summary.mjs`, `chat.mjs`, `model-client.mjs`,
+  `pod-api-http.mjs`: the app before React, run by no script; they go soon.
 - `AGENTS.md`: for a coding agent building on this app.
 
 The full guide to `cascade-runtime` is in

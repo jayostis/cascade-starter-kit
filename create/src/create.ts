@@ -61,6 +61,20 @@ function shellWord(word: string): string {
     : `"${word.replaceAll('"', '\\"')}"`;
 }
 
+/**
+ * Whether the Node.js of `version` ("v22.18.0") runs a `.ts` file by stripping its types with no flag, as the made app's
+ * scripts need: from 22.18.0 on the 22 line, and from 23.6.0 on.
+ */
+function runsTypeScript(version: string): boolean {
+  const [major = 0, minor = 0] = version
+    .replace(/^v/, "")
+    .split(".")
+    .map(Number);
+  return (
+    major > 23 || (major === 23 && minor >= 6) || (major === 22 && minor >= 18)
+  );
+}
+
 /** The one line that makes an app in the folder from the package at the address. */
 export function startLine(address: string, folder: string): string {
   return `npx --yes --package=${shellWord(address)} ${COMMAND} ${shellWord(folder)}`;
@@ -120,7 +134,9 @@ async function copyStarter(
   await cp(STARTER, target, {
     recursive: true,
     filter: (source) =>
-      ![".env", "node_modules", "pods"].includes(relative(STARTER, source)),
+      ![".env", "dist", "dist-browser", "node_modules", "pods"].includes(
+        relative(STARTER, source),
+      ),
   });
   await rename(join(target, "gitignore"), join(target, ".gitignore"));
   await rewrite(join(target, "package.json"), (text) => {
@@ -147,10 +163,10 @@ export async function create(
     terminal.err(`${reason}\n`);
     return 2;
   };
-  const major = Number(process.versions.node.split(".")[0]);
-  if (major < 22)
+  const node = terminal.node ?? process.version;
+  if (!runsTypeScript(node))
     return refuse(
-      `${COMMAND} needs Node 22 or later; this is ${process.version}`,
+      `This app needs Node.js 22.18 or later; you have ${node}. Get it from https://nodejs.org`,
     );
   let parsed;
   try {
@@ -238,7 +254,11 @@ export async function create(
       `  cd ${shellWord(folder)}`,
       "  npm start",
       "",
-      "then open http://127.0.0.1:3000/. `npm run help` lists the app's commands.",
+      "then open http://127.0.0.1:3000/: the app on Node, over the pods in pods/. Or, to run it in a browser alone, its pods kept in the browser:",
+      "",
+      "  npm run browser",
+      "",
+      "and open the same address. `npm run help` lists the app's commands.",
       ...(chat === false
         ? ["", "`npm run model` connects a model to the app's chat later."]
         : []),

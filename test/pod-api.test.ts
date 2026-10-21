@@ -269,7 +269,7 @@ function served(built: Api, own: () => Own): [App, Call[]] {
   return [app, calls];
 }
 
-/** Serves `built` on an ephemeral port, as `npm run next` does, and gives the address and what `built` answered each call. */
+/** Serves `built` on an ephemeral port, as `npm start` does, and gives the address and what `built` answered each call. */
 async function serve(built: Api): Promise<[string, Call[]]> {
   let origin = "";
   const [app, calls] = served(built, () => ({
