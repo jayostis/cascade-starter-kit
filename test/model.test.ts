@@ -47,8 +47,16 @@ const { check, flow, save, remove, secret } = (await import(
 )) as {
   save(folder: string, values: Record<string, string>): Promise<void>;
   remove(folder: string): Promise<boolean>;
-  check(model: Chosen): Promise<{ ok: boolean; reason?: string }>;
-  flow(args: string[], terminal: Terminal, folder: string): Promise<number>;
+  check(
+    model: Chosen,
+    options?: { seconds?: number; waiting?: number; onWaiting?: () => void },
+  ): Promise<{ ok: boolean; reason?: string }>;
+  flow(
+    args: string[],
+    terminal: Terminal,
+    folder: string,
+    checking?: { seconds?: number; waiting?: number },
+  ): Promise<number>;
   secret(
     question: string,
     io: {
@@ -66,6 +74,8 @@ type Reply = {
   status?: number;
   json?: object;
   events?: [string, object][];
+  /** Never answers: the request waits until the caller gives up. */
+  hang?: true;
 };
 
 /** A loopback stub of a provider's API: answers every request with what `reply` says and keeps each request's body. */
@@ -83,7 +93,8 @@ async function stub(reply: () => Reply): Promise<{
     request.on("end", () => {
       bodies.push(JSON.parse(text) as Record<string, unknown>);
       headers.push(request.headers);
-      const { status = 200, json, events } = reply();
+      const { status = 200, json, events, hang } = reply();
+      if (hang) return;
       if (json) {
         response.writeHead(status, { "content-type": "application/json" });
         response.end(JSON.stringify(json));
@@ -324,6 +335,42 @@ test("the settings make a model, none make nothing, and no property of a model s
     modelFrom({ CASCADE_MODEL_PROVIDER: "groq", CASCADE_MODEL_KEY: KEY })!.name,
     "openai/gpt-oss-120b",
   );
+  assert.equal(
+    modelFrom({ CASCADE_MODEL_PROVIDER: "gemini", CASCADE_MODEL_KEY: KEY })!
+      .name,
+    "gemini-3.5-flash",
+  );
+});
+
+test("a model that does not answer is waited for in the open, then given up on with the likeliest cause and the next step, which differ for a model on this computer", async () => {
+  const { url } = await serving(() => ({ hang: true }));
+  const settings = { provider: "other", url: `${url}/v1`, name: "slow" };
+  const limits = { seconds: 0.5, waiting: 0.1 };
+  let waiting = 0;
+  const onWaiting = () => (waiting += 1);
+  const hosted = await check(
+    { ...modelOf(settings), local: false },
+    {
+      ...limits,
+      onWaiting,
+    },
+  );
+  assert.equal(hosted.ok, false);
+  assert.equal(waiting, 1);
+  assert.match(String(hosted.reason), /no answer within 0\.5 seconds/);
+  assert.match(String(hosted.reason), /busy/);
+  assert.match(String(hosted.reason), /npm run model/);
+  assert.match(String(hosted.reason), /another model name/);
+
+  const local = await check(modelOf(settings), limits);
+  assert.match(String(local.reason), /still be loading/);
+  assert.match(String(local.reason), /npm run model/);
+  assert.doesNotMatch(String(local.reason), /busy|another model name/);
+
+  const app = await mkdtemp(join(folder, "app-"));
+  const run = scripted(["6", `${url}/v1`, "slow", "n"], [KEY]);
+  assert.equal(await flow([], run.terminal, app, limits), 1);
+  assert.match(run.text(), /Still waiting for an answer…/);
 });
 
 test("the check passes only when the model calls the tool with arguments its schema accepts, and says why otherwise; only a model on this computer or at another address is told not to think", async () => {
@@ -641,6 +688,10 @@ test("the flow keeps the four settings in .env after a model that calls a tool, 
     CASCADE_MODEL_KEY: KEY,
   });
   assert.match(await readFile(env, "utf8"), /^KEEP=1$/m);
+  assert.match(
+    run.text(),
+    /Saved to \.env: other, stub-model, and the key\. The app's chat now uses it;/,
+  );
   assert.ok(!run.text().includes(KEY), "the key was shown");
   assert.equal(good.headers[0]!.authorization, `Bearer ${KEY}`);
 

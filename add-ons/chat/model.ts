@@ -33,7 +33,9 @@ const SERVERS = [
     name: undefined,
   },
 ];
-const CHECK_SECONDS = 120;
+const CHECK_SECONDS = 30;
+const LOCAL_CHECK_SECONDS = 120;
+const WAITING_SECONDS = 4;
 
 /** The one harmless tool the check offers. */
 export const CHECK_TOOL = {
@@ -64,9 +66,17 @@ const messageOf = (error: unknown) =>
  */
 export async function check(
   model: Model,
-  { seconds = CHECK_SECONDS } = {},
+  {
+    seconds = model.local ? LOCAL_CHECK_SECONDS : CHECK_SECONDS,
+    waiting = WAITING_SECONDS,
+    onWaiting = () => {},
+  }: { seconds?: number; waiting?: number; onWaiting?: () => void } = {},
 ): Promise<Checked> {
   const signal = AbortSignal.timeout(seconds * 1000);
+  let heard = false;
+  const late = setTimeout(() => {
+    if (!heard) onWaiting();
+  }, waiting * 1000);
   const schema = CHECK_TOOL.inputSchema;
   let step = 0;
   let called = false;
@@ -102,6 +112,7 @@ export async function check(
   const said = (error: unknown) => model.failure(error) ?? messageOf(error);
   try {
     for await (const part of result.fullStream) {
+      if (part.type !== "start" && part.type !== "start-step") heard = true;
       if (part.type === "error") {
         const reason = said(part.error);
         return {
@@ -139,9 +150,16 @@ export async function check(
     }
   } catch (error) {
     if (!signal.aborted) throw error;
+  } finally {
+    clearTimeout(late);
   }
   if (signal.aborted)
-    return { ok: false, reason: `no answer within ${seconds} seconds` };
+    return {
+      ok: false,
+      reason: model.local
+        ? `no answer within ${seconds} seconds: the model may still be loading; run \`npm run model\` again once it has loaded.`
+        : `no answer within ${seconds} seconds: ${model.name} is likely busy at its provider. Run \`npm run model\` again and try another model name.`,
+    };
   if (called)
     return answered
       ? { ok: true }
@@ -232,6 +250,7 @@ export async function flow(
   args: readonly string[],
   terminal: Terminal,
   folder = HERE,
+  checking: { seconds?: number; waiting?: number } = {},
 ): Promise<number> {
   let key: string | undefined;
   let typed = "";
@@ -327,7 +346,10 @@ export async function flow(
   say(`\nChecking that ${name} calls a tool…\n`);
   let result: Checked;
   try {
-    result = await check(modelOf({ provider, url, name, key }));
+    result = await check(modelOf({ provider, url, name, key }), {
+      ...checking,
+      onWaiting: () => say("Still waiting for an answer…\n"),
+    });
   } catch (error) {
     result = { ok: false, reason: messageOf(error) };
   }
@@ -355,7 +377,7 @@ export async function flow(
     return 2;
   }
   say(
-    `\nSaved to .env: ${provider}, ${name}${typed === "" ? "" : ", and the key"}. the app's chat now uses it; \`npm run model -- --off\` removes it.\n`,
+    `\nSaved to .env: ${provider}, ${name}${typed === "" ? "" : ", and the key"}. The app's chat now uses it; \`npm run model -- --off\` removes it.\n`,
   );
   return 0;
 }

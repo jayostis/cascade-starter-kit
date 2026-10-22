@@ -75,6 +75,12 @@ test("the Node target's bundle is the app over its typed client, with the chat w
     [],
     "the screens carry the routes' validation or the chat, which only the chat window loads",
   );
+  assert.ok(
+    chunks
+      .filter(({ isEntry }) => isEntry)
+      .every(({ code }) => code.length < 500_000),
+    "the first visit's chunk passed 500 kB: the chat window is lazy so that it stays under Vite's warning",
+  );
   assert.deepEqual(
     chunks
       .filter(({ code }) => /\.wasm\b/.test(code))

@@ -48,7 +48,7 @@ export const PROVIDERS = {
   gemini: {
     label: "Google Gemini",
     summary: "free key, no card",
-    name: "gemini-3.5-flash-lite",
+    name: "gemini-3.5-flash",
     url: "https://generativelanguage.googleapis.com/v1beta/openai/",
     key: "https://aistudio.google.com/apikey",
     data: `Google uses the free tier to improve its products, and people may read what is sent. ${FREE_ONLY_FOR_STORIES} Google's terms allow only the paid tier for people in the EEA, Switzerland and the UK: there, choose Groq or a model on this computer.`,
