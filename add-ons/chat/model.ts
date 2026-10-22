@@ -34,6 +34,7 @@ const SERVERS = [
   },
 ];
 const CHECK_SECONDS = 30;
+const LOCAL_CHECK_SECONDS = 120;
 const WAITING_SECONDS = 4;
 
 /** The one harmless tool the check offers. */
@@ -66,7 +67,7 @@ const messageOf = (error: unknown) =>
 export async function check(
   model: Model,
   {
-    seconds = CHECK_SECONDS,
+    seconds = model.local ? LOCAL_CHECK_SECONDS : CHECK_SECONDS,
     waiting = WAITING_SECONDS,
     onWaiting = () => {},
   }: { seconds?: number; waiting?: number; onWaiting?: () => void } = {},
@@ -155,7 +156,9 @@ export async function check(
   if (signal.aborted)
     return {
       ok: false,
-      reason: `no answer within ${seconds} seconds: ${model.name} is likely busy at its provider. Run \`npm run model\` again and try another model name.`,
+      reason: model.local
+        ? `no answer within ${seconds} seconds: the model may still be loading; run \`npm run model\` again once it has loaded.`
+        : `no answer within ${seconds} seconds: ${model.name} is likely busy at its provider. Run \`npm run model\` again and try another model name.`,
     };
   if (called)
     return answered
@@ -247,6 +250,7 @@ export async function flow(
   args: readonly string[],
   terminal: Terminal,
   folder = HERE,
+  checking: { seconds?: number; waiting?: number } = {},
 ): Promise<number> {
   let key: string | undefined;
   let typed = "";
@@ -343,6 +347,7 @@ export async function flow(
   let result: Checked;
   try {
     result = await check(modelOf({ provider, url, name, key }), {
+      ...checking,
       onWaiting: () => say("Still waiting for an answer…\n"),
     });
   } catch (error) {

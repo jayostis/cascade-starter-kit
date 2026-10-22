@@ -348,10 +348,13 @@ test("a model that does not answer is waited for in the open, then given up on w
   const limits = { seconds: 0.5, waiting: 0.1 };
   let waiting = 0;
   const onWaiting = () => (waiting += 1);
-  const hosted = await check({ ...modelOf(settings), local: false }, {
-    ...limits,
-    onWaiting,
-  });
+  const hosted = await check(
+    { ...modelOf(settings), local: false },
+    {
+      ...limits,
+      onWaiting,
+    },
+  );
   assert.equal(hosted.ok, false);
   assert.equal(waiting, 1);
   assert.match(String(hosted.reason), /no answer within 0\.5 seconds/);
