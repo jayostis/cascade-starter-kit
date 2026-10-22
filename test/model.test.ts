@@ -51,7 +51,12 @@ const { check, flow, save, remove, secret } = (await import(
     model: Chosen,
     options?: { seconds?: number; waiting?: number; onWaiting?: () => void },
   ): Promise<{ ok: boolean; reason?: string }>;
-  flow(args: string[], terminal: Terminal, folder: string): Promise<number>;
+  flow(
+    args: string[],
+    terminal: Terminal,
+    folder: string,
+    checking?: { seconds?: number; waiting?: number },
+  ): Promise<number>;
   secret(
     question: string,
     io: {
@@ -337,19 +342,32 @@ test("the settings make a model, none make nothing, and no property of a model s
   );
 });
 
-test("a model that does not answer is waited for in the open, then given up on with the likeliest cause and the next step", async () => {
+test("a model that does not answer is waited for in the open, then given up on with the likeliest cause and the next step, which differ for a model on this computer", async () => {
   const { url } = await serving(() => ({ hang: true }));
+  const settings = { provider: "other", url: `${url}/v1`, name: "slow" };
+  const limits = { seconds: 0.5, waiting: 0.1 };
   let waiting = 0;
-  const { ok, reason } = await check(
-    modelOf({ provider: "other", url: `${url}/v1`, name: "slow", key: KEY }),
-    { seconds: 1, waiting: 0.2, onWaiting: () => (waiting += 1) },
-  );
-  assert.equal(ok, false);
+  const onWaiting = () => (waiting += 1);
+  const hosted = await check({ ...modelOf(settings), local: false }, {
+    ...limits,
+    onWaiting,
+  });
+  assert.equal(hosted.ok, false);
   assert.equal(waiting, 1);
-  assert.match(String(reason), /no answer within 1 seconds/);
-  assert.match(String(reason), /busy/);
-  assert.match(String(reason), /npm run model/);
-  assert.match(String(reason), /another model name/);
+  assert.match(String(hosted.reason), /no answer within 0\.5 seconds/);
+  assert.match(String(hosted.reason), /busy/);
+  assert.match(String(hosted.reason), /npm run model/);
+  assert.match(String(hosted.reason), /another model name/);
+
+  const local = await check(modelOf(settings), limits);
+  assert.match(String(local.reason), /still be loading/);
+  assert.match(String(local.reason), /npm run model/);
+  assert.doesNotMatch(String(local.reason), /busy|another model name/);
+
+  const app = await mkdtemp(join(folder, "app-"));
+  const run = scripted(["6", `${url}/v1`, "slow", "n"], [KEY]);
+  assert.equal(await flow([], run.terminal, app, limits), 1);
+  assert.match(run.text(), /Still waiting for an answer…/);
 });
 
 test("the check passes only when the model calls the tool with arguments its schema accepts, and says why otherwise; only a model on this computer or at another address is told not to think", async () => {
