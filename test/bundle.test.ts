@@ -34,7 +34,7 @@ const ofChat = (id: string) =>
   /\/node_modules\/(ai|@ai-sdk|@assistant-ui)\//.test(id) ||
   id.includes("/app/src/chat/");
 
-test("the Node target's bundle is the app over its typed client, with the chat window in a chunk of its own: no cascade-runtime but its check, no server code and no wasm", async () => {
+test("the Node target's bundle is the app over its typed client, with the chat window in a chunk of its own: no cascade-runtime but its check and terms, no server code and no wasm", async () => {
   const { chunks, modules } = await bundled();
   assert.ok(
     modules.some((id) => id.includes("/node_modules/hono/dist/client/")),
@@ -55,7 +55,8 @@ test("the Node target's bundle is the app over its typed client, with the chat w
     modules.filter(
       (id) =>
         (id.includes("/node_modules/cascade-runtime/") &&
-          !id.endsWith("/dist/browser/check.js")) ||
+          !id.endsWith("/dist/browser/check.js") &&
+          !id.endsWith("/dist/src/terms.js")) ||
         id.includes("/app/server/") ||
         id.endsWith("/app/pod-api.ts") ||
         id.includes("/node_modules/@hono/") ||
