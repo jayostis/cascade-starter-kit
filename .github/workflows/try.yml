@@ -45,7 +45,7 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-shell
       - id: install
-        run: npx playwright install --with-deps --only-shell chromium
+        run: npx playwright install --only-shell chromium
       # Saved here, not after the job: a job that fails at the tests saves nothing.
       - uses: actions/cache/save@v6
         if: ${{ steps.install.outcome == 'success' && steps.browsers.outputs.cache-hit != 'true' }}
@@ -144,7 +144,7 @@ jobs:
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-shell
-      - run: npx playwright install --with-deps --only-shell chromium
+      - run: npx playwright install --only-shell chromium
       - uses: actions/cache/save@v6
         if: ${{ steps.browsers.outputs.cache-hit != 'true' }}
         with:
