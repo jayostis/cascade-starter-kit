@@ -7,6 +7,8 @@ import {
   type Pod,
   pullFiles,
   type Row,
+  type Terms,
+  terms,
 } from "cascade-runtime";
 import { pulled } from "./hospitals.js";
 
@@ -40,33 +42,37 @@ export const GROUPS = {
   watched: { at: "2026-10-08T20:00:00Z", found: "nothing new" },
 };
 
-export const GENOMICS = "https://ns.cascadeprotocol.org/genomics/v1#";
-export const REC = "https://ns.cascadeprotocol.org/records/v1-draft#";
-const CONCEPTS: Record<string, string> = {
-  [`${GENOMICS}Pathogenic`]: "Pathogenic",
-  [`${GENOMICS}LikelyPathogenic`]: "Likely pathogenic",
-  [`${GENOMICS}VUS`]: "Uncertain significance",
-  [`${GENOMICS}LikelyBenign`]: "Likely benign",
-  [`${GENOMICS}Benign`]: "Benign",
-  [`${REC}ClinVarConflicting`]: "Conflicting classifications of pathogenicity",
-  [`${REC}ClinVarConflictingData`]: "conflicting data from submitters",
-  [`${REC}ClinVarCombinationOnly`]: "-",
-  [`${REC}ClinVarVusHigh`]: "VUS-high",
-  [`${REC}ClinVarRiskFactor`]: "risk factor",
-  [`${REC}ClinVarMultipleSubmittersNoConflicts`]:
+const ACMG_LABELS = {
+  Pathogenic: "Pathogenic",
+  LikelyPathogenic: "Likely pathogenic",
+  UncertainSignificance: "Uncertain significance",
+  LikelyBenign: "Likely benign",
+  Benign: "Benign",
+} as const;
+const CLINVAR_LABELS = {
+  ClinVarConflicting: "Conflicting classifications of pathogenicity",
+  ClinVarConflictingData: "conflicting data from submitters",
+  ClinVarCombinationOnly: "-",
+  ClinVarVusHigh: "VUS-high",
+  ClinVarRiskFactor: "risk factor",
+  ClinVarMultipleSubmittersNoConflicts:
     "criteria provided, multiple submitters, no conflicts",
-  [`${REC}ClinVarSingleSubmitter`]: "criteria provided, single submitter",
-  [`${REC}ClinVarNoAssertionCriteria`]: "no assertion criteria provided",
+  ClinVarSingleSubmitter: "criteria provided, single submitter",
+  ClinVarNoAssertionCriteria: "no assertion criteria provided",
+} as const;
+const CONCEPTS: Record<string, string> = {
+  ...ACMG_LABELS,
+  ...CLINVAR_LABELS,
 };
 export const concept = (name: string) => {
-  const iri = [GENOMICS, REC]
-    .map((space) => space + name)
-    .find((each) => each in CONCEPTS);
-  assert.ok(iri, name);
-  return { iri, label: CONCEPTS[iri] };
+  assert.ok(name in CONCEPTS, name);
+  return { iri: terms[name as keyof Terms] as string, label: CONCEPTS[name] };
 };
 export const LABELS = new Map(
-  Object.entries(CONCEPTS).filter(([iri]) => iri.startsWith(GENOMICS)),
+  Object.entries(ACMG_LABELS).map(([name, label]) => [
+    terms[name as keyof typeof ACMG_LABELS],
+    label,
+  ]),
 );
 export const VERSION = "ni:///clinvar-1";
 export const ROW = "http://www.ncbi.nlm.nih.gov/clinvar/90011";
@@ -85,7 +91,7 @@ export const report = (
   variant: "v1",
   ...(classification === undefined
     ? {}
-    : { classification: `${GENOMICS}${classification}` }),
+    : { classification: terms[classification as keyof Terms] as string }),
   ...(date === undefined ? {} : { date }),
 });
 export const verdict = (reportId: string, said: string, extra = {}) => ({
@@ -133,7 +139,7 @@ export const VARIANT_ANSWERS = {
     { variant: "v1", gene: "MLH1", variation: "90011" },
   ],
   [REPORTS]: [
-    report("r1", "VUS", "2022-05-01"),
+    report("r1", "UncertainSignificance", "2022-05-01"),
     report("r2", "LikelyPathogenic", "2024-03-21"),
     { ...report("r3", "Benign", "2023-01-01"), variant: "orphan" },
   ],

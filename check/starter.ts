@@ -16,6 +16,7 @@ import { setTimeout } from "node:timers";
 import { parseArgs } from "node:util";
 import * as oxigraph from "oxigraph";
 import { chromium } from "playwright";
+import { terms } from "cascade-runtime/terms";
 import { Client } from "@modelcontextprotocol/client";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import { answerSignIn } from "@the-cascade-protocol/sandbox/testing";
@@ -58,19 +59,16 @@ const PRIYA = "conformance/priya-natarajan";
 const MARTIN = "conformance/martin-okafor";
 const MY_VARIANTS = "pod/My genetic variants";
 const REPORTS = "pod/What each report says of a variant";
-const CORE = "https://ns.cascadeprotocol.org/core/v1#";
-const GENOMICS = "https://ns.cascadeprotocol.org/genomics/v1#";
-const REC = "https://ns.cascadeprotocol.org/records/v1-draft#";
 const PREF_LABEL = "http://www.w3.org/2004/02/skos/core#prefLabel";
 const COUNSELLOR =
   "Your clinician or a genetic counsellor can explain what this means for you.";
 const DIFFERS = "Differs";
 const ACMG = [
-  "Pathogenic",
-  "LikelyPathogenic",
-  "VUS",
-  "LikelyBenign",
-  "Benign",
+  terms.Pathogenic,
+  terms.LikelyPathogenic,
+  terms.UncertainSignificance,
+  terms.LikelyBenign,
+  terms.Benign,
 ];
 const DIGITS = [
   "no",
@@ -85,7 +83,6 @@ const DIGITS = [
   "nine",
 ];
 const MEDICATIONS = "pod/My active medications";
-const DRUG_NAME = "https://ns.cascadeprotocol.org/clinical/v1#drugName";
 const ALLERGIES = "pod/My active allergies";
 const REVIEW = "entry/What needs review";
 const SOURCES = "entry/Where it came from";
@@ -104,8 +101,6 @@ const TILES = {
 const JUDGMENTS = "pod/How many judgments count";
 const IMPORTS = "pod/What each import brought in";
 const C_CDA = "kestrel-harbor-health-summary.xml";
-const STATUS = "https://ns.cascadeprotocol.org/clinical/v1#status";
-const ALLERGEN = "https://ns.cascadeprotocol.org/health/v1#allergen";
 const MINUTES = 60 * 1000;
 /** How long a click that submits waits for what it starts, a reset of every pod the longest. */
 const SUBMIT = { timeout: 5 * MINUTES };
@@ -703,7 +698,11 @@ await setUp("the command makes the app", async () => {
   );
   const active = new Set(
     triples
-      .filter(([, p, o]) => p.value === STATUS && o.value === "active")
+      .filter(
+        ([, p, o]) =>
+          p.value === terms.statusOf.AllergyOrIntolerance &&
+          o.value === "active",
+      )
       .map(([s]) => s.value),
   );
   story = {
@@ -714,7 +713,7 @@ await setUp("the command makes the app", async () => {
       .filter(({ happened }) => !["reference", "open"].includes(happened.kind))
       .map(({ name }) => name),
     activeAllergens: triples
-      .filter(([s, p]) => active.has(s.value) && p.value === ALLERGEN)
+      .filter(([s, p]) => active.has(s.value) && p.value === terms.allergen)
       .map(([, , o]) => o.value)
       .sort(),
   };
@@ -1340,7 +1339,11 @@ if (release === undefined) {
       );
       const active = new Set(
         triples
-          .filter(([, p, o]) => p.value === STATUS && o.value === "active")
+          .filter(
+            ([, p, o]) =>
+              p.value === terms.statusOf.PrescribedOrReportedMedication &&
+              o.value === "active",
+          )
           .map(([s]) => s.value),
       );
       assert.deepEqual(
@@ -1348,7 +1351,7 @@ if (release === undefined) {
           .map(({ medication }) => medication)
           .sort(),
         triples
-          .filter(([s, p]) => active.has(s.value) && p.value === DRUG_NAME)
+          .filter(([s, p]) => active.has(s.value) && p.value === terms.drugName)
           .map(([, , o]) => o.value)
           .sort(),
       );
@@ -1378,18 +1381,14 @@ if (release === undefined) {
         [
           ...new Set(
             triples
-              .filter(([, p]) => p.value === `${CORE}mergedFrom`)
+              .filter(([, p]) => p.value === terms.mergedFrom)
               .map(([s]) => s.value),
           ),
         ].map((entry) => ({
           entry,
-          hgvs: objectsOf(triples, entry, `${GENOMICS}hgvsCDot`).sort(),
-          variations: objectsOf(
-            triples,
-            entry,
-            `${GENOMICS}clinvarVariationId`,
-          ),
-          genes: objectsOf(triples, entry, `${GENOMICS}geneSymbol`),
+          hgvs: objectsOf(triples, entry, terms.hgvsCodingDnaExpression).sort(),
+          variations: objectsOf(triples, entry, terms.clinvarVariationId),
+          genes: objectsOf(triples, entry, terms.geneSymbol),
         }));
       const titleOf = ({ genes, hgvs, variations }) =>
         [...genes, ...hgvs, ...variations.map((id) => `ClinVar ${id}`)].join(
@@ -1418,9 +1417,9 @@ if (release === undefined) {
 
       const tables = `${MARTIN}/scripted-input/martin/tables/clinvar-story`;
       const index = await triplesOf(`${tables}/references.ttl`);
-      const version = index.find(([, p]) => p.value === `${REC}coversGene`)[0]
+      const version = index.find(([, p]) => p.value === terms.coversGene)[0]
         .value;
-      const covered = objectsOf(index, version, `${REC}coversGene`).sort();
+      const covered = objectsOf(index, version, terms.coversGene).sort();
       const held = await triplesOf(
         `${tables}/${version.replace("urn:uuid:", "")}.ttl`,
       );
@@ -1428,7 +1427,7 @@ if (release === undefined) {
         objectsOf(
           held,
           `http://www.ncbi.nlm.nih.gov/clinvar/${id}`,
-          `${REC}clinvarClassification`,
+          terms.clinvarClassification,
         );
       const labels = await triplesOf("ontologies/records/v1-draft/records.ttl");
       const label = (concept) => {
@@ -1440,19 +1439,18 @@ if (release === undefined) {
       const saidOf = (id) => {
         const row = `http://www.ncbi.nlm.nih.gov/clinvar/${id}`;
         const classifications = rowOf(id);
-        const [status] = objectsOf(held, row, `${REC}clinvarReviewStatus`);
+        const [status] = objectsOf(held, row, terms.clinvarReviewStatus);
         const [submitters] = objectsOf(
           held,
           row,
-          `${REC}contributingSubmitters`,
+          terms.contributingSubmitterCount,
         );
         const count = Number(submitters);
         assert.ok(
           classifications.length > 0 && status && count < 10,
           `${id}: the kit's row`,
         );
-        const said = ACMG.map((name) => GENOMICS + name)
-          .filter((iri) => classifications.includes(iri))
+        const said = ACMG.filter((iri) => classifications.includes(iri))
           .map(label)
           .join("/");
         const counted = `${DIGITS[count]} contributing ${count === 1 ? "submitter" : "submitters"}`;
@@ -1463,7 +1461,7 @@ if (release === undefined) {
         [
           ...new Set(
             held
-              .filter(([, p]) => p.value === `${REC}clinvarClassification`)
+              .filter(([, p]) => p.value === terms.clinvarClassification)
               .map(([row]) => row.value.split("/").at(-1)),
           ),
         ].sort(),
@@ -1481,23 +1479,19 @@ if (release === undefined) {
       const kitGroups = new Map();
       for (const entry of new Set(
         kitReports
-          .filter(([, p]) => p.value === `${CORE}mergedFrom`)
+          .filter(([, p]) => p.value === terms.mergedFrom)
           .map(([s]) => s.value),
       )) {
-        const [about] = objectsOf(
-          kitReports,
-          entry,
-          `${GENOMICS}variantInterpreted`,
-        );
+        const [about] = objectsOf(kitReports, entry, terms.variantInterpreted);
         kitGroups.set(about, [
           ...(kitGroups.get(about) ?? []),
           {
             classification: objectsOf(
               kitReports,
               entry,
-              `${GENOMICS}acmgClassification`,
+              terms.acmgClassification,
             )[0],
-            date: objectsOf(kitReports, entry, `${GENOMICS}interpretedDate`)[0],
+            date: objectsOf(kitReports, entry, terms.interpretedDate)[0],
           },
         ]);
       }

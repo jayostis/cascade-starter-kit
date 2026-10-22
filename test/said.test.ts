@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
+import { type Terms, terms } from "cascade-runtime";
 import {
   ALLERGIES,
   CLINVAR,
@@ -197,12 +198,12 @@ test("worth a look: two medications in two entries whose codes share an ingredie
     ],
     [RXNORM + "17767", { name: { label: "amlodipine", altLabels: [] } }],
   ]);
-  const LIFECYCLE =
-    "https://ns.cascadeprotocol.org/records/v1-draft#Medication";
   const answers = (...rows: Record<string, string>[]) => ({
     [MEDICATIONS]: rows.map((row): Record<string, string> => ({
       ...row,
-      lifecycle: LIFECYCLE + (row.lifecycle ?? "Active"),
+      lifecycle: terms[
+        `Medication${row.lifecycle ?? "Active"}` as keyof Terms
+      ] as string,
     })),
   });
   const lines = (rows: object) =>
@@ -681,7 +682,7 @@ test("what a variant's page says: a sentence for each report, oldest first, tagg
       "a report with its lab: its sentence names it, the year and the lab are kept apart, and a report of no lab says nothing of one",
       {
         reports: [
-          report("r1", "VUS", "2022-05-01"),
+          report("r1", "UncertainSignificance", "2022-05-01"),
           report("r2", undefined, "2024-03-21"),
           report("r3", "Benign", undefined),
           report("r4", "Benign", "2023-01-01"),
@@ -716,7 +717,7 @@ test("what a variant's page says: a sentence for each report, oldest first, tagg
       {
         reports: [
           report("r2", "LikelyPathogenic", "2024-03-21"),
-          report("r1", "VUS", "2022-05-01"),
+          report("r1", "UncertainSignificance", "2022-05-01"),
         ],
         says: martin,
         verdicts: [verdict("r1", "differs"), verdict("r2", "agrees")],
@@ -756,7 +757,7 @@ test("what a variant's page says: a sentence for each report, oldest first, tagg
         reports: [
           report("r1", undefined, "2020-01-01"),
           report("r2", "Benign", undefined),
-          report("r3", "VUS", "2024-11-02"),
+          report("r3", "UncertainSignificance", "2024-11-02"),
           report("r4", "Pathogenic", "2024-03-21"),
         ],
         says: {
@@ -777,10 +778,10 @@ test("what a variant's page says: a sentence for each report, oldest first, tagg
       "a verdict of another row or version, and every verdict but differs, adds no tag",
       {
         reports: [
-          report("r1", "VUS", "2021-01-01"),
-          report("r2", "VUS", "2022-01-01"),
-          report("r3", "VUS", "2023-01-01"),
-          report("r4", "VUS", "2024-01-01"),
+          report("r1", "UncertainSignificance", "2021-01-01"),
+          report("r2", "UncertainSignificance", "2022-01-01"),
+          report("r3", "UncertainSignificance", "2023-01-01"),
+          report("r4", "UncertainSignificance", "2024-01-01"),
         ],
         says: martin,
         verdicts: [
@@ -817,7 +818,7 @@ test("what a variant's page says: a sentence for each report, oldest first, tagg
     ],
     [
       "the tables cannot say yet",
-      { reports: [report("r1", "VUS", "2022-01-01")] },
+      { reports: [report("r1", "UncertainSignificance", "2022-01-01")] },
       [{ sentence: "Your 2022 report said uncertain significance." }],
       undefined,
     ],
@@ -849,7 +850,10 @@ test("what a variant's page says: a sentence for each report, oldest first, tagg
       "a sub-tier after the ACMG value, and no contributing submitters",
       {
         says: rows({
-          classification: [concept("ClinVarVusHigh"), concept("VUS")],
+          classification: [
+            concept("ClinVarVusHigh"),
+            concept("UncertainSignificance"),
+          ],
           contributingSubmitters: 0,
         }),
       },
@@ -870,7 +874,10 @@ test("what a variant's page says: a sentence for each report, oldest first, tagg
     [
       "a row that counts submitters, not contributing ones",
       {
-        says: rows({ classification: [concept("VUS")], submitters: 3 }),
+        says: rows({
+          classification: [concept("UncertainSignificance")],
+          submitters: 3,
+        }),
       },
       [],
       "ClinVar today says uncertain significance, 3 submitters.",
@@ -920,7 +927,7 @@ test("a variation's classification is said as ClinVar's sentence", () => {
       series: "urn:test:clinvar",
       version: VERSION,
       variation: ROW,
-      classification: [concept("VUS")],
+      classification: [concept("UncertainSignificance")],
     }),
     "ClinVar today says uncertain significance.",
   );

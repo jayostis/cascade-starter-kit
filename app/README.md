@@ -179,7 +179,7 @@ which Node runs as it is.
   `error`, with `data-error` saying why. Under the pods, the sidebar lists
   the reference tables the pods are matched with; `/tables/<id>/` shows one
   with a search, and Check now reads their feeds again.
-- `said.ts`: what the pages say, as plain functions with no imports, from a
+- `said.ts`: what the pages say, as plain functions whose one import is the runtime's terms, from a
   pod's answers to sentences, rows and tags; `addresses.ts`, every address of
   the app.
 - `server/`: `npm start`'s server, on [Hono](https://hono.dev): `main.ts`
