@@ -5,10 +5,10 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import * as oxigraph from "oxigraph";
 import { kitFolder } from "cascade-runtime/fixtures";
+import { terms } from "cascade-runtime/terms";
 
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const RECORDS = "ontologies/records/v1-draft/records.ttl";
-const REC = "https://ns.cascadeprotocol.org/records/v1-draft#";
 const RDF_TYPE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type";
 const URI_SPACE = "http://rdfs.org/ns/void#uriSpace";
 
@@ -33,7 +33,7 @@ async function registered(): Promise<string[]> {
     triples
       .filter(
         ({ predicate, object }) =>
-          predicate.value === RDF_TYPE && object.value === `${REC}CodeSystem`,
+          predicate.value === RDF_TYPE && object.value === terms.CodeSystem,
       )
       .map(({ subject }) => subject.value),
   );

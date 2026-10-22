@@ -14,9 +14,9 @@ export default tseslint.config(
         "error",
         {
           selector:
-            "ImportDeclaration, ImportExpression, ExportNamedDeclaration[source], ExportAllDeclaration",
+            "ImportDeclaration[source.value!='cascade-runtime/terms'], ImportExpression, ExportNamedDeclaration[source], ExportAllDeclaration",
           message:
-            "What the pages say runs everywhere, as plain functions: said.ts imports nothing.",
+            "What the pages say runs everywhere, as plain functions: said.ts imports only the runtime's terms.",
         },
       ],
     },

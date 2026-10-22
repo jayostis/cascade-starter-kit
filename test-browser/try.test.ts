@@ -36,6 +36,7 @@ import {
 } from "@the-cascade-protocol/sandbox/node";
 import * as oxigraph from "oxigraph";
 import { installedParts } from "cascade-runtime/fixtures";
+import { terms } from "cascade-runtime/terms";
 import { openPodWith } from "cascade-runtime/published";
 import { type Served, servePages } from "../try/build/serve.js";
 import {
@@ -309,7 +310,7 @@ async function nodeJoin(family: string): Promise<Joined> {
     const judged = (
       await pod.ask({
         query: `SELECT ?justification ?used WHERE {
-          ?judgment <https://ns.cascadeprotocol.org/judgments/v1-draft#justification> ?justification .
+          ?judgment <${terms.justification}> ?justification .
           OPTIONAL { ?judgment <http://www.w3.org/ns/prov#used> ?used }
         }`,
       })
@@ -1652,7 +1653,7 @@ test("in the browser, a check keeps the test feed's planted newer version in the
         close(): Promise<void>;
       }>;
     }
-    const entered = await page.evaluate(async () => {
+    const entered = await page.evaluate(async (terms) => {
       const runtime = (await import("cascade-runtime" as string)) as Runtime;
       await runtime.checkTables();
       const pod = await runtime.openPod("tables-proof");
@@ -1665,25 +1666,25 @@ test("in the browser, a check keeps the test feed's planted newer version in the
         (
           [code, date],
           index,
-        ) => `<urn:cascade:output-${index}> a <https://ns.cascadeprotocol.org/health/v1#ImmunizationRecord> .
+        ) => `<urn:cascade:output-${index}> a <${terms.Vaccination}> .
 <urn:cascade:output-${index}-version> <http://www.w3.org/ns/prov#specializationOf> <urn:cascade:output-${index}> ;
-  <https://ns.cascadeprotocol.org/health/v1#vaccineCode> "${code}" ;
-  <https://ns.cascadeprotocol.org/health/v1#administrationDate> "${date}"^^<http://www.w3.org/2001/XMLSchema#date> ;
-  <https://ns.cascadeprotocol.org/records/v1-draft#patient> <${pod.subject}> .`,
+  <${terms.vaccineCode}> "${code}" ;
+  <${terms.vaccinationOccurrenceTime}> "${date}"^^<http://www.w3.org/2001/XMLSchema#date> ;
+  <${terms.patient}> <${pod.subject}> .`,
       );
       const done =
         await pod.enter(`<urn:cascade:this-entry> a <http://www.w3.org/ns/prov#Activity> ;
   <http://www.w3.org/ns/prov#qualifiedAssociation> [ <http://www.w3.org/ns/prov#agent> <${pod.owner}> ;
-    <http://www.w3.org/ns/prov#hadRole> <https://ns.cascadeprotocol.org/judgments/v1-draft#patient> ] .
+    <http://www.w3.org/ns/prov#hadRole> <${terms.PatientRole}> ] .
 ${shots.join("\n")}`);
       await pod.close();
       return done;
-    });
+    }, terms);
     assert.equal(entered.refused, undefined);
 
     feed = feedOf((version) => version);
     const after = await page.evaluate(
-      async ({ series, first, second }) => {
+      async ({ series, first, second, terms }) => {
         const runtime = (await import("cascade-runtime" as string)) as Runtime;
         const checked = await runtime.checkTables();
         const pod = await runtime.openPod("tables-proof");
@@ -1693,10 +1694,10 @@ ${shots.join("\n")}`);
           });
           const sames = await pod.ask({
             query: `SELECT ?used (GROUP_CONCAT(?code; separator=" ") AS ?codes) WHERE {
-              ?judgment <https://ns.cascadeprotocol.org/judgments/v1-draft#justification> <https://ns.cascadeprotocol.org/judgments/v1-draft#SameMappedCodeAndDate> ;
+              ?judgment <${terms.justification}> <${terms.SameMappedCodeAndDate}> ;
                 <http://www.w3.org/ns/prov#used> ?used ; <http://www.w3.org/ns/prov#hadMember> ?record .
               VALUES ?used { <${first}> <${second}> }
-              ?record <http://purl.org/pav/hasCurrentVersion>/<https://ns.cascadeprotocol.org/health/v1#vaccineCode> ?code
+              ?record <http://purl.org/pav/hasCurrentVersion>/<${terms.vaccineCode}> ?code
             } GROUP BY ?judgment ?used`,
           });
           return {
@@ -1712,7 +1713,7 @@ ${shots.join("\n")}`);
           await pod.close();
         }
       },
-      { series, first, second },
+      { series, first, second, terms },
     );
     assert.ok(after.kept.includes(second));
     assert.equal(after.opened?.refused, undefined);
@@ -1762,7 +1763,7 @@ ${shots.join("\n")}`);
       /^Checked the feeds: nothing new\.$/,
     );
 
-    const said = await page.evaluate(async () => {
+    const said = await page.evaluate(async (terms) => {
       const runtime = (await import("cascade-runtime" as string)) as Runtime & {
         appTables(): Promise<{
           about(codes: string[]): Promise<
@@ -1779,17 +1780,15 @@ ${shots.join("\n")}`);
       const pod = await runtime.openPod("tables-proof");
       try {
         const shots = ["57", "03"].map(
-          (
-            code,
-          ) => `<urn:cascade:output-${code}> a <https://ns.cascadeprotocol.org/health/v1#ImmunizationRecord> .
+          (code) => `<urn:cascade:output-${code}> a <${terms.Vaccination}> .
 <urn:cascade:output-${code}-version> <http://www.w3.org/ns/prov#specializationOf> <urn:cascade:output-${code}> ;
-  <https://ns.cascadeprotocol.org/health/v1#vaccineCode> "${code}" ;
-  <https://ns.cascadeprotocol.org/health/v1#administrationDate> "2020-01-01"^^<http://www.w3.org/2001/XMLSchema#date> ;
-  <https://ns.cascadeprotocol.org/records/v1-draft#patient> <${pod.subject}> .`,
+  <${terms.vaccineCode}> "${code}" ;
+  <${terms.vaccinationOccurrenceTime}> "2020-01-01"^^<http://www.w3.org/2001/XMLSchema#date> ;
+  <${terms.patient}> <${pod.subject}> .`,
         );
         await pod.enter(`<urn:cascade:this-entry> a <http://www.w3.org/ns/prov#Activity> ;
   <http://www.w3.org/ns/prov#qualifiedAssociation> [ <http://www.w3.org/ns/prov#agent> <${pod.owner}> ;
-    <http://www.w3.org/ns/prov#hadRole> <https://ns.cascadeprotocol.org/judgments/v1-draft#patient> ] .
+    <http://www.w3.org/ns/prov#hadRole> <${terms.PatientRole}> ] .
 ${shots.join("\n")}`);
         const given = await pod.ask("pod/My immunizations");
         const reviewed = new Set(
@@ -1806,7 +1805,7 @@ ${shots.join("\n")}`);
       } finally {
         await pod.close();
       }
-    });
+    }, terms);
     assert.ok(
       said.some(({ label }) => label !== ""),
       "the names series names no shot",
@@ -2849,18 +2848,17 @@ test("in try/, the sample pod tamsin-vale draws What changed and, in its card, w
 test("try/ ships the starter tables its published answers were computed with: after a check that finds nothing new, a visit draws a copied pod from its kept answers, the engine held back, and the browser keeps one set of tables for every address", async () => {
   const [feedUrl] = (await servedConfig()).tables.feeds;
   assert.ok(feedUrl);
-  const REC = "https://ns.cascadeprotocol.org/records/v1-draft#";
   const shipped = turtle(
     await readFile(join(SERVED, "tables", "references.ttl")),
     "urn:test:starter/",
-  ).filter(([, predicate]) => predicate.value === `${REC}shipsWith`);
+  ).filter(([, predicate]) => predicate.value === terms.defaultTableVersion);
   assert.ok(shipped.length > 0, "try/ ships no starter tables");
   const feed = ntriples(
     shipped.flatMap(([series, , version]): Triple[] => [
       [
         series,
         oxigraph.namedNode("http://www.w3.org/1999/02/22-rdf-syntax-ns#type"),
-        oxigraph.namedNode(`${REC}ReferenceSeries`),
+        oxigraph.namedNode(terms.ReferenceSeries),
       ],
       [series, oxigraph.namedNode(`${DCAT}hasCurrentVersion`), version],
     ]),

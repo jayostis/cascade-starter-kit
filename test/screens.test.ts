@@ -6,6 +6,8 @@ import {
   type Finding,
   labSeriesIn,
   type Row,
+  type Terms,
+  terms,
   timelineIn,
 } from "cascade-runtime";
 import {
@@ -21,7 +23,6 @@ import {
   LABS,
   MEDICATIONS,
   NAME,
-  REC,
   REVIEW,
   said,
   SEEN,
@@ -320,18 +321,18 @@ test("tables are browsed by source: a source's page searches all its tables and 
             version: "ni:///v2",
             in: [
               {
-                relation: `${said.REC}establishedPharmacologicClass`,
+                relation: terms.establishedPharmacologicClass,
                 class: coded("N0000175562", "ACE inhibitor [EPC]"),
                 through: coded("1546022", "lisinopril anhydrous"),
               },
               {
-                relation: `${said.REC}chemicalStructure`,
+                relation: terms.chemicalStructureClass,
                 class: coded("M0014310", "Lisinopril"),
               },
             ],
             withheld: [
               {
-                relation: `${said.REC}mechanismOfAction`,
+                relation: terms.mechanismOfActionClass,
                 ingredient: coded("29046", "lisinopril"),
               },
             ],
@@ -432,7 +433,7 @@ test("a code's page gives a variation's classification as ClinVar's sentence wit
         variation: VARIATION,
         classification: [
           {
-            iri: "https://ns.cascadeprotocol.org/genomics/v1#VUS",
+            iri: terms.UncertainSignificance,
             label: "Uncertain significance",
           },
         ],
@@ -1097,14 +1098,14 @@ test("the medicines by class page groups the pod's active medicines under each c
     entry: string,
     medication: string,
     cls: string,
-    relation = "establishedPharmacologicClass",
+    relation: string = terms.establishedPharmacologicClass,
     on = "3827",
     stated = "false",
   ) => ({
     entry,
     medication,
     class: `${MEDRT}${cls}`,
-    relation: `${REC}${relation}`,
+    relation,
     origin: ORIGIN,
     through: `http://www.nlm.nih.gov/research/umls/rxnorm/${on}`,
     stated,
@@ -1120,7 +1121,7 @@ test("the medicines by class page groups the pod's active medicines under each c
       "true",
     ),
     row("e2", "Enalapril", "N0000175562"),
-    row("e2", "Enalapril", "N0000000174", "mechanismOfAction"),
+    row("e2", "Enalapril", "N0000000174", terms.mechanismOfActionClass),
   ];
   const LISINOPRIL_TABLET =
     "http://www.nlm.nih.gov/research/umls/rxnorm/314076";
@@ -1688,7 +1689,7 @@ test("the Medications tile says each medication's L1 lifecycle, current ones fir
     answers: {
       [MEDICATIONS]: table.map(([lifecycle, row], at) => ({
         entry: `e${at}`,
-        lifecycle: REC + lifecycle,
+        lifecycle: terms[lifecycle as keyof Terms] as string,
         ...row,
       })),
     },
@@ -2105,7 +2106,6 @@ test("a pod brought in twice says where What changed comes from: the imports in 
   const IMPORTS = "pod/What each import brought in";
   const REVISIONS = "record/Its revisions, in the order they arrived";
   const VERSIONS = "record/What each version says";
-  const CLINICAL = "https://ns.cascadeprotocol.org/clinical/v1#";
   const north = "Cascade North Demo Hospital";
   const imported = (n: number, records: string[]) =>
     records.map((each) => ({
@@ -2126,7 +2126,7 @@ test("a pod brought in twice says where What changed comes from: the imports in 
   });
   const stated = (version: string, field: string, value: string) => ({
     version,
-    field: `${CLINICAL}${field}`,
+    field,
     value,
   });
   const twice = {
@@ -2142,11 +2142,19 @@ test("a pod brought in twice says where What changed comes from: the imports in 
       }),
     ],
     [VERSIONS]: [
-      stated("ni:first", "drugName", "Atorvastatin"),
-      stated("ni:first", "status", "active"),
-      stated("ni:second", "drugName", "Atorvastatin"),
-      stated("ni:second", "endDate", "2024-04-15"),
-      stated("ni:second", "status", "completed"),
+      stated("ni:first", terms.drugName, "Atorvastatin"),
+      stated(
+        "ni:first",
+        terms.statusOf.PrescribedOrReportedMedication,
+        "active",
+      ),
+      stated("ni:second", terms.drugName, "Atorvastatin"),
+      stated("ni:second", terms.medicationUseEndDate, "2024-04-15"),
+      stated(
+        "ni:second",
+        terms.statusOf.PrescribedOrReportedMedication,
+        "completed",
+      ),
     ],
   };
   const zone = process.env.TZ;

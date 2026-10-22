@@ -1,6 +1,8 @@
 // What a pod's page says, as data: the sections and their rows, the names, dates and sentences the pages draw, from a
-// pod's question rows and what the tables answer. Plain functions with no imports, which the view, PodApi, the chat,
-// MCP and the tests all read, in Node and in a browser alike.
+// pod's question rows and what the tables answer. Plain functions whose one import is the runtime's terms, which
+// the view, PodApi, the chat, MCP and the tests all read, in Node and in a browser alike.
+
+import { terms } from "cascade-runtime/terms";
 
 /** A question's row: each variable it binds, as text. */
 export type Row = Readonly<Record<string, string>>;
@@ -438,11 +440,10 @@ const SEVERITY: Readonly<Record<string, string>> = {
   low: "Low severity",
 };
 
-export const REC = "https://ns.cascadeprotocol.org/records/v1-draft#";
-const ACTIVE = `${REC}MedicationActive`;
-const STOPPED = `${REC}MedicationStopped`;
-const UNKNOWN = `${REC}MedicationUnknown`;
-const ENTERED_IN_ERROR = `${REC}MedicationEnteredInError`;
+const ACTIVE = terms.MedicationActive;
+const STOPPED = terms.MedicationStopped;
+const UNKNOWN = terms.MedicationUnknown;
+const ENTERED_IN_ERROR = terms.MedicationEnteredInError;
 
 /**
  * The lifecycle classes of rule L1 a person is shown, in the order the Medications table opens in, each with its word.
@@ -450,7 +451,7 @@ const ENTERED_IN_ERROR = `${REC}MedicationEnteredInError`;
  */
 const LIFECYCLES = [
   [ACTIVE, "Active"],
-  [`${REC}MedicationPaused`, "Paused"],
+  [terms.MedicationPaused, "Paused"],
   [UNKNOWN, "Unknown"],
   [STOPPED, "Stopped"],
 ].map(([lifecycle, said], order) => ({ lifecycle, said, order }));
@@ -1134,19 +1135,19 @@ export function sharedIngredients(answers: Answers, about: Abouts): Shared[] {
   return sentences;
 }
 
-const GENOMICS = "https://ns.cascadeprotocol.org/genomics/v1#";
 /** The five ACMG values, in the order a classification names them. */
-const ACMG = [
-  "Pathogenic",
-  "LikelyPathogenic",
-  "VUS",
-  "LikelyBenign",
-  "Benign",
-].map((name) => GENOMICS + name);
-const LABS_DISAGREE = ["ClinVarConflicting", "ClinVarConflictingData"].map(
-  (name) => REC + name,
-);
-const COMBINATION_ONLY = `${REC}ClinVarCombinationOnly`;
+const ACMG: string[] = [
+  terms.Pathogenic,
+  terms.LikelyPathogenic,
+  terms.UncertainSignificance,
+  terms.LikelyBenign,
+  terms.Benign,
+];
+const LABS_DISAGREE: string[] = [
+  terms.ClinVarConflicting,
+  terms.ClinVarConflictingData,
+];
+const COMBINATION_ONLY = terms.ClinVarCombinationOnly;
 const COUNSELLOR =
   "Your clinician or a genetic counsellor can explain what this means for you.";
 const DIGITS = [
@@ -2703,11 +2704,11 @@ export const REQUIRED: Readonly<Record<string, string>> = {
 
 /** The relations of a drug class row, in the order a page lists them, and what a person calls each. */
 export const RELATIONS = [
-  ["establishedPharmacologicClass", "Established pharmacologic class"],
-  ["mechanismOfAction", "Mechanism of action"],
-  ["physiologicEffect", "Physiologic effect"],
-  ["chemicalStructure", "Chemical structure"],
-].map(([term, name]) => [`${REC}${term}`, name]);
+  [terms.establishedPharmacologicClass, "Established pharmacologic class"],
+  [terms.mechanismOfActionClass, "Mechanism of action"],
+  [terms.physiologicEffectClass, "Physiologic effect"],
+  [terms.chemicalStructureClass, "Chemical structure"],
+];
 
 export const relationName = (relation: string) =>
   RELATIONS.find(([each]) => each === relation)?.[1] ?? notationOf(relation);
