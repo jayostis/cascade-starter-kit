@@ -2,7 +2,8 @@
 // the current one. `node starter.ts <tarball> [--runtime <cascade-runtime tarball>]` before a merge, the made app on
 // the template's pinned runtime unless another is given; `node starter.ts --release <commit>` once that commit's
 // release exists. Run from the repository after `npm ci` and `npm run build`. `--with chat,mcp` makes the app with
-// those add-ons. `--only <behaviour>` runs only the behaviours whose name holds that text, after making the app.
+// those add-ons and checks only what an add-on can change. `--only <behaviour>` runs only the behaviours whose name
+// holds that text, after making the app.
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -609,15 +610,34 @@ console.log(JSON.stringify({ row, patient, patients: Object.keys(north.patients)
   return JSON.parse(out.trim().split(/\r?\n/).at(-1));
 }
 
-/** Checks the behaviour `name`; with `--only`, only when its name holds `--only`'s text. */
-async function behaviour(name: string, check: () => Promise<void>) {
+/**
+ * Checks the behaviour `name`; with `--only`, only when its name holds `--only`'s text. With `--with` and no `--only`,
+ * only a behaviour an add-on can change, which `addOnBehaviour` checks: an add-on adds files, and reaches the base only
+ * through its packages and scripts, the server's `/chat` and the page's chat window, so the run without `--with`
+ * checks every other behaviour on the same code. The window sits on every page, so a behaviour that presses a page
+ * control with a real click (the File menu's, Check now, a hospital's Sign in) runs with the add-ons too.
+ */
+async function behaviour(
+  name: string,
+  check: () => Promise<void>,
+  addOnsChangeIt = false,
+) {
   stdout.write(`\n# ${name}\n`);
   if (only !== undefined && !name.includes(only)) {
     stdout.write(`skip - not ${only}\n`);
     return;
   }
+  if (only === undefined && added.length > 0 && !addOnsChangeIt) {
+    stdout.write("skip - no add-on changes it\n");
+    return;
+  }
   await check();
   stdout.write(`ok - ${name}\n`);
+}
+
+/** Checks the behaviour `name`, which an add-on can change, with `--with` too. */
+async function addOnBehaviour(name: string, check: () => Promise<void>) {
+  await behaviour(name, check, true);
 }
 
 /** Checks the behaviour `name`, which sets up what the behaviours after it need: with `--only` too. */
@@ -719,7 +739,7 @@ await setUp("the command makes the app", async () => {
   };
 });
 
-await behaviour(
+await addOnBehaviour(
   "the app runs on the pinned runtime, or the one given, and installs with no git: each package is the runtime or bundled in it, the demo hospital beside the app, or from npm's registry",
   async () => {
     const { dependencies } = JSON.parse(
@@ -768,7 +788,7 @@ await behaviour(
   },
 );
 
-await behaviour("help lists every command", async () => {
+await addOnBehaviour("help lists every command", async () => {
   const { code, out } = await npm("run", "--silent", "help");
   assert.equal(code, 0, "npm run help failed");
   const { scripts } = JSON.parse(
@@ -790,15 +810,18 @@ await behaviour("help lists every command", async () => {
     assert.ok(what !== undefined, `help says nothing of ${script}`);
 });
 
-await behaviour("the app's own tests pass: npm test", async () => {
+await addOnBehaviour("the app's own tests pass: npm test", async () => {
   const { code, out, err } = await npm("test");
   assert.equal(code, 0, `npm test failed:\n${out}\n${err}`);
 });
 
-await behaviour("the app's browser test passes: npm run test:e2e", async () => {
-  const { code, out, err } = await npm("run", "test:e2e");
-  assert.equal(code, 0, `npm run test:e2e failed:\n${out}\n${err}`);
-});
+await addOnBehaviour(
+  "the app's browser test passes: npm run test:e2e",
+  async () => {
+    const { code, out, err } = await npm("run", "test:e2e");
+    assert.equal(code, 0, `npm run test:e2e failed:\n${out}\n${err}`);
+  },
+);
 
 const server = await (async () => {
   let server: Awaited<ReturnType<typeof started>>;
@@ -955,7 +978,7 @@ const server = await (async () => {
 })();
 
 try {
-  await behaviour(
+  await addOnBehaviour(
     "an add-on is the app's only when added: the chat's /chat and window, the MCP server's npm run mcp and its tools",
     async () => {
       const chat = added.includes("chat");
@@ -1119,7 +1142,7 @@ try {
       for (const name of ["alex-rivera", pod])
         assert.ok(links.includes(`/pods/${name}/`), `the pods omit ${name}`);
     });
-  await behaviour(
+  await addOnBehaviour(
     "the reference tables are listed under the pods, and Check now says what it did",
     async () => {
       const { checked, held } = await api(server, "checkTables");
@@ -1821,7 +1844,7 @@ if (release === undefined) {
     };
 
     try {
-      await behaviour(
+      await addOnBehaviour(
         "a person signs in to a demo hospital and brings the record in",
         async () => {
           const pod = "hospital";
@@ -2144,7 +2167,7 @@ if (release === undefined) {
         },
       );
 
-      await behaviour(
+      await addOnBehaviour(
         "the pod API answers its own origin, refuses another, and serves no close",
         async () => {
           const call = (operation, from) =>
@@ -2161,7 +2184,7 @@ if (release === undefined) {
         },
       );
 
-      await behaviour(
+      await addOnBehaviour(
         "a request naming a host other than the app's own is refused",
         async () => {
           const status = await new Promise((done, fail) => {
@@ -2401,7 +2424,7 @@ if (release === undefined) {
         },
       );
 
-      await behaviour(
+      await addOnBehaviour(
         "the File menu deletes every pod and says how many, and resets to the kits' pods",
         async () => {
           const before = await podsOf();
@@ -2639,7 +2662,7 @@ if (refused !== undefined) throw new Error(refused);
 }
 
 // Last, so that a broken browser build does not hide the results above it: the check stops at its first failure.
-await behaviour(
+await addOnBehaviour(
   "npm run browser builds the app to run in a browser alone, the demo hospitals' worker with it, and a first visit copies Alex's pod from its sample and draws it from its kept answers, the engine held back, with no request to /api",
   async () => {
     const served = await started({}, "browser");
