@@ -996,6 +996,19 @@ try {
       if (chat) {
         await page.locator(".chat-off").waitFor();
         await drawn(page);
+        const covers = await page.evaluate(() => {
+          document.scrollingElement?.scrollTo(0, document.body.scrollHeight);
+          const layout = document
+            .querySelector(".layout")!
+            .getBoundingClientRect();
+          const chat = document.querySelector(".chat")!.getBoundingClientRect();
+          return layout.bottom > chat.top + 1;
+        });
+        assert.equal(
+          covers,
+          false,
+          "the chat window covers the foot of the page",
+        );
       } else {
         // A host with a chat asks GET /chat as it mounts and loads the window's chunk; both are done once the network idles.
         await page.waitForLoadState("networkidle");
