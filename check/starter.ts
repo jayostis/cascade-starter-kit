@@ -614,8 +614,8 @@ console.log(JSON.stringify({ row, patient, patients: Object.keys(north.patients)
  * Checks the behaviour `name`; with `--only`, only when its name holds `--only`'s text. With `--with` and no `--only`,
  * only a behaviour an add-on can change, which `addOnBehaviour` checks: an add-on adds files, and reaches the base only
  * through its packages and scripts, the server's `/chat` and the page's chat window, so the run without `--with`
- * checks every other behaviour on the same code. The window sits on every page, so a behaviour that presses the
- * page's own controls, the File menu's, runs with the add-ons too.
+ * checks every other behaviour on the same code. The window sits on every page, so a behaviour that presses a page
+ * control with a real click (the File menu's, Check now, a hospital's Sign in) runs with the add-ons too.
  */
 async function behaviour(
   name: string,
@@ -1142,7 +1142,7 @@ try {
       for (const name of ["alex-rivera", pod])
         assert.ok(links.includes(`/pods/${name}/`), `the pods omit ${name}`);
     });
-  await behaviour(
+  await addOnBehaviour(
     "the reference tables are listed under the pods, and Check now says what it did",
     async () => {
       const { checked, held } = await api(server, "checkTables");
@@ -1844,7 +1844,7 @@ if (release === undefined) {
     };
 
     try {
-      await behaviour(
+      await addOnBehaviour(
         "a person signs in to a demo hospital and brings the record in",
         async () => {
           const pod = "hospital";
