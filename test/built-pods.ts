@@ -62,14 +62,19 @@ export async function storyPodAt(patient: string, at: string): Promise<void> {
   await cp(await memo.get(patient)!, at, { recursive: true });
 }
 
-/** A pod of its own in a new folder, a copy of the story patient's pod as brought in from North. Remove `parent` after. */
+/** A new folder to hold copies of story pods, which a pod opened in it shares the tables beside it. */
+export function copiesFolder(): Promise<string> {
+  return mkdtemp(join(tmpdir(), "starter-copy-"));
+}
+
+/** A pod of its own in `parent`, a copy of the story patient's pod as brought in from North. */
 export async function storyPodIn(
+  parent: string,
   patient: string,
-): Promise<{ parent: string; pod: ReturnType<typeof openPod> }> {
-  const parent = await mkdtemp(join(tmpdir(), "starter-copy-"));
+): Promise<ReturnType<typeof openPod>> {
   const at = join(parent, patient);
   await storyPodAt(patient, at);
-  return { parent, pod: openPod(at) };
+  return openPod(at);
 }
 
 /** Removes what `storyPodIn` made, once its pod is closed. */

@@ -6,7 +6,7 @@ import { after, before, test } from "node:test";
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { openPod, type Pod, Refusal } from "cascade-runtime";
-import { removedCopy, storyPodIn } from "./built-pods.js";
+import { copiesFolder, removedCopy, storyPodIn } from "./built-pods.js";
 import { removed } from "./settled.js";
 
 type Api = { close(): Promise<void> };
@@ -77,9 +77,8 @@ async function call(name: string, args: Record<string, unknown>) {
 }
 
 before(async () => {
-  const { parent, pod: opening } = await storyPodIn(STATIN);
-  copies = parent;
-  const statin = await opening;
+  copies = await copiesFolder();
+  const statin = await storyPodIn(copies, STATIN);
   pods.set(STATIN, statin);
 
   api = podApi({

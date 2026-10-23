@@ -8,7 +8,7 @@ import {
   type Terms,
   terms,
 } from "cascade-runtime";
-import { removedCopy, storyPodIn } from "./built-pods.js";
+import { copiesFolder, removedCopy, storyPodIn } from "./built-pods.js";
 
 export const said = await import(
   new URL("../../app/said.ts", import.meta.url).href
@@ -187,30 +187,37 @@ export interface Story {
 }
 
 let built: Promise<Map<string, Story>> | undefined;
-const copies: string[] = [];
+let copies: string | undefined;
 
 /** The five story patients' pods, brought in from North once and shared by the tests that need them. */
 export function storyPods(): Promise<Map<string, Story>> {
   built ??= (async () => {
-    const stories = new Map<string, Story>();
-    for (const { patient } of await loadStories()) {
-      const { parent, pod: opening } = await storyPodIn(patient);
-      copies.push(parent);
-      const pod = await opening;
-      const answers = Object.fromEntries(
-        await Promise.all(
-          (said.QUESTIONS as string[]).map(
-            async (question) => [question, await pod.ask(question)] as const,
-          ),
-        ),
-      );
-      stories.set(patient, {
-        pod,
-        answers,
-        changes: changesIn(answers[HISTORY]!, answers[LABS]!, { limit: 20 }),
-      });
-    }
-    return stories;
+    const parent = await copiesFolder();
+    copies = parent;
+    const patients = await loadStories();
+    return new Map(
+      await Promise.all(
+        patients.map(async ({ patient }) => {
+          const pod = await storyPodIn(parent, patient);
+          const answers = Object.fromEntries(
+            await Promise.all(
+              (said.QUESTIONS as string[]).map(
+                async (question) =>
+                  [question, await pod.ask(question)] as const,
+              ),
+            ),
+          );
+          const story: Story = {
+            pod,
+            answers,
+            changes: changesIn(answers[HISTORY]!, answers[LABS]!, {
+              limit: 20,
+            }),
+          };
+          return [patient, story] as const;
+        }),
+      ),
+    );
   })();
   return built;
 }
@@ -218,5 +225,5 @@ export function storyPods(): Promise<Map<string, Story>> {
 /** Closes the story pods, if a test opened them. */
 export async function closeStoryPods(): Promise<void> {
   for (const { pod } of (await built)?.values() ?? []) await pod.close();
-  for (const parent of copies) await removedCopy(parent);
+  if (copies !== undefined) await removedCopy(copies);
 }

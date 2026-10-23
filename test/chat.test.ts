@@ -10,7 +10,7 @@ import { getRequestListener } from "@hono/node-server";
 import { APICallError } from "ai";
 import { MockLanguageModelV4 } from "ai/test";
 import { type Pod, timelineIn } from "cascade-runtime";
-import { removedCopy, storyPodIn } from "./built-pods.js";
+import { copiesFolder, removedCopy, storyPodIn } from "./built-pods.js";
 
 type Chunk = { type: string; [key: string]: unknown };
 type Model = {
@@ -93,9 +93,8 @@ let copies: string;
 let api: Api;
 
 before(async () => {
-  const { parent, pod: opening } = await storyPodIn(STATIN);
-  copies = parent;
-  const statin = await opening;
+  copies = await copiesFolder();
+  const statin = await storyPodIn(copies, STATIN);
   pods.set(STATIN, statin);
   const atorvastatin = timelineIn(await statin.ask(HISTORY)).find(
     ({ notation }) => notation === "617310",
