@@ -993,18 +993,20 @@ try {
           asked.push(request.url());
       });
       await opened(page, server, "/pods/alex-rivera/");
-      if (chat) await page.locator(".chat-off").waitFor();
-      else {
+      if (chat) {
+        await page.locator(".chat-off").waitFor();
+        await drawn(page);
+      } else {
         // A host with a chat asks GET /chat as it mounts and loads the window's chunk; both are done once the network idles.
         await page.waitForLoadState("networkidle");
         assert.deepEqual(asked, [], "the page asked /chat for a model");
         assert.equal(await page.locator(".chat").count(), 0, "a chat");
-        assert.equal(
-          await page.locator("[data-ask]").count(),
-          0,
-          "an Ask about this",
-        );
       }
+      assert.equal(
+        await page.locator("[data-ask]").count(),
+        0,
+        "an Ask about this with no model to ask",
+      );
       await page.close();
       const { scripts } = JSON.parse(
         await readFile(join(app, "package.json"), "utf8"),
