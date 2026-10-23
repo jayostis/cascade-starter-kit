@@ -7,11 +7,10 @@ import type {
   LanguageModelV4StreamPart,
 } from "@ai-sdk/provider";
 import { getRequestListener } from "@hono/node-server";
-import { loadHospital, loadStories } from "@the-cascade-protocol/sandbox/node";
 import { APICallError } from "ai";
 import { MockLanguageModelV4 } from "ai/test";
-import { openPod, type Pod, pullFiles, timelineIn } from "cascade-runtime";
-import { pulled } from "./hospitals.js";
+import { type Pod, timelineIn } from "cascade-runtime";
+import { removedCopy, storyPodIn } from "./built-pods.js";
 
 type Chunk = { type: string; [key: string]: unknown };
 type Model = {
@@ -90,19 +89,13 @@ const STATIN = "story-statin";
 const TABLES_NAME = "the tables' atorvastatin";
 const KEY = "sk-test-key-that-must-not-leave";
 const pods = new Map<string, Pod>();
+let copies: string;
 let api: Api;
 
 before(async () => {
-  const north = await loadHospital("cascade-north");
-  const story = (await loadStories()).find(
-    ({ patient }) => patient === STATIN,
-  )!;
-  const { pull } = await pulled(north, story.patient);
-  const statin = await openPod();
-  const imported = await statin.import(pullFiles(pull, "north"), {
-    aboutSubject: true,
-  });
-  assert.equal(imported.refused, undefined);
+  const { parent, pod: opening } = await storyPodIn(STATIN);
+  copies = parent;
+  const statin = await opening;
   pods.set(STATIN, statin);
   const atorvastatin = timelineIn(await statin.ask(HISTORY)).find(
     ({ notation }) => notation === "617310",
@@ -132,6 +125,7 @@ before(async () => {
 
 after(async () => {
   await api.close();
+  await removedCopy(copies);
 });
 
 const USAGE = {

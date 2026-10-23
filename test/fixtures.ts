@@ -1,16 +1,14 @@
 import assert from "node:assert/strict";
-import { loadHospital, loadStories } from "@the-cascade-protocol/sandbox/node";
+import { loadStories } from "@the-cascade-protocol/sandbox/node";
 import {
   changesIn,
   type Finding,
-  openPod,
   type Pod,
-  pullFiles,
   type Row,
   type Terms,
   terms,
 } from "cascade-runtime";
-import { pulled } from "./hospitals.js";
+import { removedCopy, storyPodIn } from "./built-pods.js";
 
 export const said = await import(
   new URL("../../app/said.ts", import.meta.url).href
@@ -189,19 +187,16 @@ export interface Story {
 }
 
 let built: Promise<Map<string, Story>> | undefined;
+const copies: string[] = [];
 
 /** The five story patients' pods, brought in from North once and shared by the tests that need them. */
 export function storyPods(): Promise<Map<string, Story>> {
   built ??= (async () => {
-    const north = await loadHospital("cascade-north");
     const stories = new Map<string, Story>();
     for (const { patient } of await loadStories()) {
-      const { pull } = await pulled(north, patient);
-      const pod = await openPod();
-      const imported = await pod.import(pullFiles(pull, "north"), {
-        aboutSubject: true,
-      });
-      assert.equal(imported.refused, undefined, patient);
+      const { parent, pod: opening } = await storyPodIn(patient);
+      copies.push(parent);
+      const pod = await opening;
       const answers = Object.fromEntries(
         await Promise.all(
           (said.QUESTIONS as string[]).map(
@@ -223,4 +218,5 @@ export function storyPods(): Promise<Map<string, Story>> {
 /** Closes the story pods, if a test opened them. */
 export async function closeStoryPods(): Promise<void> {
   for (const { pod } of (await built)?.values() ?? []) await pod.close();
+  for (const parent of copies) await removedCopy(parent);
 }

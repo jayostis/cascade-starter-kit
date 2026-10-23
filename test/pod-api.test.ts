@@ -6,18 +6,18 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test, type TestContext } from "node:test";
 import { getRequestListener } from "@hono/node-server";
-import { loadHospital, loadStories } from "@the-cascade-protocol/sandbox/node";
+import { loadHospital } from "@the-cascade-protocol/sandbox/node";
 import { Hono } from "hono";
 import {
   ConnectionFailure,
   openPod,
-  pullFiles,
   Refusal,
   sixWords,
   timelineIn,
   Unopened,
 } from "cascade-runtime";
-import { answering, type Loaded, pulled, routed, rowOf } from "./hospitals.js";
+import { storyPodAt } from "./built-pods.js";
+import { answering, type Loaded, routed, rowOf } from "./hospitals.js";
 import { removed } from "./settled.js";
 
 type Input = Record<string, unknown>;
@@ -369,15 +369,8 @@ function api(given: Host = host()) {
 before(async () => {
   folder = await mkdtemp(join(tmpdir(), "pod-api-"));
   north = await loadHospital("cascade-north");
-  const story = (await loadStories()).find(
-    ({ patient }) => patient === STATIN,
-  )!;
-  const { pull } = await pulled(north, story.patient);
+  await storyPodAt(STATIN, join(folder, STATIN));
   const statin = await openPod(join(folder, STATIN));
-  const imported = await statin.import(pullFiles(pull, "north"), {
-    aboutSubject: true,
-  });
-  assert.equal(imported.refused, undefined);
   const labs = await statin.ask(LABS);
   iris.ldl = testsIn(labs).find(({ notation }) => notation === LDL)!.code;
   iris.atorvastatin = timelineIn(

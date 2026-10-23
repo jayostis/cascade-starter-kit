@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
@@ -17,6 +18,7 @@ if (missing.length > 0) {
   process.exit(1);
 }
 
+const cache = mkdtempSync(join(tmpdir(), "starter-built-"));
 const run = spawnSync(
   process.execPath,
   [
@@ -26,7 +28,13 @@ const run = spawnSync(
     ...process.argv.slice(2),
     ...compiled,
   ],
-  { stdio: "inherit" },
+  { stdio: "inherit", env: { ...process.env, STARTER_TEST_CACHE: cache } },
 );
+rmSync(cache, {
+  recursive: true,
+  force: true,
+  maxRetries: 10,
+  retryDelay: 100,
+});
 if (run.error) throw run.error;
 process.exitCode = run.status ?? 1;

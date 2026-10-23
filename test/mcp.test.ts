@@ -5,9 +5,8 @@ import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
-import { loadHospital, loadStories } from "@the-cascade-protocol/sandbox/node";
-import { openPod, type Pod, pullFiles, Refusal } from "cascade-runtime";
-import { pulled } from "./hospitals.js";
+import { openPod, type Pod, Refusal } from "cascade-runtime";
+import { removedCopy, storyPodIn } from "./built-pods.js";
 import { removed } from "./settled.js";
 
 type Api = { close(): Promise<void> };
@@ -53,6 +52,7 @@ const { NEVER, TOOLS } = (await import(
 
 const STATIN = "story-statin";
 const pods = new Map<string, Pod>();
+let copies: string;
 let api: Api;
 let client: Client;
 
@@ -77,16 +77,9 @@ async function call(name: string, args: Record<string, unknown>) {
 }
 
 before(async () => {
-  const north = await loadHospital("cascade-north");
-  const story = (await loadStories()).find(
-    ({ patient }) => patient === STATIN,
-  )!;
-  const { pull } = await pulled(north, story.patient);
-  const statin = await openPod();
-  const imported = await statin.import(pullFiles(pull, "north"), {
-    aboutSubject: true,
-  });
-  assert.equal(imported.refused, undefined);
+  const { parent, pod: opening } = await storyPodIn(STATIN);
+  copies = parent;
+  const statin = await opening;
   pods.set(STATIN, statin);
 
   api = podApi({
@@ -107,6 +100,7 @@ before(async () => {
 after(async () => {
   await client.close();
   await api.close();
+  await removedCopy(copies);
 });
 
 test("every tool is free or ask, and its run calls only the PodApi operations it is about, never one the never list holds; open_entry refuses an entry the pod lacks, saying where the IDs are", async () => {
