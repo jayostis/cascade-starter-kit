@@ -37,15 +37,16 @@ jobs:
             build/release-notes.md
           if-no-files-found: error
 
-  # What a person receives, for the base and each add-on: the command into a temp folder, then `npm install && npm test`.
+  # What a person receives with each add-on alone: the command into a temp folder, then `npm install && npm test`. The
+  # base is the `create` check's on each system, which makes the app by the same command and runs its `npm test`.
   made:
-    name: made (${{ matrix.os }}, ${{ matrix.with || 'base' }})
+    name: made (${{ matrix.os }}, ${{ matrix.with }})
     needs: pack
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
-        with: ["", chat, mcp]
+        with: [chat, mcp]
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -65,7 +66,7 @@ jobs:
         run: |
           set -euo pipefail
           tarball=$(node -p "require('node:path').resolve(process.argv[1])" create/create-cascade-app-*.tgz)
-          npx --yes --package="$tarball" create-cascade-app my-app ${WITH:+--with "$WITH"}
+          npx --yes --package="$tarball" create-cascade-app my-app --with "$WITH"
           cd my-app
           npm install
           npm test
