@@ -409,436 +409,426 @@ after(async () => {
   for (const each of [folder, ...folders]) await removed(each);
 });
 
-const HOSTS = ["in-process", "http"];
 /** One instance per way in, shared by the tests, made once the pods are. */
 const apis = new Map<string, Api>();
 
-for (const via of HOSTS) {
-  const shared = new Proxy({} as Api, {
-    get: (_, operation: keyof Api) => apis.get(via)![operation],
-  });
-  const labs = async (): Promise<Output[]> =>
-    (await shared.ask({ pod: STATIN, question: LABS })).rows;
+/** The way in the shared tests take: `both`'s HTTP, which checks each call against the instance in-process. */
+const via = "http";
+const shared = new Proxy({} as Api, {
+  get: (_, operation: keyof Api) => apis.get(via)![operation],
+});
+const labs = async (): Promise<Output[]> =>
+  (await shared.ask({ pod: STATIN, question: LABS })).rows;
 
-  test(`${via}: pods lists every pod by its name, and a pod's answers are read without the tables`, async () => {
-    const counting = host();
-    const first = new Map(await both(api(counting))).get(via)!;
-    assert.deepEqual(
-      (await first.pods({})).pods,
-      [EMPTY, SEALED, STATIN].map((name) => ({ name, title: name })),
-    );
-    const { answers, changes } = await first.answers({ pod: STATIN });
-    assert.ok(answers[LABS].length > 0);
-    assert.ok(
-      changes.some(
-        ({ key }: { key: string }) => key === `start:${ATORVASTATIN}:${LDL}`,
-      ),
-    );
-    assert.equal((counting.tables as { calls: number }).calls, 0);
-  });
+test(`${via}: pods lists every pod by its name, and a pod's answers are read without the tables`, async () => {
+  const counting = host();
+  const first = new Map(await both(api(counting))).get(via)!;
+  assert.deepEqual(
+    (await first.pods({})).pods,
+    [EMPTY, SEALED, STATIN].map((name) => ({ name, title: name })),
+  );
+  const { answers, changes } = await first.answers({ pod: STATIN });
+  assert.ok(answers[LABS].length > 0);
+  assert.ok(
+    changes.some(
+      ({ key }: { key: string }) => key === `start:${ATORVASTATIN}:${LDL}`,
+    ),
+  );
+  assert.equal((counting.tables as { calls: number }).calls, 0);
+});
 
-  test(`${via}: held gives the series the tables hold`, async () => {
-    assert.deepEqual(
-      (await shared.held({})).held.map(({ source }: Output) => source),
-      ["urn:uuid:loinc"],
-    );
-  });
+test(`${via}: held gives the series the tables hold`, async () => {
+  assert.deepEqual(
+    (await shared.held({})).held.map(({ source }: Output) => source),
+    ["urn:uuid:loinc"],
+  );
+});
 
-  test(`${via}: said names the codes of the pod's answers, and of one entry its panels`, async () => {
-    assert.equal(
-      maps(await shared.said({ pod: STATIN })).about.get(iris.ldl).name.label,
-      "LDL cholesterol",
-    );
-    const row = (await labs()).find((each) => each.code === iris.ldl)!;
-    const out = await shared.said({ pod: STATIN, entry: entryId(row.entry) });
-    assert.equal(out.entry.entry, row.entry);
-    assert.ok(Array.isArray(out.panels));
-  });
+test(`${via}: said names the codes of the pod's answers, and of one entry its panels`, async () => {
+  assert.equal(
+    maps(await shared.said({ pod: STATIN })).about.get(iris.ldl).name.label,
+    "LDL cholesterol",
+  );
+  const row = (await labs()).find((each) => each.code === iris.ldl)!;
+  const out = await shared.said({ pod: STATIN, entry: entryId(row.entry) });
+  assert.equal(out.entry.entry, row.entry);
+  assert.ok(Array.isArray(out.panels));
+});
 
-  test(`${via}: trend with nothing asked is the strongest change's, and every finding's trend opens`, async () => {
-    const out = await shared.trend({ pod: STATIN });
-    assert.equal(out.series.test.notation, LDL);
-    assert.equal(out.medication, ATORVASTATIN);
-    const { value } = await shared.tool({ pod: STATIN, tool: "find_changes" });
-    assert.ok(value.length > 0);
-    for (const finding of value)
-      await shared.trend({ pod: STATIN, ...trendOf(finding) });
-  });
+test(`${via}: trend with nothing asked is the strongest change's, and every finding's trend opens`, async () => {
+  const out = await shared.trend({ pod: STATIN });
+  assert.equal(out.series.test.notation, LDL);
+  assert.equal(out.medication, ATORVASTATIN);
+  const { value } = await shared.tool({ pod: STATIN, tool: "find_changes" });
+  assert.ok(value.length > 0);
+  for (const finding of value)
+    await shared.trend({ pod: STATIN, ...trendOf(finding) });
+});
 
-  test(`${via}: classes gives the pod's medications and what is classed elsewhere`, async () => {
-    const out = await shared.classes({ pod: STATIN });
-    assert.ok(
-      out.medications.some(({ code }: Output) => code === iris.atorvastatin),
-    );
-    assert.ok(maps(out).elsewhere instanceof Map);
-  });
+test(`${via}: classes gives the pod's medications and what is classed elsewhere`, async () => {
+  const out = await shared.classes({ pod: STATIN });
+  assert.ok(
+    out.medications.some(({ code }: Output) => code === iris.atorvastatin),
+  );
+  assert.ok(maps(out).elsewhere instanceof Map);
+});
 
-  test(`${via}: panel gives the panel's rows and the pod's lab results`, async () => {
-    const out = await shared.panel({ pod: STATIN, panel: "24331-1" });
-    assert.deepEqual(out.rows, []);
-    assert.ok(out.labs.some(({ code }: Output) => code === iris.ldl));
-  });
+test(`${via}: panel gives the panel's rows and the pod's lab results`, async () => {
+  const out = await shared.panel({ pod: STATIN, panel: "24331-1" });
+  assert.deepEqual(out.rows, []);
+  assert.ok(out.labs.some(({ code }: Output) => code === iris.ldl));
+});
 
-  test(`${via}: table gives the first source, and a code's facts`, async () => {
-    assert.equal((await shared.table({})).source.iri, "urn:uuid:loinc");
-    assert.equal(
-      (await shared.table({ id: "loinc", code: LDL })).facts.notation,
-      LDL,
-    );
-  });
+test(`${via}: table gives the first source, and a code's facts`, async () => {
+  assert.equal((await shared.table({})).source.iri, "urn:uuid:loinc");
+  assert.equal(
+    (await shared.table({ id: "loinc", code: LDL })).facts.notation,
+    LDL,
+  );
+});
 
-  test(`${via}: ask gives as many rows as the limit, and how many there are`, async () => {
-    const out = await shared.ask({ pod: STATIN, question: LABS, limit: 2 });
-    assert.equal(out.total, (await labs()).length);
-    assert.equal(out.rows.length, 2);
-  });
+test(`${via}: ask gives as many rows as the limit, and how many there are`, async () => {
+  const out = await shared.ask({ pod: STATIN, question: LABS, limit: 2 });
+  assert.equal(out.total, (await labs()).length);
+  assert.equal(out.rows.length, 2);
+});
 
-  test(`${via}: find_changes gives the finding, and worth_a_look the page's lines`, async () => {
-    const { value } = await shared.tool({ pod: STATIN, tool: "find_changes" });
-    assert.ok(
-      value.some(({ key }: Output) => key === `start:${ATORVASTATIN}:${LDL}`),
-    );
-    const answered: Record<string, unknown[]> = {
-      "entry/What needs review": [
-        {
-          entry: "urn:uuid:0e1f",
-          entryLabel: "Allergy entry · Latex",
-          needs: "judged different, still joined",
+test(`${via}: find_changes gives the finding, and worth_a_look the page's lines`, async () => {
+  const { value } = await shared.tool({ pod: STATIN, tool: "find_changes" });
+  assert.ok(
+    value.some(({ key }: Output) => key === `start:${ATORVASTATIN}:${LDL}`),
+  );
+  const answered: Record<string, unknown[]> = {
+    "entry/What needs review": [
+      {
+        entry: "urn:uuid:0e1f",
+        entryLabel: "Allergy entry · Latex",
+        needs: "judged different, still joined",
+      },
+    ],
+  };
+  const reviewed = new Map(
+    await both(
+      api({
+        ...host(),
+        pods: {
+          names: async () => ["reviewed"],
+          title: async () => undefined,
+          open: async () => ({
+            ask: async (question: string) => answered[question] ?? [],
+            close: async () => {},
+          }),
         },
-      ],
-    };
-    const reviewed = new Map(
-      await both(
-        api({
-          ...host(),
-          pods: {
-            names: async () => ["reviewed"],
-            title: async () => undefined,
-            open: async () => ({
-              ask: async (question: string) => answered[question] ?? [],
-              close: async () => {},
-            }),
-          },
-        }),
-      ),
-    ).get(via)!;
-    const lines = await reviewed.tool({
-      pod: "reviewed",
-      tool: "worth_a_look",
-    });
-    assert.equal(lines.value.length, 1);
-    assert.match(lines.value[0].sentence, /Latex/);
-    assert.equal(lines.value[0].entry, entryId("urn:uuid:0e1f"));
-    assert.ok(lines.value[0].tag);
-    assert.deepEqual(
-      (await shared.tool({ pod: STATIN, tool: "worth_a_look" })).value,
-      [],
-    );
+      }),
+    ),
+  ).get(via)!;
+  const lines = await reviewed.tool({
+    pod: "reviewed",
+    tool: "worth_a_look",
   });
+  assert.equal(lines.value.length, 1);
+  assert.match(lines.value[0].sentence, /Latex/);
+  assert.equal(lines.value[0].entry, entryId("urn:uuid:0e1f"));
+  assert.ok(lines.value[0].tag);
+  assert.deepEqual(
+    (await shared.tool({ pod: STATIN, tool: "worth_a_look" })).value,
+    [],
+  );
+});
 
-  test(`${via}: an encrypted pod is locked until its words are given, and refused where no words are asked`, async () => {
-    assert.equal((await shared.pod({ pod: SEALED })).locked, "secret needed");
-    await assert.rejects(shared.answers({ pod: SEALED }), (error) =>
-      unopened(error, "secret needed"),
-    );
+test(`${via}: an encrypted pod is locked until its words are given, and refused where no words are asked`, async () => {
+  assert.equal((await shared.pod({ pod: SEALED })).locked, "secret needed");
+  await assert.rejects(shared.answers({ pod: SEALED }), (error) =>
+    unopened(error, "secret needed"),
+  );
+  await assert.rejects(shared.unlock({ pod: SEALED, secret: "  " }), (error) =>
+    unopened(error, "incorrect secret"),
+  );
+  const elsewhere = new Map(
+    await both(api({ ...host(), opensEncrypted: false })),
+  ).get(via)!;
+  assert.equal((await elsewhere.pod({ pod: SEALED })).locked, "secret needed");
+  await assert.rejects(
+    elsewhere.answers({ pod: SEALED }),
+    (error) =>
+      isRefusal(error) &&
+      error.outcome === undefined &&
+      error.message === notOpenedHere(SEALED),
+  );
+});
+
+test(`${via}: input the rules refuse is a Refusal saying why`, async () => {
+  await shared.makePod({ person: "Waiting", encrypt: true });
+  const { words } = await shared.waitingWords({ pod: "waiting" });
+  const [, word2, , , word5] = words.split(" ");
+  const typed = {
+    pod: "waiting",
+    word2,
+    word5,
+    password: words,
+    username: "waiting",
+  };
+  const { connection: cancelled } = await shared.connect({
+    pod: EMPTY,
+    fhirBase: rowOf(north).fhirBase,
+  });
+  const failed = await shared.connection({
+    pod: EMPTY,
+    connection: cancelled,
+    wait: true,
+  });
+  assert.equal(failed.step, "failed");
+  assert.equal(failed.failure, "cancelled");
+  const refused: [keyof Api, Input, RegExp][] = [
+    [
+      "connect",
+      { pod: STATIN, fhirBase: "https://nowhere.invalid/fhir" },
+      /not in the directory/,
+    ],
+    ["connection", { pod: STATIN, connection: 999 }, /no connection 999/],
+    [
+      "connection",
+      { pod: STATIN, connection: 1, wait: "soon" },
+      /wait must be true or "change"/,
+    ],
+    [
+      "bring",
+      { pod: EMPTY, connection: cancelled },
+      /nothing pulled to bring in/,
+    ],
+    ["makePod", { person: "!!!" }, /at least one letter/],
+    ["makePod", { person: "Con" }, /Windows keeps for itself/],
+    ["makePod", { person: "COM1" }, /Windows keeps for itself/],
+    ["makePod", { person: "lpt9" }, /Windows keeps for itself/],
+    ["makePod", { person: "Ada", encrypt: "on" }, /encrypt must be true/],
+    ["waitingWords", { pod: "nobody" }, /not waiting any more/],
+    ["confirmWords", { ...typed, word2: "x" }, /aren't words 2 and 5/],
+    ["confirmWords", { ...typed, password: "x" }, /Password field/],
+    ["confirmWords", { ...typed, username: "x" }, /Pod field/],
+    ["setWorldDate", { date: "soon" }, /"soon" is not a date/],
+    ["answers", { pod: "nobody" }, /no pod nobody; the pods are/],
+    ["said", { pod: STATIN, entry: "0" }, /holds no entry 0/],
+    [
+      "trend",
+      { pod: STATIN, test: "0000-0" },
+      /the tests it holds are .*18262-6/,
+    ],
+    [
+      "trend",
+      { pod: STATIN, test: LDL, medication: "0" },
+      /no medication 0 in the pod; the medications it holds are .*617310/,
+    ],
+    ["trend", { pod: EMPTY }, /holds no test results/],
+    ["panel", { pod: STATIN }, /a panel is a LOINC code/],
+    ["panel", { pod: STATIN, panel: "" }, /a panel is a LOINC code/],
+    ["table", { id: "nothing" }, /no reference table nothing/],
+    ["table", { id: "loinc", code: "0000-0" }, /holds no code 0000-0/],
+    ["ask", { pod: STATIN, question: "pod/No such question" }, /no question/],
+    ["ask", { pod: STATIN, question: LABS, limit: 0 }, /limit/],
+    ["trend", { pod: STATIN, medication: 5 }, /medication must be a string/],
+    ["pod", { pod: 5 }, /pod must be a string/],
+    ["said", { pod: STATIN, entry: 5 }, /entry must be a string/],
+    ["table", { page: "2" }, /page must be a whole number from 1/],
+    ["table", { page: 1.5 }, /page must be a whole number from 1/],
+    ["ask", { pod: STATIN, question: LABS, limit: -1 }, /limit must be/],
+    ["ask", { pod: STATIN, question: LABS, limit: NaN }, /limit must be/],
+    ["ask", { pod: STATIN, question: 5 }, /question must be a string/],
+    [
+      "tool",
+      { pod: STATIN, tool: "find_changes", input: "x" },
+      /input must be an object/,
+    ],
+    ["tool", { pod: STATIN, tool: "nothing" }, /no tool nothing/],
+    [
+      "tool",
+      { pod: STATIN, tool: "find_changes", input: { test: "0000-0" } },
+      /no test/,
+    ],
+    [
+      "tool",
+      { pod: STATIN, tool: "lab_series", input: { test: "0000-0" } },
+      /no test/,
+    ],
+    [
+      "tool",
+      { pod: STATIN, tool: "finding_rows", input: { key: "start:0:0" } },
+      /no finding start:0:0/,
+    ],
+    [
+      "tool",
+      { pod: STATIN, tool: "timeline", input: { extra: true } },
+      /extra is not a property/,
+    ],
+    [
+      "tool",
+      { pod: STATIN, tool: "worth_a_look", input: { extra: true } },
+      /extra is not a property/,
+    ],
+  ];
+  for (const [operation, input, reason] of refused)
     await assert.rejects(
-      shared.unlock({ pod: SEALED, secret: "  " }),
-      (error) => unopened(error, "incorrect secret"),
-    );
-    const elsewhere = new Map(
-      await both(api({ ...host(), opensEncrypted: false })),
-    ).get(via)!;
-    assert.equal(
-      (await elsewhere.pod({ pod: SEALED })).locked,
-      "secret needed",
-    );
-    await assert.rejects(
-      elsewhere.answers({ pod: SEALED }),
+      shared[operation](input),
       (error) =>
         isRefusal(error) &&
         error.outcome === undefined &&
-        error.message === notOpenedHere(SEALED),
+        reason.test(error.message),
+      `${operation} ${JSON.stringify(input)}`,
     );
-  });
+});
 
-  test(`${via}: input the rules refuse is a Refusal saying why`, async () => {
-    await shared.makePod({ person: "Waiting", encrypt: true });
-    const { words } = await shared.waitingWords({ pod: "waiting" });
+test(`${via}: makePod makes a pod named after the person, goes to one there is, and loads a sample`, async () => {
+  const { api: writes } = await fresh(via, (at) => ({
+    samples: ["sample"],
+    copySample: (name: string) => openPod(join(at, name)),
+  }));
+  const rowan = { pod: "rowan-ellery-marsh" };
+  const person = { person: "Rowan Ellery Marsh" };
+  assert.deepEqual(await writes.makePod(person), { ...rowan, made: true });
+  assert.deepEqual(await writes.makePod(person), { ...rowan, made: false });
+  assert.deepEqual(await writes.makePod({ person: "Sample" }), {
+    pod: "sample",
+    loaded: true,
+  });
+  assert.deepEqual(await writes.makePod({ person: "Sample" }), {
+    pod: "sample",
+    made: false,
+  });
+  assert.deepEqual(
+    (await writes.pods({})).pods.map(({ name }: Output) => name),
+    ["rowan-ellery-marsh", "sample"],
+  );
+});
+
+test(`${via}: an encrypted pod is made once its words 2 and 5 are given, and opens with its words after`, async () => {
+  const { built, host: given, api: writes } = await fresh(via);
+  const confirm = async (pod: string) => {
+    const { words } = await writes.waitingWords({ pod });
     const [, word2, , , word5] = words.split(" ");
-    const typed = {
-      pod: "waiting",
-      word2,
-      word5,
-      password: words,
-      username: "waiting",
-    };
-    const { connection: cancelled } = await shared.connect({
-      pod: EMPTY,
+    const typed = { pod, word2, word5, password: words, username: pod };
+    return { words, made: writes.confirmWords(typed) };
+  };
+  assert.deepEqual(await writes.makePod({ person: "Ines", encrypt: true }), {
+    pod: "ines",
+    waiting: true,
+  });
+  assert.equal((await writes.waitingWords({ pod: "ines" })).person, "Ines");
+  const { words, made } = await confirm("ines");
+  assert.deepEqual(await made, { pod: "ines", made: true });
+  assert.equal((await writes.pod({ pod: "ines" })).encrypted, true);
+  await assert.rejects(writes.waitingWords({ pod: "ines" }), /not waiting/);
+
+  await writes.makePod({ person: "Taken", encrypt: true });
+  await writes.makePod({ person: "Taken" });
+  await assert.rejects((await confirm("taken")).made, /exists already/);
+  await assert.rejects(writes.waitingWords({ pod: "taken" }), /not waiting/);
+
+  await built.close();
+  const later = new Map(await both(api(given))).get(via)!;
+  await assert.rejects(later.answers({ pod: "ines" }), (error) =>
+    unopened(error, "secret needed"),
+  );
+  const opened = { pod: "ines", opened: true };
+  assert.deepEqual(await later.unlock({ pod: "ines", secret: words }), opened);
+  assert.ok((await later.answers({ pod: "ines" })).answers);
+  assert.deepEqual(await later.unlock({ pod: "ines", secret: "" }), opened);
+});
+
+test(`${via}: setWorldDate sets the world's date to the end of a day, and back to every version`, async () => {
+  let asOf: string | undefined;
+  const { api: writes } = await fresh(via, () => ({
+    world: {
+      get: () => asOf,
+      set: (to: string | undefined) => {
+        asOf = to;
+      },
+    },
+  }));
+  const end = "2024-02-01T23:59:59Z";
+  assert.deepEqual(await writes.setWorldDate({ date: "2024-02-01" }), {
+    asOf: end,
+  });
+  assert.equal(asOf, end);
+  assert.deepEqual(await writes.setWorldDate({ date: "" }), {});
+  assert.equal(asOf, undefined);
+});
+
+test(`${via}: hospitals finds a hospital of the directory by its name`, async () => {
+  const { rows } = await shared.hospitals({ q: "north" });
+  assert.deepEqual(
+    rows.map(({ name }: Output) => name),
+    [rowOf(north).name],
+  );
+});
+
+test(`${via}: a demo hospital's connection carries the world's date it was started under`, async () => {
+  await shared.setWorldDate({ date: "2024-02-01" });
+  try {
+    const { connection } = await shared.connect({
+      pod: STATIN,
       fhirBase: rowOf(north).fhirBase,
     });
-    const failed = await shared.connection({
-      pod: EMPTY,
-      connection: cancelled,
+    const done = await shared.connection({
+      pod: STATIN,
+      connection,
       wait: true,
     });
-    assert.equal(failed.step, "failed");
-    assert.equal(failed.failure, "cancelled");
-    const refused: [keyof Api, Input, RegExp][] = [
-      [
-        "connect",
-        { pod: STATIN, fhirBase: "https://nowhere.invalid/fhir" },
-        /not in the directory/,
-      ],
-      ["connection", { pod: STATIN, connection: 999 }, /no connection 999/],
-      [
-        "connection",
-        { pod: STATIN, connection: 1, wait: "soon" },
-        /wait must be true or "change"/,
-      ],
-      [
-        "bring",
-        { pod: EMPTY, connection: cancelled },
-        /nothing pulled to bring in/,
-      ],
-      ["makePod", { person: "!!!" }, /at least one letter/],
-      ["makePod", { person: "Con" }, /Windows keeps for itself/],
-      ["makePod", { person: "COM1" }, /Windows keeps for itself/],
-      ["makePod", { person: "lpt9" }, /Windows keeps for itself/],
-      ["makePod", { person: "Ada", encrypt: "on" }, /encrypt must be true/],
-      ["waitingWords", { pod: "nobody" }, /not waiting any more/],
-      ["confirmWords", { ...typed, word2: "x" }, /aren't words 2 and 5/],
-      ["confirmWords", { ...typed, password: "x" }, /Password field/],
-      ["confirmWords", { ...typed, username: "x" }, /Pod field/],
-      ["setWorldDate", { date: "soon" }, /"soon" is not a date/],
-      ["answers", { pod: "nobody" }, /no pod nobody; the pods are/],
-      ["said", { pod: STATIN, entry: "0" }, /holds no entry 0/],
-      [
-        "trend",
-        { pod: STATIN, test: "0000-0" },
-        /the tests it holds are .*18262-6/,
-      ],
-      [
-        "trend",
-        { pod: STATIN, test: LDL, medication: "0" },
-        /no medication 0 in the pod; the medications it holds are .*617310/,
-      ],
-      ["trend", { pod: EMPTY }, /holds no test results/],
-      ["panel", { pod: STATIN }, /a panel is a LOINC code/],
-      ["panel", { pod: STATIN, panel: "" }, /a panel is a LOINC code/],
-      ["table", { id: "nothing" }, /no reference table nothing/],
-      ["table", { id: "loinc", code: "0000-0" }, /holds no code 0000-0/],
-      ["ask", { pod: STATIN, question: "pod/No such question" }, /no question/],
-      ["ask", { pod: STATIN, question: LABS, limit: 0 }, /limit/],
-      ["trend", { pod: STATIN, medication: 5 }, /medication must be a string/],
-      ["pod", { pod: 5 }, /pod must be a string/],
-      ["said", { pod: STATIN, entry: 5 }, /entry must be a string/],
-      ["table", { page: "2" }, /page must be a whole number from 1/],
-      ["table", { page: 1.5 }, /page must be a whole number from 1/],
-      ["ask", { pod: STATIN, question: LABS, limit: -1 }, /limit must be/],
-      ["ask", { pod: STATIN, question: LABS, limit: NaN }, /limit must be/],
-      ["ask", { pod: STATIN, question: 5 }, /question must be a string/],
-      [
-        "tool",
-        { pod: STATIN, tool: "find_changes", input: "x" },
-        /input must be an object/,
-      ],
-      ["tool", { pod: STATIN, tool: "nothing" }, /no tool nothing/],
-      [
-        "tool",
-        { pod: STATIN, tool: "find_changes", input: { test: "0000-0" } },
-        /no test/,
-      ],
-      [
-        "tool",
-        { pod: STATIN, tool: "lab_series", input: { test: "0000-0" } },
-        /no test/,
-      ],
-      [
-        "tool",
-        { pod: STATIN, tool: "finding_rows", input: { key: "start:0:0" } },
-        /no finding start:0:0/,
-      ],
-      [
-        "tool",
-        { pod: STATIN, tool: "timeline", input: { extra: true } },
-        /extra is not a property/,
-      ],
-      [
-        "tool",
-        { pod: STATIN, tool: "worth_a_look", input: { extra: true } },
-        /extra is not a property/,
-      ],
-    ];
-    for (const [operation, input, reason] of refused)
-      await assert.rejects(
-        shared[operation](input),
-        (error) =>
-          isRefusal(error) &&
-          error.outcome === undefined &&
-          reason.test(error.message),
-        `${operation} ${JSON.stringify(input)}`,
-      );
-  });
+    assert.equal(done.asOf, "2024-02-01T23:59:59Z");
+  } finally {
+    await shared.setWorldDate({ date: "" });
+  }
+});
 
-  test(`${via}: makePod makes a pod named after the person, goes to one there is, and loads a sample`, async () => {
-    const { api: writes } = await fresh(via, (at) => ({
-      samples: ["sample"],
-      copySample: (name: string) => openPod(join(at, name)),
-    }));
-    const rowan = { pod: "rowan-ellery-marsh" };
-    const person = { person: "Rowan Ellery Marsh" };
-    assert.deepEqual(await writes.makePod(person), { ...rowan, made: true });
-    assert.deepEqual(await writes.makePod(person), { ...rowan, made: false });
-    assert.deepEqual(await writes.makePod({ person: "Sample" }), {
-      pod: "sample",
-      loaded: true,
-    });
-    assert.deepEqual(await writes.makePod({ person: "Sample" }), {
-      pod: "sample",
-      made: false,
-    });
-    assert.deepEqual(
-      (await writes.pods({})).pods.map(({ name }: Output) => name),
-      ["rowan-ellery-marsh", "sample"],
-    );
-  });
+test(`${via}: checkTables, when a version was kept, opens the plaintext pods anew and keeps an unlocked one open`, async () => {
+  const given = host();
+  const pods = given.pods as unknown as {
+    open(...a: unknown[]): Promise<unknown>;
+  };
+  const opens: unknown[] = [];
+  const counting = {
+    ...pods,
+    open: (...args: unknown[]) => {
+      opens.push(args[0]);
+      return pods.open(...args);
+    },
+  };
+  const each = new Map(await both(api({ ...given, pods: counting }))).get(via)!;
+  await each.unlock({ pod: SEALED, secret: SEALED_WORDS });
+  await each.pod({ pod: STATIN });
+  const { checked } = await each.checkTables({});
+  assert.deepEqual(checked, await FAKE.check());
+  await each.pod({ pod: STATIN });
+  assert.deepEqual(
+    opens.filter((name) => name === STATIN),
+    [STATIN, STATIN],
+  );
+  assert.equal((await each.pod({ pod: SEALED })).locked, undefined);
+});
 
-  test(`${via}: an encrypted pod is made once its words 2 and 5 are given, and opens with its words after`, async () => {
-    const { built, host: given, api: writes } = await fresh(via);
-    const confirm = async (pod: string) => {
-      const { words } = await writes.waitingWords({ pod });
-      const [, word2, , , word5] = words.split(" ");
-      const typed = { pod, word2, word5, password: words, username: pod };
-      return { words, made: writes.confirmWords(typed) };
-    };
-    assert.deepEqual(await writes.makePod({ person: "Ines", encrypt: true }), {
-      pod: "ines",
-      waiting: true,
-    });
-    assert.equal((await writes.waitingWords({ pod: "ines" })).person, "Ines");
-    const { words, made } = await confirm("ines");
-    assert.deepEqual(await made, { pod: "ines", made: true });
-    assert.equal((await writes.pod({ pod: "ines" })).encrypted, true);
-    await assert.rejects(writes.waitingWords({ pod: "ines" }), /not waiting/);
-
-    await writes.makePod({ person: "Taken", encrypt: true });
-    await writes.makePod({ person: "Taken" });
-    await assert.rejects((await confirm("taken")).made, /exists already/);
-    await assert.rejects(writes.waitingWords({ pod: "taken" }), /not waiting/);
-
-    await built.close();
-    const later = new Map(await both(api(given))).get(via)!;
-    await assert.rejects(later.answers({ pod: "ines" }), (error) =>
-      unopened(error, "secret needed"),
-    );
-    const opened = { pod: "ines", opened: true };
-    assert.deepEqual(
-      await later.unlock({ pod: "ines", secret: words }),
-      opened,
-    );
-    assert.ok((await later.answers({ pod: "ines" })).answers);
-    assert.deepEqual(await later.unlock({ pod: "ines", secret: "" }), opened);
-  });
-
-  test(`${via}: setWorldDate sets the world's date to the end of a day, and back to every version`, async () => {
-    let asOf: string | undefined;
-    const { api: writes } = await fresh(via, () => ({
-      world: {
-        get: () => asOf,
-        set: (to: string | undefined) => {
-          asOf = to;
-        },
-      },
-    }));
-    const end = "2024-02-01T23:59:59Z";
-    assert.deepEqual(await writes.setWorldDate({ date: "2024-02-01" }), {
-      asOf: end,
-    });
-    assert.equal(asOf, end);
-    assert.deepEqual(await writes.setWorldDate({ date: "" }), {});
-    assert.equal(asOf, undefined);
-  });
-
-  test(`${via}: hospitals finds a hospital of the directory by its name`, async () => {
-    const { rows } = await shared.hospitals({ q: "north" });
-    assert.deepEqual(
-      rows.map(({ name }: Output) => name),
-      [rowOf(north).name],
-    );
-  });
-
-  test(`${via}: a demo hospital's connection carries the world's date it was started under`, async () => {
-    await shared.setWorldDate({ date: "2024-02-01" });
-    try {
-      const { connection } = await shared.connect({
-        pod: STATIN,
-        fhirBase: rowOf(north).fhirBase,
-      });
-      const done = await shared.connection({
-        pod: STATIN,
-        connection,
-        wait: true,
-      });
-      assert.equal(done.asOf, "2024-02-01T23:59:59Z");
-    } finally {
-      await shared.setWorldDate({ date: "" });
-    }
-  });
-
-  test(`${via}: checkTables, when a version was kept, opens the plaintext pods anew and keeps an unlocked one open`, async () => {
-    const given = host();
-    const pods = given.pods as unknown as {
-      open(...a: unknown[]): Promise<unknown>;
-    };
-    const opens: unknown[] = [];
-    const counting = {
-      ...pods,
-      open: (...args: unknown[]) => {
-        opens.push(args[0]);
-        return pods.open(...args);
-      },
-    };
-    const each = new Map(await both(api({ ...given, pods: counting }))).get(
-      via,
-    )!;
-    await each.unlock({ pod: SEALED, secret: SEALED_WORDS });
-    await each.pod({ pod: STATIN });
-    const { checked } = await each.checkTables({});
-    assert.deepEqual(checked, await FAKE.check());
-    await each.pod({ pod: STATIN });
-    assert.deepEqual(
-      opens.filter((name) => name === STATIN),
-      [STATIN, STATIN],
-    );
-    assert.equal((await each.pod({ pod: SEALED })).locked, undefined);
-  });
-
-  test(`${via}: deleteAll removes every pod and forgets the words, and resetAll restores the host's pods`, async () => {
-    const { api: writes } = await fresh(via, (at) => ({
-      restore: async () => {
-        await (await openPod(join(at, "restored"))).close();
-        return ["restored"];
-      },
-    }));
-    for (const person of ["One", "Two"]) await writes.makePod({ person });
-    await writes.makePod({ person: "Three", encrypt: true });
-    const one = { pod: "one", connection: 0 };
-    one.connection = (
-      await writes.connect({ pod: "one", fhirBase: rowOf(north).fhirBase })
-    ).connection;
-    await writes.connection({ ...one, wait: true });
-    assert.deepEqual(await writes.deleteAll({}), { deleted: ["one", "two"] });
-    assert.deepEqual((await writes.pods({})).pods, []);
-    await assert.rejects(writes.waitingWords({ pod: "three" }), /not waiting/);
-    await writes.makePod({ person: "One" });
-    await assert.rejects(writes.bring(one), /no connection/);
-    await writes.deleteAll({});
-    assert.deepEqual(await writes.resetAll({}), { pods: ["restored"] });
-    assert.deepEqual((await writes.pods({})).pods, [
-      { name: "restored", title: "restored" },
-    ]);
-  });
-}
+test(`${via}: deleteAll removes every pod and forgets the words, and resetAll restores the host's pods`, async () => {
+  const { api: writes } = await fresh(via, (at) => ({
+    restore: async () => {
+      await (await openPod(join(at, "restored"))).close();
+      return ["restored"];
+    },
+  }));
+  for (const person of ["One", "Two"]) await writes.makePod({ person });
+  await writes.makePod({ person: "Three", encrypt: true });
+  const one = { pod: "one", connection: 0 };
+  one.connection = (
+    await writes.connect({ pod: "one", fhirBase: rowOf(north).fhirBase })
+  ).connection;
+  await writes.connection({ ...one, wait: true });
+  assert.deepEqual(await writes.deleteAll({}), { deleted: ["one", "two"] });
+  assert.deepEqual((await writes.pods({})).pods, []);
+  await assert.rejects(writes.waitingWords({ pod: "three" }), /not waiting/);
+  await writes.makePod({ person: "One" });
+  await assert.rejects(writes.bring(one), /no connection/);
+  await writes.deleteAll({});
+  assert.deepEqual(await writes.resetAll({}), { pods: ["restored"] });
+  assert.deepEqual((await writes.pods({})).pods, [
+    { name: "restored", title: "restored" },
+  ]);
+});
 
 test("connect signs in with every scope and pulls, bring brings the record in once, and the brought-in connection reads the same over HTTP", async () => {
   const authorized: URL[] = [];
