@@ -5,6 +5,7 @@
 // those add-ons and checks only what an add-on can change. `--only <behaviour>` runs only the behaviours whose name
 // holds that text, after making the app.
 import assert from "node:assert/strict";
+import { Buffer } from "node:buffer";
 import { execFileSync, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
@@ -1458,9 +1459,11 @@ if (release === undefined) {
       const version = index.find(([, p]) => p.value === terms.coversGene)[0]
         .value;
       const covered = objectsOf(index, version, terms.coversGene).sort();
-      const held = await triplesOf(
-        `${tables}/${version.replace("urn:uuid:", "")}.ttl`,
-      );
+      const digest = Buffer.from(
+        version.replace("ni:///sha-256;", ""),
+        "base64url",
+      ).toString("hex");
+      const held = await triplesOf(`${tables}/${digest}.ttl`);
       const rowOf = (id) =>
         objectsOf(
           held,

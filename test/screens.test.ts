@@ -1428,7 +1428,8 @@ test("a lab result's page links the panels LOINC lists its test in, and a result
 const SCT = "urn:test:sct/";
 const AT_MERIDIAN = "Meridian Health System";
 const AT_LARKSPUR = "Larkspur Valley Health";
-const ASTHMA = "urn:cascade:entry:aa11";
+const ASTHMA =
+  "pod://0b5e7c1a-6d2f-4c8e-9a41-3f2d1e0c9b8a/clinical/conditions.ttl#aa11";
 const LATEX = "urn:cascade:entry:bb22";
 const record = (entry: string, at: string, extra: object) => ({
   entry,
@@ -1497,7 +1498,7 @@ const STATUS = {
   versions: [{ iri: "urn:test:status-1", label: "1", issued: "2026-09-01" }],
 };
 
-test("an entry's page says what it is, where each document it came from put it, and what Cascade and the tables say of it, each claim from a table naming the table and version, the version a link, and each credit once", () => {
+test("an entry's page, at the end of its IRI whatever pod holds it, says what it is, where each document it came from put it, and what Cascade and the tables say of it, each claim from a table naming the table and version, the version a link, and each credit once", () => {
   assert.equal(said.entryId(ASTHMA), "aa11");
   const about = new Map([
     [

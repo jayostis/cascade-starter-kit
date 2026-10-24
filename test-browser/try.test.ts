@@ -36,7 +36,7 @@ import {
 } from "@the-cascade-protocol/sandbox/node";
 import * as oxigraph from "oxigraph";
 import { installedParts } from "cascade-runtime/fixtures";
-import { terms } from "cascade-runtime/terms";
+import { codeStems, terms } from "cascade-runtime/terms";
 import { openPodWith } from "cascade-runtime/published";
 import { type Served, servePages } from "../try/build/serve.js";
 import {
@@ -1653,34 +1653,37 @@ test("in the browser, a check keeps the test feed's planted newer version in the
         close(): Promise<void>;
       }>;
     }
-    const entered = await page.evaluate(async (terms) => {
-      const runtime = (await import("cascade-runtime" as string)) as Runtime;
-      await runtime.checkTables();
-      const pod = await runtime.openPod("tables-proof");
-      const shots = [
-        ["141", "2025-10-01"],
-        ["150", "2025-10-01"],
-        ["140", "2024-10-01"],
-        ["141", "2024-10-01"],
-      ].map(
-        (
-          [code, date],
-          index,
-        ) => `<urn:cascade:output-${index}> a <${terms.Vaccination}> .
+    const entered = await page.evaluate(
+      async ({ terms, cvx }) => {
+        const runtime = (await import("cascade-runtime" as string)) as Runtime;
+        await runtime.checkTables();
+        const pod = await runtime.openPod("tables-proof");
+        const shots = [
+          ["141", "2025-10-01"],
+          ["150", "2025-10-01"],
+          ["140", "2024-10-01"],
+          ["141", "2024-10-01"],
+        ].map(
+          (
+            [code, date],
+            index,
+          ) => `<urn:cascade:output-${index}> a <${terms.Vaccination}> .
 <urn:cascade:output-${index}-version> <http://www.w3.org/ns/prov#specializationOf> <urn:cascade:output-${index}> ;
-  <${terms.vaccineCode}> "${code}" ;
+  <${terms.vaccineCode}> <${cvx}${code}> ;
   <${terms.vaccinationOccurrenceTime}> "${date}"^^<http://www.w3.org/2001/XMLSchema#date> ;
   <${terms.patient}> <${pod.subject}> .`,
-      );
-      const session = `urn:uuid:${crypto.randomUUID()}`;
-      const done =
-        await pod.enter(`<${session}> a <http://www.w3.org/ns/prov#Activity> ;
+        );
+        const session = `urn:uuid:${crypto.randomUUID()}`;
+        const done =
+          await pod.enter(`<${session}> a <http://www.w3.org/ns/prov#Activity> ;
   <http://www.w3.org/ns/prov#qualifiedAssociation> [ <http://www.w3.org/ns/prov#agent> <${pod.owner}> ;
     <http://www.w3.org/ns/prov#hadRole> <${terms.PatientRole}> ] .
 ${shots.join("\n")}`);
-      await pod.close();
-      return done;
-    }, terms);
+        await pod.close();
+        return done;
+      },
+      { terms, cvx: codeStems.CVX },
+    );
     assert.equal(entered.refused, undefined);
 
     feed = feedOf((version) => version);
@@ -1694,7 +1697,7 @@ ${shots.join("\n")}`);
             query: `SELECT ?version WHERE { <${series}> <http://purl.org/pav/hasCurrentVersion> ?version }`,
           });
           const sames = await pod.ask({
-            query: `SELECT ?used (GROUP_CONCAT(?code; separator=" ") AS ?codes) WHERE {
+            query: `SELECT ?used (GROUP_CONCAT(STR(?code); separator=" ") AS ?codes) WHERE {
               ?judgment <${terms.justification}> <${terms.SameMappedCodeAndDate}> ;
                 <http://www.w3.org/ns/prov#used> ?used ; <http://www.w3.org/ns/prov#hadMember> ?record .
               VALUES ?used { <${first}> <${second}> }
@@ -1724,7 +1727,11 @@ ${shots.join("\n")}`);
       after.sames
         .map(
           ({ used = "", codes = "" }) =>
-            `${used === first ? "first" : "second"}: ${codes.split(" ").sort().join(" ")}`,
+            `${used === first ? "first" : "second"}: ${codes
+              .split(" ")
+              .map((code) => code.replace(codeStems.CVX, ""))
+              .sort()
+              .join(" ")}`,
         )
         .sort(),
       ["first: 141 150", "second: 140 141", "second: 141 150"],
@@ -1764,50 +1771,57 @@ ${shots.join("\n")}`);
       /^Checked the feeds: nothing new\.$/,
     );
 
-    const said = await page.evaluate(async (terms) => {
-      const runtime = (await import("cascade-runtime" as string)) as Runtime & {
-        appTables(): Promise<{
-          about(codes: string[]): Promise<
-            Map<
-              string,
-              {
-                name?: { label: string };
-                status?: { deprecated: boolean; replacedBy: string[] };
-              }
-            >
-          >;
-        }>;
-      };
-      const pod = await runtime.openPod("tables-proof");
-      try {
-        const shots = ["57", "03"].map(
-          (code) => `<urn:cascade:output-${code}> a <${terms.Vaccination}> .
+    const said = await page.evaluate(
+      async ({ terms, cvx }) => {
+        const runtime = (await import(
+          "cascade-runtime" as string
+        )) as Runtime & {
+          appTables(): Promise<{
+            about(codes: string[]): Promise<
+              Map<
+                string,
+                {
+                  name?: { label: string };
+                  status?: { deprecated: boolean; replacedBy: string[] };
+                }
+              >
+            >;
+          }>;
+        };
+        const pod = await runtime.openPod("tables-proof");
+        try {
+          const shots = ["57", "03"].map(
+            (code) => `<urn:cascade:output-${code}> a <${terms.Vaccination}> .
 <urn:cascade:output-${code}-version> <http://www.w3.org/ns/prov#specializationOf> <urn:cascade:output-${code}> ;
-  <${terms.vaccineCode}> "${code}" ;
+  <${terms.vaccineCode}> <${cvx}${code}> ;
   <${terms.vaccinationOccurrenceTime}> "2020-01-01"^^<http://www.w3.org/2001/XMLSchema#date> ;
   <${terms.patient}> <${pod.subject}> .`,
-        );
-        const session = `urn:uuid:${crypto.randomUUID()}`;
-        await pod.enter(`<${session}> a <http://www.w3.org/ns/prov#Activity> ;
+          );
+          const session = `urn:uuid:${crypto.randomUUID()}`;
+          await pod.enter(`<${session}> a <http://www.w3.org/ns/prov#Activity> ;
   <http://www.w3.org/ns/prov#qualifiedAssociation> [ <http://www.w3.org/ns/prov#agent> <${pod.owner}> ;
     <http://www.w3.org/ns/prov#hadRole> <${terms.PatientRole}> ] .
 ${shots.join("\n")}`);
-        const given = await pod.ask("pod/My immunizations");
-        const reviewed = new Set(
-          (await pod.ask("entry/What needs review")).map(({ entry }) => entry),
-        );
-        const about = await (
-          await runtime.appTables()
-        ).about(given.map(({ code = "" }) => code));
-        return given.map(({ code = "", entry = "" }) => ({
-          label: about.get(code)?.name?.label ?? "",
-          retired: about.get(code)?.status?.deprecated === true,
-          review: reviewed.has(entry),
-        }));
-      } finally {
-        await pod.close();
-      }
-    }, terms);
+          const given = await pod.ask("pod/My immunizations");
+          const reviewed = new Set(
+            (await pod.ask("entry/What needs review")).map(
+              ({ entry }) => entry,
+            ),
+          );
+          const about = await (
+            await runtime.appTables()
+          ).about(given.map(({ code = "" }) => code));
+          return given.map(({ code = "", entry = "" }) => ({
+            label: about.get(code)?.name?.label ?? "",
+            retired: about.get(code)?.status?.deprecated === true,
+            review: reviewed.has(entry),
+          }));
+        } finally {
+          await pod.close();
+        }
+      },
+      { terms, cvx: codeStems.CVX },
+    );
     assert.ok(
       said.some(({ label }) => label !== ""),
       "the names series names no shot",
