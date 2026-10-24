@@ -40,7 +40,7 @@
     "@the-cascade-protocol/sandbox": "github:jayostis/cascade-sandbox#a33529e58830cb8b9c04f9c19c9e666f45634e3c",
     "@types/node": "22.20.5",
     "ai": "7.0.129",
-    "cascade-reference-tables": "github:jayostis/cascade-reference-tables#e0a351577b0ce6085b20e80355b54093edd79003",
+    "cascade-reference-tables": "github:jayostis/cascade-reference-tables#abcb8bd9a99f3f2d9b33351b97416fc0b81f7bab",
     "esbuild": "0.28.2",
     "eslint": "10.12.0",
     "eslint-config-prettier": "10.1.8",

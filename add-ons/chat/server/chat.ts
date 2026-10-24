@@ -72,11 +72,7 @@ const isRefusal = (error: unknown): error is Error =>
 
 /** What the page says of a finding (`changeSaid`), named by `about`; nothing where there were not enough results. */
 function saidOf(finding: Finding, about: Map<string, unknown>) {
-  const changed = CHANGED as Record<
-    string,
-    Record<string, unknown> | undefined
-  >;
-  return changed[finding.kind]?.[finding.direction] === undefined
+  return CHANGED[finding.direction] === undefined
     ? undefined
     : changeSaid(finding as never, about as never);
 }

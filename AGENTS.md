@@ -35,6 +35,12 @@ jayostis/cascade-runtime-js`) rewrites it and `package-lock.json`; it refuses
   (the full URL; the short `owner/repo#N` form is rejected); the check then
   runs that PR's head instead of main. The runtime PR merges first, then the
   pair here moves the pin onto the new build.
+- **The pair here names the runtime PR back** (`Depends-On:
+https://github.com/jayostis/cascade-runtime-js/pull/N`). While that PR is
+  open, every check here runs on the tarball its runtime-js check packed at its
+  head (`.github/actions/runtime`), pinned in the checkout and never pushed;
+  once it merges, the pin moves onto its build by `scripts/pin.mjs` on the
+  pair's branch, before the pair merges.
 
 ## The freeze
 

@@ -1,7 +1,9 @@
 // What a pod's page says, as data: the sections and their rows, the names, dates and sentences the pages draw, from a
-// pod's question rows and what the tables answer. Plain functions whose one import is the runtime's terms, which
-// the view, PodApi, the chat, MCP and the tests all read, in Node and in a browser alike.
+// pod's question rows and what the tables answer. Plain functions whose one import is the runtime's terms (beside its
+// types, which are erased), which the view, PodApi, the chat, MCP and the tests all read, in Node and in a browser
+// alike.
 
+import type { DateIs } from "cascade-runtime";
 import { terms } from "cascade-runtime/terms";
 
 /** A question's row: each variable it binds, as text. */
@@ -218,7 +220,7 @@ export interface Left {
   readonly otherUnit?: number;
   readonly undated?: number;
 }
-/** A change after a medication started or stopped, as `changesIn` gives it. */
+/** A change after a medication was prescribed, started or stopped, as `changesIn` gives it. */
 export interface Finding {
   readonly key: string;
   readonly kind: string;
@@ -236,6 +238,8 @@ export interface Finding {
   readonly medication: Coded & {
     readonly entry?: string;
     readonly date: string;
+    /** Which of the medication's days `date` is. */
+    readonly dateIs: DateIs;
   };
 }
 /** A trend's test and medication, as an address names them. */
@@ -246,6 +250,7 @@ export interface TrendAsked {
 /** A medication of `timelineIn`'s answer. */
 export interface Timed extends Coded {
   readonly started?: string;
+  readonly written?: string;
   readonly ended?: string;
 }
 /** A medication as the trend draws it, from `therapiesOf`. */
@@ -254,6 +259,7 @@ export interface Therapy {
   name: string;
   code?: string;
   started?: string;
+  written?: string;
   ended?: string;
 }
 /** A point of a chart: a day, as a time, and a value. */
@@ -530,6 +536,7 @@ export const SECTIONS: readonly Section[] = [
         show: medicationStatus,
       },
       date("Since", (row) => row.started),
+      date("Prescribed", (row) => row.written),
     ],
     sortBy: 1,
   },
@@ -1509,33 +1516,36 @@ export function opening(
   );
 }
 
+/** What happened to a medication on the day a finding is placed on, by the finding's `dateIs`. */
+export const MEDICATION_DAY: Readonly<
+  Record<DateIs, { readonly said: string; readonly mark: string }>
+> = {
+  "start of use": { said: "started", mark: "start" },
+  "prescription written": { said: "was prescribed", mark: "written" },
+  "end of use": { said: "stopped", mark: "stop" },
+};
+
+export const medicationDay = ({ medication }: Pick<Finding, "medication">) =>
+  MEDICATION_DAY[medication.dateIs];
+
 /**
- * What a finding says, by its kind and direction: that a test's results were lower or higher after a medication started
- * or stopped, as a comparison of means in an order. It never says why.
+ * What a finding says, by its direction: that a test's results were lower or higher after what happened to a medication
+ * on its day (`medicationDay`), as a comparison of means in an order. It never says why.
  */
 export const CHANGED: Readonly<
-  Record<
-    string,
-    Readonly<Record<string, (test: string, medication: string) => string>>
-  >
+  Record<string, (test: string, medication: string, day: string) => string>
 > = {
-  "after start": {
-    down: (test, medication) =>
-      `${test} was lower after ${medication} started.`,
-    up: (test, medication) => `${test} was higher after ${medication} started.`,
-  },
-  "after stop": {
-    down: (test, medication) =>
-      `${test} was lower after ${medication} stopped.`,
-    up: (test, medication) => `${test} was higher after ${medication} stopped.`,
-  },
+  down: (test, medication, day) =>
+    `${test} was lower after ${medication} ${day}.`,
+  up: (test, medication, day) =>
+    `${test} was higher after ${medication} ${day}.`,
 };
 
 /** The view a model can open: the trend of one test, a medication marked. A host registers it with what runs it. */
 export const TREND_VIEW = {
   name: "open_trend",
   description:
-    "Opens the trend of one lab test over time, the days a medication started and stopped marked on it. It shows what changed after what, never why.",
+    "Opens the trend of one lab test over time, the days a medication was prescribed, started and stopped marked on it. It shows what changed after what, never why.",
   inputSchema: {
     type: "object",
     properties: {
@@ -1656,7 +1666,10 @@ export function trendInput(
     : { test: first.notation ?? first.code };
 }
 
-/** The medications of `timeline` (`timelineIn`'s answer) as the therapies `changesIn` takes them for: a drug once, from its earliest start to its latest end. */
+/**
+ * The medications of `timeline` (`timelineIn`'s answer) as the therapies `changesIn` takes them for: a drug once, from
+ * its earliest start of use and the earliest day a prescription for it was written to its latest end.
+ */
 export function therapiesOf(
   timeline: readonly Timed[],
   about: Abouts = new Map(),
@@ -1675,16 +1688,48 @@ export function therapiesOf(
         ),
         code: entry.code,
         started: entry.started,
+        written: entry.written,
         ended: entry.ended,
       });
       continue;
     }
     if (entry.started && (!kept.started || entry.started < kept.started))
       kept.started = entry.started;
+    if (entry.written && (!kept.written || entry.written < kept.written))
+      kept.written = entry.written;
     if (entry.ended && (!kept.ended || entry.ended > kept.ended))
       kept.ended = entry.ended;
   }
   return [...drugs.values()];
+}
+
+/** Each day a therapy has, oldest kind first: the day it was prescribed, its start of use and its stop. */
+export function therapyDays({
+  written,
+  started,
+  ended,
+}: Therapy): { kind: string; day: string; said: string }[] {
+  return [
+    ...(written ? [{ kind: "written", day: written, said: "prescribed" }] : []),
+    ...(started ? [{ kind: "start", day: started, said: "started" }] : []),
+    ...(ended ? [{ kind: "stop", day: ended, said: "stopped" }] : []),
+  ];
+}
+
+/** When a therapy ran, its days said by `dayOf`: `prescribed Jan 1, 2024, from Mar 4, 2024, not stopped`. */
+export function therapySpan(
+  { written, started, ended }: Therapy,
+  dayOf: (text: string) => string,
+): string {
+  const begun = [
+    ...(written ? [`prescribed ${dayOf(written)}`] : []),
+    started
+      ? `from ${dayOf(started)}`
+      : written
+        ? "start of use not known"
+        : "start not known",
+  ].join(", ");
+  return `${begun}${ended ? ` to ${dayOf(ended)}` : ", not stopped"}`;
 }
 
 /** Where a time and a value fall in a drawing of `size`, over the days and numbers of `points` and `marks`. */
@@ -1805,10 +1850,12 @@ export function changeSaid(
 }
 
 export function sentenceOf(
-  { kind, direction }: Pick<Finding, "kind" | "direction">,
+  finding: Pick<Finding, "direction" | "medication">,
   { test, medication }: { test: string; medication: string },
 ): string {
-  return capitalised(CHANGED[kind][direction](test, medication));
+  return capitalised(
+    CHANGED[finding.direction]!(test, medication, medicationDay(finding).said),
+  );
 }
 
 /** The most questions an empty chat offers. */
@@ -1818,7 +1865,7 @@ const SUGGESTED = 4;
  * The questions an empty chat offers, as texts: at most `SUGGESTED`, in a fixed order, the same for the same input,
  * and each only when the pod holds what answers it. First "Find anything interesting in this pod", when What changed
  * has a change or Worth a look has a line (`worth_a_look` gives the lines); then, for each change shown, strongest first, "Did <test> change after
- * <medication> started?" (or "stopped"), named as its card names them; last "Which medications have I stopped?", when a
+ * <medication> started?" (or "was prescribed", or "stopped", as `medicationDay` says), named as its card names them; last "Which medications have I stopped?", when a
  * medication of the history has an end date. The changes make room for the other two. `answers` holds the rows of each
  * of `QUESTIONS`, by question, and `changes`, `about` and `said` are as `podPage` takes them.
  */
@@ -1844,14 +1891,14 @@ export function suggestedQuestions(
     ...new Set(
       shown.map((finding) => {
         const names = changeNames(finding, about);
-        return `Did ${names.test} change after ${names.medication} ${finding.kind === "after start" ? "started" : "stopped"}?`;
+        return `Did ${names.test} change after ${names.medication} ${medicationDay(finding).said}?`;
       }),
     ),
   ].slice(0, SUGGESTED - first.length - last.length);
   return [...first, ...changed, ...last];
 }
 
-/** A statement's field in words: `…/clinical/v1#endDate` is `end date`. */
+/** A statement's field in words: `…#medicationUseEndDate` is `medication use end date`. */
 const fieldSaid = (field: string) =>
   field
     .split(/[#/]/)
@@ -1871,18 +1918,20 @@ function differences(
   before: ReadonlyMap<string, readonly string[]>,
   after: ReadonlyMap<string, readonly string[]>,
 ): Difference[] {
+  const status = (field: string) => Number(STATUSES.has(field));
   return [...new Set([...before.keys(), ...after.keys()])]
     .sort()
+    .sort((a, b) => status(b) - status(a))
     .flatMap((field) => {
       const [was, now] = [before.get(field) ?? [], after.get(field) ?? []];
       return was.join("\n") === now.join("\n")
         ? []
         : [{ field: fieldSaid(field), before: was, after: now }];
-    })
-    .sort(
-      (a, b) => Number(b.field === "status") - Number(a.field === "status"),
-    );
+    });
 }
+
+/** Every kind's status property. */
+const STATUSES: ReadonlySet<string> = new Set(Object.values(terms.statusOf));
 
 /**
  * `answers` with the rows of `MECHANISM` added when `podPage` would draw them: the pod holds two imports or more and
@@ -2047,9 +2096,12 @@ export function pullSaid({
   return `From ${placeName(hospital ?? label)}, ${when}: ${records}${newer}.`;
 }
 
-/** An entry's part in an address: the last `:`-separated part of its IRI, which a host never turns back into one. */
+/**
+ * An entry's part in an address: the end of its IRI after its last `:` or `#`, which a host never turns back into one.
+ * An entry is named under its pod's base, and this part is not, so one entry has one address in every pod.
+ */
 export function entryId(entry: string): string {
-  return entry.split(":").at(-1)!;
+  return entry.split(/[:#]/).at(-1)!;
 }
 
 /** The held series that holds the version `origin`, with that version; none when no series does. */

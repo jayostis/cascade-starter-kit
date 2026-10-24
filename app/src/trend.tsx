@@ -1,5 +1,5 @@
-// The trend of one test, a medication marked: a chart of the results with the days the medication started and stopped
-// dashed across it, each medication as a bar under it, a table of the results and links to pick another test or
+// The trend of one test, a medication marked: a chart of the results with the days the medication was prescribed,
+// started and stopped dashed across it, each medication as a bar under it, a table of the results and links to pick another test or
 // medication. It states what changed after what, never why.
 import type { LoaderFunctionArgs } from "react-router";
 import {
@@ -17,6 +17,8 @@ import {
   rounded,
   testsIn,
   therapiesOf,
+  therapyDays,
+  therapySpan,
   timeOf,
   type Timed,
   trendTitle,
@@ -94,26 +96,13 @@ export function TrendPage({
     time: timeOf(date),
     value,
   }));
-  const marks = [
-    ...(chosen?.started
-      ? [
-          {
-            time: timeOf(chosen.started),
-            kind: "start",
-            text: `${chosen.name} started`,
-          },
-        ]
-      : []),
-    ...(chosen?.ended
-      ? [
-          {
-            time: timeOf(chosen.ended),
-            kind: "stop",
-            text: `${chosen.name} stopped`,
-          },
-        ]
-      : []),
-  ];
+  const marks = (chosen === undefined ? [] : therapyDays(chosen)).map(
+    ({ kind, day: on, said }) => ({
+      time: timeOf(on),
+      kind,
+      text: `${chosen!.name} ${said}`,
+    }),
+  );
   const tested = series.test.notation ?? series.test.code;
   const link = (given: { test?: string; medication?: string }) =>
     address.trend(pod, {
@@ -170,7 +159,7 @@ export function TrendPage({
                 : drugs
                     .map(
                       (drug) =>
-                        `${drug.name}${drug.started ? ` from ${dayAt(timeOf(drug.started))}` : ", start not known"}${drug.ended ? ` to ${dayAt(timeOf(drug.ended))}` : ", not stopped"}.`,
+                        `${drug.name}: ${therapySpan(drug, (on) => dayAt(timeOf(on)))}.`,
                     )
                     .join(" ")
             }

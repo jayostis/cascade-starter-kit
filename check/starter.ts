@@ -5,6 +5,7 @@
 // those add-ons and checks only what an add-on can change. `--only <behaviour>` runs only the behaviours whose name
 // holds that text, after making the app.
 import assert from "node:assert/strict";
+import { Buffer } from "node:buffer";
 import { execFileSync, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
@@ -17,7 +18,7 @@ import { setTimeout } from "node:timers";
 import { parseArgs } from "node:util";
 import * as oxigraph from "oxigraph";
 import { chromium } from "playwright";
-import { terms } from "cascade-runtime/terms";
+import { codeStems, terms } from "cascade-runtime/terms";
 import { Client } from "@modelcontextprotocol/client";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import { answerSignIn } from "@the-cascade-protocol/sandbox/testing";
@@ -89,7 +90,7 @@ const REVIEW = "entry/What needs review";
 const SOURCES = "entry/Where it came from";
 const ROWAN = "Rowan Ellery Marsh";
 const INES = "Ines Calloway";
-const idOf = (entry) => entry.split(":").at(-1);
+const idOf = (entry) => entry.split(/[:#]/).at(-1);
 /** The question each tile of a pod's page counts, by the tile's title. */
 const TILES = {
   Allergies: ALLERGIES,
@@ -1120,7 +1121,7 @@ try {
       );
       assert.match(
         how,
-        /Status active → completed; end date none → Apr 15, 2024\./,
+        /Workflow status active → completed; medication use end date none → Apr 15, 2024\./,
       );
     },
   );
@@ -1458,16 +1459,18 @@ if (release === undefined) {
       const version = index.find(([, p]) => p.value === terms.coversGene)[0]
         .value;
       const covered = objectsOf(index, version, terms.coversGene).sort();
-      const held = await triplesOf(
-        `${tables}/${version.replace("urn:uuid:", "")}.ttl`,
-      );
+      const digest = Buffer.from(
+        version.replace("ni:///sha-256;", ""),
+        "base64url",
+      ).toString("hex");
+      const held = await triplesOf(`${tables}/${digest}.ttl`);
       const rowOf = (id) =>
         objectsOf(
           held,
-          `http://www.ncbi.nlm.nih.gov/clinvar/${id}`,
+          `${codeStems.ClinVar}${id}`,
           terms.clinvarClassification,
         );
-      const labels = await triplesOf("ontologies/records/v1-draft/records.ttl");
+      const labels = await triplesOf("ontologies/cascade.ttl");
       const label = (concept) => {
         const [text] = objectsOf(labels, concept, PREF_LABEL);
         return text.slice(0, 1).toLowerCase() + text.slice(1);
@@ -1475,7 +1478,7 @@ if (release === undefined) {
       // The page reads the app's copy of the published ClinVar series; this check reads the kit's subset of it. They agree
       // because the subset is the published rows, so the sentence is built here from the kit's own row.
       const saidOf = (id) => {
-        const row = `http://www.ncbi.nlm.nih.gov/clinvar/${id}`;
+        const row = `${codeStems.ClinVar}${id}`;
         const classifications = rowOf(id);
         const [status] = objectsOf(held, row, terms.clinvarReviewStatus);
         const [submitters] = objectsOf(
@@ -1500,7 +1503,7 @@ if (release === undefined) {
           ...new Set(
             held
               .filter(([, p]) => p.value === terms.clinvarClassification)
-              .map(([row]) => row.value.split("/").at(-1)),
+              .map(([row]) => row.value.slice(codeStems.ClinVar.length)),
           ),
         ].sort(),
         "the kit's ClinVar IDs are not the rows its story's table holds",
@@ -1716,9 +1719,9 @@ if (release === undefined) {
             page.heading.includes(named),
             `the MLH1 entry is not named by ClinVar: ${page.heading}`,
           );
-          const origin = (
-            await heldNames([`http://www.ncbi.nlm.nih.gov/clinvar/${id}`])
-          ).get(`http://www.ncbi.nlm.nih.gov/clinvar/${id}`)?.name?.origin;
+          const origin = (await heldNames([`${codeStems.ClinVar}${id}`])).get(
+            `${codeStems.ClinVar}${id}`,
+          )?.name?.origin;
           const series = (await heldSeries()).find(({ versions }) =>
             versions.some(({ iri }) => iri === origin),
           );
@@ -2329,7 +2332,7 @@ if (release === undefined) {
       );
 
       await behaviour(
-        "a story patient's pod says what changed after a medication started, opens its trend, and every link under the pod opens",
+        "a story patient's pod says what changed after a medication was prescribed, opens its trend, and every link under the pod opens",
         async () => {
           const shown = await opened(await tab(), server, "/pods/hospital/");
           assert.ok(
@@ -2364,8 +2367,8 @@ if (release === undefined) {
           const card = await readable(shown);
           assert.match(
             card,
-            /\bwas lower after [^.]+ started\./,
-            "no card says a test was lower after a medication started",
+            /\bwas lower after [^.]+ was prescribed\./,
+            "no card says a test was lower after a medication was prescribed",
           );
           assert.ok(
             card.includes(
@@ -2409,8 +2412,8 @@ if (release === undefined) {
             "the trend does not mark each of the six results",
           );
           assert.ok(
-            (await shown.locator(".mark.start").count()) > 0,
-            "no start marked",
+            (await shown.locator(".mark.written").count()) > 0,
+            "the day the prescription was written is not marked",
           );
 
           const { dead, links, pages } = await crawled(server, [page]);

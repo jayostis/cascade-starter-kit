@@ -529,7 +529,11 @@ test("a finding the model's tool found is drawn as a card with the app's sentenc
     said: "LDL was lower after atorvastatin started.",
     unit: "mg/dL",
     test: { code: "18262-6", notation: "18262-6", name: "LDL" },
-    medication: { name: "atorvastatin", date: "2024-03-01" },
+    medication: {
+      name: "atorvastatin",
+      date: "2024-03-01",
+      dateIs: "start of use",
+    },
     before: { count: 2, mean: 160, min: 150, max: 170 },
     after: { count: 1, mean: 95, min: 95, max: 95 },
     view,
