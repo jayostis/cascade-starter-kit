@@ -43,11 +43,16 @@ runs:
         fi
         deadline=$((SECONDS + 40 * 60))
         while :; do
-          run=$(gh api "repos/jayostis/cascade-runtime-js/actions/runs?head_sha=${head}&event=pull_request&per_page=100" \
-            --jq '[.workflow_runs[] | select(.path == ".github/workflows/check.yml")] | sort_by(.id) | last | .id // empty')
+          run="" status=""
+          read -r run status < <(gh api "repos/jayostis/cascade-runtime-js/actions/runs?head_sha=${head}&event=pull_request&per_page=100" \
+            --jq '[.workflow_runs[] | select(.path == ".github/workflows/check.yml")] | sort_by(.id) | last | "\(.id // "") \(.status // "")"') || true
           if [ -n "$run" ] && gh api "repos/jayostis/cascade-runtime-js/actions/runs/${run}/artifacts" \
             --jq '.artifacts[] | select(.name == "package" and (.expired | not)) | .id' | grep -q .; then
             break
+          fi
+          if [ "$status" = completed ]; then
+            echo "::error title=runtime::the check run ${run} of ${named} at ${head} finished without packing the runtime; fix or rerun it, then rerun this"
+            exit 1
           fi
           if [ "$SECONDS" -ge "$deadline" ]; then
             echo "::error title=runtime::no check of ${named} at ${head} has packed the runtime; rerun this once it has"

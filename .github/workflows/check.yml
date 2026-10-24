@@ -27,12 +27,13 @@ jobs:
           node-version: "22"
           cache: npm
       - run: npm ci
-      - uses: ./.github/actions/runtime
+      - id: runtime
+        uses: ./.github/actions/runtime
         with:
           install: "true"
-      - if: ${{ !cancelled() }}
+      - if: ${{ !cancelled() && steps.runtime.outcome == 'success' }}
         run: npm run typecheck
-      - if: ${{ !cancelled() }}
+      - if: ${{ !cancelled() && steps.runtime.outcome == 'success' }}
         run: npm run lint
-      - if: ${{ !cancelled() }}
+      - if: ${{ !cancelled() && steps.runtime.outcome == 'success' }}
         run: npm test
