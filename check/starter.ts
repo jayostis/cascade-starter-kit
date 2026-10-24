@@ -2412,8 +2412,8 @@ if (release === undefined) {
             "the trend does not mark each of the six results",
           );
           assert.ok(
-            (await shown.locator(".mark.start").count()) > 0,
-            "no start marked",
+            (await shown.locator(".mark.written").count()) > 0,
+            "the day the prescription was written is not marked",
           );
 
           const { dead, links, pages } = await crawled(server, [page]);
