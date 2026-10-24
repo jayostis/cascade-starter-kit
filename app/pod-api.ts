@@ -8,6 +8,8 @@ import {
   compact,
   connect,
   ConnectionFailure,
+  ConnectRefused,
+  connectFiles,
   DEMO_PLAN,
   findChanges,
   labSeriesIn,
@@ -16,6 +18,7 @@ import {
   pullFiles,
   Refusal,
   searchDirectory,
+  serverReport,
   sixWords,
   timelineIn,
   typedWords,
@@ -281,6 +284,8 @@ interface Underway {
   files?: Promise<Saved>;
   bringing?: ImportProgress;
   failed?: string;
+  /** Why the pod holds no record of the connect, when it does not; the pull goes on. */
+  notRecorded?: string;
   retry?: boolean;
   imported?: boolean;
   broughtIn?: boolean;
@@ -862,6 +867,32 @@ export function podApi(host: PodHost) {
     }
   }
 
+  /** The pod's record of a connect, before its pull; a server's refusal is kept to be shown, and the pull goes on. */
+  async function record(
+    connection: Underway,
+    signed: Awaited<ReturnType<typeof connect>>,
+  ) {
+    try {
+      const done = (await podNamed(connection.pod)).connect(
+        connectFiles(
+          await serverReport(signed, { signal: connection.stop.signal }),
+          connection.name,
+        ),
+      );
+      const { refused } = await done;
+      if (refused !== undefined) connection.notRecorded = `Refused: ${refused}`;
+    } catch (error) {
+      if (error instanceof ConnectRefused)
+        connection.notRecorded = `Refused: ${error.message}`;
+      else if (
+        error instanceof ConnectionFailure &&
+        !connection.stop.signal.aborted
+      )
+        connection.notRecorded = `${error.message}.`;
+      else throw error;
+    }
+  }
+
   async function connectTo({ pod: given, fhirBase }: Input<"connect">) {
     const name = await known(given);
     await podNamed(name);
@@ -888,7 +919,7 @@ export function podApi(host: PodHost) {
     const reported = new Promise<string>((resolve) => (report = resolve));
     const signedIn = (async () => {
       await hospitals.ready(row);
-      return connect(
+      const signed = await connect(
         row,
         { ...hospitals.registration, scopes: SCOPES },
         {
@@ -902,6 +933,8 @@ export function podApi(host: PodHost) {
           signal: connection.stop.signal,
         },
       );
+      await record(connection, signed);
+      return signed;
     })();
     const pulled = signedIn.then((signed) => {
       connection.step = "pulling";
@@ -979,6 +1012,9 @@ export function podApi(host: PodHost) {
       settled: settled(connection),
       requests: connection.requests,
       ...(connection.asOf !== undefined && { asOf: connection.asOf }),
+      ...(connection.notRecorded !== undefined && {
+        notRecorded: connection.notRecorded,
+      }),
       ...(connection.bringing !== undefined && {
         bringing: connection.bringing,
       }),

@@ -93,6 +93,8 @@ export interface ConnectionNow {
   };
   readonly patient?: string;
   readonly patientNames?: readonly { name?: string; family?: string }[];
+  /** Why the pod holds no record of the connect, when it does not. */
+  readonly notRecorded?: string;
   readonly broughtIn?: boolean;
 }
 
