@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import process from "node:process";
 import { after, test } from "node:test";
 import {
+  codeStems,
   type FailureKind,
   type Finding,
   labSeriesIn,
@@ -409,7 +410,7 @@ test("tables are browsed by source: a source's page searches all its tables and 
 
 test("a code's page gives a variation's classification as ClinVar's sentence with the table's credit, links ClinVar's own page when it has one, and no outside link when it has none", () => {
   const VERSION = "ni:///clinvar-1";
-  const VARIATION = "http://www.ncbi.nlm.nih.gov/clinvar/90011";
+  const VARIATION = `${codeStems.ClinVar}90011`;
   const clinvar = {
     ...GROUPS,
     iri: "urn:test:clinvar",
@@ -806,7 +807,7 @@ test("a pod's page names a row by the first of its codes the tables name, else b
   const CVX = "urn:test:cvx/";
   const ICD = "urn:test:icd/";
   const SCT = "urn:test:sct/";
-  const LOINC = "http://loinc.org/rdf/";
+  const LOINC = codeStems.LOINC;
   const name = (label: string) => ({
     name: { label, altLabels: [], origin: "urn:x:names" },
   });
@@ -1039,7 +1040,7 @@ test("an entry's page waits for what the tables say of it while the engine warms
 });
 
 test("a pod's page credits the table whose names it shows, once, and no other", () => {
-  const code = "http://loinc.org/rdf/2823-3";
+  const code = `${codeStems.LOINC}2823-3`;
   const answers = {
     [LABS]: [
       { entry: "l1", test: "K+", code },
@@ -1085,7 +1086,7 @@ test("a pod's page credits the table whose names it shows, once, and no other", 
 });
 
 test("the medicines by class page groups the pod's active medicines under each class, one class alone when picked, with the table and version each came from and its credit, and says which medicines are in none and why", () => {
-  const MEDRT = "https://ns.cascadeprotocol.org/codes/medrt/";
+  const MEDRT = codeStems.MEDRT;
   const ORIGIN = "urn:x:classes-1";
   const series = {
     ...GROUPS,
@@ -1237,7 +1238,7 @@ test("the medicines by class page groups the pod's active medicines under each c
 });
 
 test("a panel's page lists the pod's results in LOINC's order with each test's requirement, newest first, the required tests with no result, a nested panel's tests under it, and the version and credit; it never says a result was drawn in the panel", () => {
-  const LOINC = "http://loinc.org/rdf/";
+  const LOINC = codeStems.LOINC;
   const ORIGIN = "urn:x:panels-1";
   const NAMES = "urn:x:names-1";
   const series = {
@@ -1377,7 +1378,7 @@ test("a lab result's page links the panels LOINC lists its test in, and a result
         entry: "urn:e:k",
         entryLabel: "Lab result entry · Potassium",
         test: "Potassium",
-        code: "http://loinc.org/rdf/2823-3",
+        code: `${codeStems.LOINC}2823-3`,
         value: "4.1",
       },
     ],
@@ -1385,7 +1386,7 @@ test("a lab result's page links the panels LOINC lists its test in, and a result
   const entry = said.entryOf(labs, said.entryId("urn:e:k"), {
     held: [series],
   });
-  assert.deepEqual(entry.testCodes, ["http://loinc.org/rdf/2823-3"]);
+  assert.deepEqual(entry.testCodes, [`${codeStems.LOINC}2823-3`]);
   const panels = [
     {
       series,
@@ -1393,7 +1394,7 @@ test("a lab result's page links the panels LOINC lists its test in, and a result
       total: 3,
       panels: [
         {
-          code: "http://loinc.org/rdf/24326-1",
+          code: `${codeStems.LOINC}24326-1`,
           notation: "24326-1",
           required: "R",
           about: { notation: "24326-1", name: { label: "Electrolytes panel" } },
@@ -1417,7 +1418,7 @@ test("a lab result's page links the panels LOINC lists its test in, and a result
     linksOf(page).some(
       ({ href }) =>
         href ===
-        "/pods/rowan-marsh/panel?panel=http%3A%2F%2Floinc.org%2Frdf%2F24326-1",
+        `/pods/rowan-marsh/panel?panel=${encodeURIComponent(`${codeStems.LOINC}24326-1`)}`,
     ),
     "a link opens the panel",
   );
@@ -1904,7 +1905,7 @@ test("before the tables can say, a variant's entry names each report's lab and i
     entry.known.map(({ sentence }: { sentence: string }) => sentence),
     [
       `Cascade recorded it at ${HARBOURLINE} and ${COLUMBA} and keeps it as one variant.`,
-      `Your 2022 report from ${HARBOURLINE} said VUS.`,
+      `Your 2022 report from ${HARBOURLINE} said uncertain significance.`,
       `Your 2024 report from ${COLUMBA} said likely pathogenic.`,
       COUNSELLOR,
     ],
@@ -1976,18 +1977,15 @@ function trendOf(
   });
 }
 
-test("What changed on the statin story patient's page: one card in CHANGED's words with both means and counts, the six results behind it each linking to its entry, and the trend's address", async () => {
+test("What changed on the statin story patient's page: one card saying the change came after the day the prescription was written, that day marked, with both means and counts, the six results behind it each linking to its entry, and the trend's address", async () => {
   const story = (await storyPods()).get("story-statin")!;
   const [finding] = story.changes;
   const page = podOf("ines-calloway", story);
   assert.equal(count(page, /class="change[ "]/g), 1);
-  const sentence = capitalised(
-    said.CHANGED["after start"].down(
-      finding!.test.name,
-      finding!.medication.name,
-    ),
-  );
+  assert.equal(finding!.medication.dateIs, "prescription written");
+  const sentence = `${capitalised(finding!.test.name!)} was lower after ${finding!.medication.name} was prescribed.`;
   assert.ok(textOf(page).includes(sentence), sentence);
+  assert.equal(count(page, /class="mark written[ "]/g), 1);
   assert.match(
     textOf(page),
     /162 → 98\.3 mg\/dL, the mean of 3 results before and 3 after/,
@@ -2168,7 +2166,7 @@ test("a pod brought in twice says where What changed comes from: the imports in 
   }
   assert.match(
     drawn,
-    /Where this comes from The pod's records came in 2 imports, in this order: From Cascade North, retrieved 29 January 2024: 2 records\. From Cascade North, as of 1 February 2025: 1 record, 1 of them a new version of one the pod already held\. .+ came in a new version: version 1 to version 2, in import 2, as of 1 February 2025\. Status active → completed; end date none → Apr 15, 2024\./,
+    /Where this comes from The pod's records came in 2 imports, in this order: From Cascade North, retrieved 29 January 2024: 2 records\. From Cascade North, as of 1 February 2025: 1 record, 1 of them a new version of one the pod already held\. .+ came in a new version: version 1 to version 2, in import 2, as of 1 February 2025\. Workflow status active → completed; medication use end date none → Apr 15, 2024\./,
   );
   assert.doesNotMatch(drawn, /Oct 17, 2026/);
   const undated = textOf(
@@ -2228,7 +2226,7 @@ test("a pod brought in twice says where What changed comes from: the imports in 
 test("the trend names its first date from the earliest result, and its test and medication by the tables where they name the code, else by the record's own text, and says it is still naming them while the engine warms", () => {
   const series = {
     test: {
-      code: "http://loinc.org/18262-6",
+      code: `${codeStems.LOINC}18262-6`,
       notation: "18262-6",
       name: "LDL",
     },
@@ -2290,7 +2288,7 @@ test("the trend names its first date from the earliest result, and its test and 
 
 test("the trend states that the chart leaves out a result in another unit, while its table still lists it", () => {
   const series = {
-    test: { code: "http://loinc.org/18262-6", notation: "18262-6" },
+    test: { code: `${codeStems.LOINC}18262-6`, notation: "18262-6" },
     results: [
       { date: "2024-03-10", value: 98, unit: "mg/dL" },
       { date: "2024-04-10", value: 98, unit: "mg/dL" },
@@ -2308,7 +2306,7 @@ test("the trend states that the chart leaves out a result in another unit, while
   assert.equal(rowsIn(page), 3);
 });
 
-test("the trend round-trips through its address: the state read from it draws the same test and medication, a marker for each result, the medication's start marked, the test named and the results in a table", async () => {
+test("the trend round-trips through its address: the state read from it draws the same test and medication, a marker for each result, the day the medication's prescription was written marked where no start of use is known, the test named and the results in a table", async () => {
   const story = (await storyPods()).get("story-statin")!;
   const href = paths.trend("ines-calloway", {
     test: "18262-6",
@@ -2323,8 +2321,16 @@ test("the trend round-trips through its address: the state read from it draws th
   const page = trendOf("ines-calloway", story, asked);
 
   assert.equal(count(page, /class="marker[ "]/g), 6);
-  assert.equal(count(page, /class="mark start[ "]/g), 1);
+  assert.equal(count(page, /class="mark written[ "]/g), 1);
+  assert.equal(count(page, /class="mark start[ "]/g), 0);
   assert.equal(count(page, /class="mark stop[ "]/g), 0);
+  const medication = story.changes[0]!.medication.name;
+  assert.ok(
+    textAt(page, "trend-lane-desc")?.includes(
+      `${medication} prescribed Mar 4, 2024, start of use not known, not stopped.`,
+    ),
+    textAt(page, "trend-lane-desc"),
+  );
   const name = story.changes[0]!.test.name!;
   assert.equal(textAt(page, "trend-chart-title"), name);
   assert.match(
@@ -2339,7 +2345,7 @@ test("the trend round-trips through its address: the state read from it draws th
     asked,
   );
   const none = trendOf("ines-calloway", story, { test: "18262-6" });
-  assert.equal(count(none, /class="mark start[ "]/g), 0);
+  assert.equal(count(none, /class="mark [a-z]+[ "]/g), 0);
   assert.equal(count(none, /class="marker[ "]/g), 6);
 });
 
@@ -2380,7 +2386,7 @@ test("Ask about this: once the chat names a model, each What changed card, each 
         read: {
           labs: [],
           series: {
-            test: { code: "http://loinc.org/18262-6", notation: "18262-6" },
+            test: { code: `${codeStems.LOINC}18262-6`, notation: "18262-6" },
             results: [{ date: "2024-03-10", value: 98, unit: "mg/dL" }],
             left: { unparsed: 0, undated: 0 },
           },

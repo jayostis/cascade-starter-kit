@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
-import { type Terms, terms } from "cascade-runtime";
+import { codeStems, type Terms, terms } from "cascade-runtime";
 import {
   ALLERGIES,
   CLINVAR,
@@ -177,7 +177,7 @@ test("worth a look: each thing that needs review, with its entry and the Needs r
 });
 
 test("worth a look: two medications in two entries whose codes share an ingredient are shown apart, once for each pair in the order of the section even when an entry's rows are not adjacent, a combination of one MIN said as a combination, and one entry's own rows, a medication with no code or two entries that share a code give nothing, since What needs review lists those, and a medication stopped or paused shares with none", () => {
-  const RXNORM = "https://ns.cascadeprotocol.org/codes/rxnorm/";
+  const RXNORM = codeStems.RxNorm;
   const ingredients = (...codes: string[]) => ({
     ingredients: { codes: codes.map((code) => RXNORM + code), origin: "urn:v" },
   });
@@ -511,7 +511,7 @@ test("the codes a pod's page asks the tables to name are every code of every row
   const CVX = "urn:test:cvx/";
   const ICD = "urn:test:icd/";
   const SCT = "urn:test:sct/";
-  const LOINC = "http://loinc.org/rdf/";
+  const LOINC = codeStems.LOINC;
   const answers = {
     "pod/My immunizations": [
       { entry: "i1", vaccine: "Fluarix", code: `${CVX}141` },
@@ -1008,7 +1008,7 @@ test("a variant is named by ClinVar's name of the one variation its classificati
   const PROTEIN = "NM_000249.4(MLH1):c.2042C>T (p.Ala681Val)";
   const NAMES = { iri: "urn:test:names", versions: [{ iri: "ni:///names-1" }] };
   const name = { label: PROTEIN, altLabels: [], origin: "ni:///names-1" };
-  const stem = "http://www.ncbi.nlm.nih.gov/clinvar/";
+  const stem = codeStems.ClinVar;
   const answers = {
     [VARIANTS]: ["named", "unfound", "unnamed", "twofold"].map(
       (variant, at) => ({
@@ -1099,7 +1099,7 @@ test("Ask about this: a click sends the kind's first question, and none for a ki
     assert.equal(said.firstQuestion(context), question, context.kind);
 });
 
-test("suggested questions: Ines Calloway's find a change and ask about it named as the page names it, a pod with a Worth a look line and no change is offered it too, a pod's four at most keep the first and last in place, and the same answers give the same list", async () => {
+test("suggested questions: Ines Calloway's find a change and ask about it named as the page names it, after the day her prescription was written, a pod with a Worth a look line and no change is offered it too, a pod's four at most keep the first and last in place, and the same answers give the same list", async () => {
   const story = (await storyPods()).get("story-statin")!;
   const [finding] = story.changes;
   const ines = said.suggestedQuestions(story.answers, {
@@ -1107,7 +1107,7 @@ test("suggested questions: Ines Calloway's find a change and ask about it named 
   }) as string[];
   assert.deepEqual(ines, [
     "Find anything interesting in this pod",
-    `Did ${finding!.test.name} change after ${finding!.medication.name} started?`,
+    `Did ${finding!.test.name} change after ${finding!.medication.name} was prescribed?`,
   ]);
   assert.deepEqual(
     said.suggestedQuestions(story.answers, { changes: story.changes }),
@@ -1126,21 +1126,21 @@ test("suggested questions: Ines Calloway's find a change and ask about it named 
     ["Find anything interesting in this pod"],
   );
 
-  const change = (n: number, kind: string) => ({
-    kind,
+  const change = (n: number, dateIs: string) => ({
+    kind: dateIs === "end of use" ? "after stop" : "after start",
     direction: "down",
     test: { code: `t${n}`, name: `Test ${n}` },
-    medication: { code: `m${n}`, name: `Drug ${n}` },
+    medication: { code: `m${n}`, name: `Drug ${n}`, dateIs },
   });
   const many = said.suggestedQuestions(
     { [HISTORY]: [{ medication: "Drug 1", ended: "2024-05-01" }] },
     {
       changes: [
-        change(1, "after start"),
-        change(2, "after stop"),
-        change(3, "after start"),
-        change(4, "after start"),
-        { ...change(5, "after start"), direction: "not enough results" },
+        change(1, "start of use"),
+        change(2, "end of use"),
+        change(3, "start of use"),
+        change(4, "start of use"),
+        { ...change(5, "start of use"), direction: "not enough results" },
       ],
     },
   );

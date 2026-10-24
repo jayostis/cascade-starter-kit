@@ -1672,8 +1672,9 @@ test("in the browser, a check keeps the test feed's planted newer version in the
   <${terms.vaccinationOccurrenceTime}> "${date}"^^<http://www.w3.org/2001/XMLSchema#date> ;
   <${terms.patient}> <${pod.subject}> .`,
       );
+      const session = `urn:uuid:${crypto.randomUUID()}`;
       const done =
-        await pod.enter(`<urn:cascade:this-entry> a <http://www.w3.org/ns/prov#Activity> ;
+        await pod.enter(`<${session}> a <http://www.w3.org/ns/prov#Activity> ;
   <http://www.w3.org/ns/prov#qualifiedAssociation> [ <http://www.w3.org/ns/prov#agent> <${pod.owner}> ;
     <http://www.w3.org/ns/prov#hadRole> <${terms.PatientRole}> ] .
 ${shots.join("\n")}`);
@@ -1786,7 +1787,8 @@ ${shots.join("\n")}`);
   <${terms.vaccinationOccurrenceTime}> "2020-01-01"^^<http://www.w3.org/2001/XMLSchema#date> ;
   <${terms.patient}> <${pod.subject}> .`,
         );
-        await pod.enter(`<urn:cascade:this-entry> a <http://www.w3.org/ns/prov#Activity> ;
+        const session = `urn:uuid:${crypto.randomUUID()}`;
+        await pod.enter(`<${session}> a <http://www.w3.org/ns/prov#Activity> ;
   <http://www.w3.org/ns/prov#qualifiedAssociation> [ <http://www.w3.org/ns/prov#agent> <${pod.owner}> ;
     <http://www.w3.org/ns/prov#hadRole> <${terms.PatientRole}> ] .
 ${shots.join("\n")}`);
@@ -2443,7 +2445,7 @@ test("in try/, two open tools called back to back, with no wait between, each re
   }
 });
 
-test("in try/, Ines Calloway's new pod signed in at North says what changed after atorvastatin started, opens the trend at its address, and its class page puts her estradiol in estrogen", async () => {
+test("in try/, Ines Calloway's new pod signed in at North says what changed after atorvastatin was prescribed, opens the trend at its address, and its class page puts her estradiol in estrogen", async () => {
   const demo = await loadHospitals();
   const ines = view
     .demoPeople(demo)
@@ -2483,7 +2485,7 @@ test("in try/, Ines Calloway's new pod signed in at North says what changed afte
     await card.first().waitFor({ timeout: 60_000 });
     assert.equal(await card.count(), 1);
     const said = (await card.innerText()).replace(/\s+/g, " ");
-    assert.match(said, /was lower after .+ started\./);
+    assert.match(said, /was lower after .+ was prescribed\./);
     assert.ok(
       said.includes(
         "162 → 98.3 mg/dL, the mean of 3 results before and 3 after",
@@ -2836,7 +2838,7 @@ test("in try/, the sample pod tamsin-vale draws What changed and, in its card, w
     assert.match(
       how,
       new RegExp(
-        `Status active → completed; end date none → ${view.day(finding.date)}`,
+        `Workflow status active → completed; medication use end date none → ${view.day(finding.date)}`,
       ),
     );
     assert.doesNotMatch(how, /urn:|https?:/);

@@ -8,6 +8,7 @@ import {
   pullFiles,
   type Row,
   type Terms,
+  codeStems,
   terms,
 } from "cascade-runtime";
 import { pulled } from "./hospitals.js";
@@ -75,7 +76,7 @@ export const LABELS = new Map(
   ]),
 );
 export const VERSION = "ni:///clinvar-1";
-export const ROW = "http://www.ncbi.nlm.nih.gov/clinvar/90011";
+export const ROW = `${codeStems.ClinVar}90011`;
 export const rows = (fields: Record<string, unknown>) => ({
   found: "rows",
   series: "urn:test:clinvar",
