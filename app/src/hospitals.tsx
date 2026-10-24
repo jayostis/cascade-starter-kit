@@ -204,6 +204,9 @@ export function ConnectionBox({
             </p>
           </>
         )}
+        {now.notRecorded !== undefined && (
+          <p className={muted}>Not recorded: {now.notRecorded}</p>
+        )}
         {now.retry && bring("Try again")}
       </div>,
     );
@@ -258,6 +261,9 @@ export function ConnectionBox({
           <p className={muted}>Not allowed to read: {denied.join(", ")}</p>
         )}
         {asOf !== undefined && <p className={muted}>{asOf}</p>}
+        {now.notRecorded !== undefined && (
+          <p className={muted}>Not recorded: {now.notRecorded}</p>
+        )}
         {grade === "certainly-not"
           ? bring(`Bring ${about}'s records into ${who}'s pod anyway`, quiet)
           : grade === "possible"
