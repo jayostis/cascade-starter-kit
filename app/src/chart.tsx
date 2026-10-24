@@ -167,7 +167,8 @@ export function Lane({
       <desc id={`${id}-desc`}>{desc}</desc>
       {drugs.map((drug, at) => {
         const top = 4 + at * rowHeight;
-        const start = drug.started ? timeOf(drug.started) : undefined;
+        const begun = drug.started ?? drug.written;
+        const start = begun ? timeOf(begun) : undefined;
         const end = drug.ended ? timeOf(drug.ended) : to;
         const drawn = start !== undefined && start <= to && end >= from;
         const left = drawn ? x(Math.max(start, from)) : margin.left;
@@ -192,7 +193,7 @@ export function Lane({
                 rx="4"
               >
                 <title>
-                  {`${drug.name}: ${drug.started ? `from ${day(drug.started)}` : "start not known"}${drug.ended ? ` to ${day(drug.ended)}` : ", not stopped"}`}
+                  {`${drug.name}: ${drug.started ? `from ${day(drug.started)}` : drug.written ? `prescribed ${day(drug.written)}, start of use not known` : "start not known"}${drug.ended ? ` to ${day(drug.ended)}` : ", not stopped"}`}
                 </title>
               </rect>
             )}

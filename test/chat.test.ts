@@ -290,7 +290,7 @@ test("a question that calls find_changes runs it: the model sees the compact fin
     rows: { entry: string; value: string; side: string }[];
   }[];
   assert.equal(finding!.key, "start:617310:18262-6");
-  assert.match(finding!.said, /^LDL.* was lower after .* started\.$/);
+  assert.match(finding!.said, /^LDL.* was lower after .* was prescribed\.$/);
   assert.equal(
     finding!.view,
     `/pods/${STATIN}/trend?test=18262-6&medication=617310`,
@@ -343,7 +343,7 @@ test("a finding says itself as the page does: named by what the tables say of it
     ({ key }) => key === whole!.key,
   );
   assert.ok(
-    finding!.said.endsWith(`after ${TABLES_NAME} started.`),
+    finding!.said.endsWith(`after ${TABLES_NAME} was prescribed.`),
     finding!.said,
   );
   assert.equal(finding!.said, changeSaid(whole, names));

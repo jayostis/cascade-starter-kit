@@ -103,7 +103,15 @@ export function TrendPage({
             text: `${chosen.name} started`,
           },
         ]
-      : []),
+      : chosen?.written
+        ? [
+            {
+              time: timeOf(chosen.written),
+              kind: "written",
+              text: `${chosen.name} prescribed`,
+            },
+          ]
+        : []),
     ...(chosen?.ended
       ? [
           {
@@ -170,7 +178,7 @@ export function TrendPage({
                 : drugs
                     .map(
                       (drug) =>
-                        `${drug.name}${drug.started ? ` from ${dayAt(timeOf(drug.started))}` : ", start not known"}${drug.ended ? ` to ${dayAt(timeOf(drug.ended))}` : ", not stopped"}.`,
+                        `${drug.name}${drug.started ? ` from ${dayAt(timeOf(drug.started))}` : drug.written ? ` prescribed ${dayAt(timeOf(drug.written))}, start of use not known` : ", start not known"}${drug.ended ? ` to ${dayAt(timeOf(drug.ended))}` : ", not stopped"}.`,
                     )
                     .join(" ")
             }

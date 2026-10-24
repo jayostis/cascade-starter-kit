@@ -38,6 +38,7 @@ import {
   rounded,
   type SectionRow as Row,
   type Section,
+  medicationDay,
   sectionRows,
   SECTIONS,
   sentenceOf,
@@ -323,7 +324,7 @@ function Change({
   names: { test: string; medication: string };
   trendHref: (finding: Finding) => string;
 }) {
-  const { key, kind, unit, before, after, left, rows } = finding;
+  const { key, unit, before, after, left, rows } = finding;
   const id = `change-${slug(key)}`;
   const points = [...rows.before, ...rows.after].map((row) => ({
     time: timeOf(row.performed),
@@ -332,7 +333,7 @@ function Change({
   const marks = [
     {
       time: timeOf(finding.medication.date),
-      kind: kind === "after start" ? "start" : "stop",
+      kind: medicationDay(finding).mark,
       text: "",
     },
   ];
@@ -356,7 +357,7 @@ function Change({
         marks={marks}
         unit={unit}
         title={names.test}
-        desc={`${resultsSaid(points.length)} from ${dayAt(Math.min(...times))} to ${dayAt(Math.max(...times))}. ${names.medication} ${kind === "after start" ? "started" : "stopped"} ${day(finding.medication.date)}.`}
+        desc={`${resultsSaid(points.length)} from ${dayAt(Math.min(...times))} to ${dayAt(Math.max(...times))}. ${names.medication} ${medicationDay(finding).said} ${day(finding.medication.date)}.`}
       />
       <p className={row}>
         <a href={`#${id}`}>Show the {resultsSaid(shown)}</a>{" "}
@@ -484,8 +485,7 @@ function Changed({
               return (
                 <li key={finding.key}>
                   {capitalised(names.test)} and {names.medication},{" "}
-                  {finding.kind === "after start" ? "started" : "stopped"}{" "}
-                  {day(finding.medication.date)}:{" "}
+                  {medicationDay(finding).said} {day(finding.medication.date)}:{" "}
                   {resultsSaid(finding.before.count)} before,{" "}
                   {finding.after.count} after.{" "}
                   <a href={trendHref(finding)}>Open the trend</a>

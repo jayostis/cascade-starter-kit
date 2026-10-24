@@ -2072,12 +2072,15 @@ test("What changed says nothing stands out when no pair does, counts a pair with
 test("no sentence CHANGED gives, and none said of any of the five stories' findings, says why a result changed", async () => {
   const causes =
     /because|caus|due to|effect|led to|improv|worsen|thanks to|\bworks?\b/i;
-  const sentences = Object.values(said.CHANGED as object).flatMap((byWay) =>
-    Object.values(byWay as object).map((say) =>
-      (say as (a: string, b: string) => string)("Test", "Medication"),
-    ),
+  const changed = said.CHANGED as Record<
+    string,
+    (test: string, medication: string, day: string) => string
+  >;
+  const days = said.MEDICATION_DAY as Record<string, { said: string }>;
+  const sentences = Object.values(changed).flatMap((say) =>
+    Object.values(days).map((day) => say("Test", "Medication", day.said)),
   );
-  assert.equal(sentences.length, 4);
+  assert.equal(sentences.length, 6);
   for (const sentence of sentences) assert.doesNotMatch(sentence, causes);
 
   for (const [patient, story] of await storyPods()) {

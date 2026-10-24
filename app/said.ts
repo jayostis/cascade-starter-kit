@@ -236,6 +236,8 @@ export interface Finding {
   readonly medication: Coded & {
     readonly entry?: string;
     readonly date: string;
+    /** Which of the medication's days `date` is, a key of `MEDICATION_DAY`. */
+    readonly dateIs: string;
   };
 }
 /** A trend's test and medication, as an address names them. */
@@ -246,6 +248,7 @@ export interface TrendAsked {
 /** A medication of `timelineIn`'s answer. */
 export interface Timed extends Coded {
   readonly started?: string;
+  readonly written?: string;
   readonly ended?: string;
 }
 /** A medication as the trend draws it, from `therapiesOf`. */
@@ -254,6 +257,7 @@ export interface Therapy {
   name: string;
   code?: string;
   started?: string;
+  written?: string;
   ended?: string;
 }
 /** A point of a chart: a day, as a time, and a value. */
@@ -1509,26 +1513,29 @@ export function opening(
   );
 }
 
+/** What happened to a medication on the day a finding is placed on, by the finding's `dateIs`. */
+export const MEDICATION_DAY: Readonly<
+  Record<string, { readonly said: string; readonly mark: string }>
+> = {
+  "start of use": { said: "started", mark: "start" },
+  "prescription written": { said: "was prescribed", mark: "written" },
+  "end of use": { said: "stopped", mark: "stop" },
+};
+
+export const medicationDay = ({ medication }: Pick<Finding, "medication">) =>
+  MEDICATION_DAY[medication.dateIs]!;
+
 /**
- * What a finding says, by its kind and direction: that a test's results were lower or higher after a medication started
- * or stopped, as a comparison of means in an order. It never says why.
+ * What a finding says, by its direction: that a test's results were lower or higher after what happened to a medication
+ * on its day (`medicationDay`), as a comparison of means in an order. It never says why.
  */
 export const CHANGED: Readonly<
-  Record<
-    string,
-    Readonly<Record<string, (test: string, medication: string) => string>>
-  >
+  Record<string, (test: string, medication: string, day: string) => string>
 > = {
-  "after start": {
-    down: (test, medication) =>
-      `${test} was lower after ${medication} started.`,
-    up: (test, medication) => `${test} was higher after ${medication} started.`,
-  },
-  "after stop": {
-    down: (test, medication) =>
-      `${test} was lower after ${medication} stopped.`,
-    up: (test, medication) => `${test} was higher after ${medication} stopped.`,
-  },
+  down: (test, medication, day) =>
+    `${test} was lower after ${medication} ${day}.`,
+  up: (test, medication, day) =>
+    `${test} was higher after ${medication} ${day}.`,
 };
 
 /** The view a model can open: the trend of one test, a medication marked. A host registers it with what runs it. */
@@ -1656,7 +1663,10 @@ export function trendInput(
     : { test: first.notation ?? first.code };
 }
 
-/** The medications of `timeline` (`timelineIn`'s answer) as the therapies `changesIn` takes them for: a drug once, from its earliest start to its latest end. */
+/**
+ * The medications of `timeline` (`timelineIn`'s answer) as the therapies `changesIn` takes them for: a drug once, from
+ * its earliest start of use and the earliest day a prescription for it was written to its latest end.
+ */
 export function therapiesOf(
   timeline: readonly Timed[],
   about: Abouts = new Map(),
@@ -1675,12 +1685,15 @@ export function therapiesOf(
         ),
         code: entry.code,
         started: entry.started,
+        written: entry.written,
         ended: entry.ended,
       });
       continue;
     }
     if (entry.started && (!kept.started || entry.started < kept.started))
       kept.started = entry.started;
+    if (entry.written && (!kept.written || entry.written < kept.written))
+      kept.written = entry.written;
     if (entry.ended && (!kept.ended || entry.ended > kept.ended))
       kept.ended = entry.ended;
   }
@@ -1805,10 +1818,12 @@ export function changeSaid(
 }
 
 export function sentenceOf(
-  { kind, direction }: Pick<Finding, "kind" | "direction">,
+  finding: Pick<Finding, "direction" | "medication">,
   { test, medication }: { test: string; medication: string },
 ): string {
-  return capitalised(CHANGED[kind][direction](test, medication));
+  return capitalised(
+    CHANGED[finding.direction]!(test, medication, medicationDay(finding).said),
+  );
 }
 
 /** The most questions an empty chat offers. */
@@ -1818,7 +1833,7 @@ const SUGGESTED = 4;
  * The questions an empty chat offers, as texts: at most `SUGGESTED`, in a fixed order, the same for the same input,
  * and each only when the pod holds what answers it. First "Find anything interesting in this pod", when What changed
  * has a change or Worth a look has a line (`worth_a_look` gives the lines); then, for each change shown, strongest first, "Did <test> change after
- * <medication> started?" (or "stopped"), named as its card names them; last "Which medications have I stopped?", when a
+ * <medication> started?" (or "was prescribed", or "stopped", as `medicationDay` says), named as its card names them; last "Which medications have I stopped?", when a
  * medication of the history has an end date. The changes make room for the other two. `answers` holds the rows of each
  * of `QUESTIONS`, by question, and `changes`, `about` and `said` are as `podPage` takes them.
  */
@@ -1844,14 +1859,14 @@ export function suggestedQuestions(
     ...new Set(
       shown.map((finding) => {
         const names = changeNames(finding, about);
-        return `Did ${names.test} change after ${names.medication} ${finding.kind === "after start" ? "started" : "stopped"}?`;
+        return `Did ${names.test} change after ${names.medication} ${medicationDay(finding).said}?`;
       }),
     ),
   ].slice(0, SUGGESTED - first.length - last.length);
   return [...first, ...changed, ...last];
 }
 
-/** A statement's field in words: `…/clinical/v1#endDate` is `end date`. */
+/** A statement's field in words: `…#medicationUseEndDate` is `medication use end date`. */
 const fieldSaid = (field: string) =>
   field
     .split(/[#/]/)
@@ -1871,18 +1886,20 @@ function differences(
   before: ReadonlyMap<string, readonly string[]>,
   after: ReadonlyMap<string, readonly string[]>,
 ): Difference[] {
+  const status = (field: string) => Number(STATUSES.has(field));
   return [...new Set([...before.keys(), ...after.keys()])]
     .sort()
+    .sort((a, b) => status(b) - status(a))
     .flatMap((field) => {
       const [was, now] = [before.get(field) ?? [], after.get(field) ?? []];
       return was.join("\n") === now.join("\n")
         ? []
         : [{ field: fieldSaid(field), before: was, after: now }];
-    })
-    .sort(
-      (a, b) => Number(b.field === "status") - Number(a.field === "status"),
-    );
+    });
 }
+
+/** Every kind's status property. */
+const STATUSES: ReadonlySet<string> = new Set(Object.values(terms.statusOf));
 
 /**
  * `answers` with the rows of `MECHANISM` added when `podPage` would draw them: the pod holds two imports or more and
