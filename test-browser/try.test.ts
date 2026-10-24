@@ -1580,7 +1580,7 @@ test("in the browser, look and import read the files a person picks as Node read
   for (const iri of loads) assert.ok(carried.includes(iri), iri);
 });
 
-test("in the browser, a check keeps the test feed's planted newer version in the app's own database, and a pod opened after it adopts it: the version is recorded, the Same it newly joins is filed and the one that used the replaced version filed again", async () => {
+test("in the browser, a check keeps the test feed's planted newer version in the app's own database, and a pod opened after it adopts it: the version is recorded, the Same it newly joins is filed and nothing is filed again for one the replaced version joined that it joins too", async () => {
   const [feedUrl] = (await servedConfig()).tables.feeds;
   assert.ok(feedUrl);
   const valid = join(
@@ -1734,7 +1734,7 @@ ${shots.join("\n")}`);
               .join(" ")}`,
         )
         .sort(),
-      ["first: 141 150", "second: 140 141", "second: 141 150"],
+      ["first: 141 150", "second: 140 141"],
     );
     assert.ok(
       after.databases.some((name) => name.endsWith(":cascade-tables")),
