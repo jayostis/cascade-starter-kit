@@ -1697,12 +1697,13 @@ ${shots.join("\n")}`);
             query: `SELECT ?version WHERE { <${series}> <http://purl.org/pav/hasCurrentVersion> ?version }`,
           });
           const sames = await pod.ask({
-            query: `SELECT ?used (GROUP_CONCAT(STR(?code); separator=" ") AS ?codes) WHERE {
+            query: `SELECT ?used ?counts (GROUP_CONCAT(STR(?code); separator=" ") AS ?codes) WHERE {
               ?judgment <${terms.justification}> <${terms.SameMappedCodeAndDate}> ;
                 <http://www.w3.org/ns/prov#used> ?used ; <http://www.w3.org/ns/prov#hadMember> ?record .
               VALUES ?used { <${first}> <${second}> }
               ?record <http://purl.org/pav/hasCurrentVersion>/<${terms.vaccineCode}> ?code
-            } GROUP BY ?judgment ?used`,
+              BIND (EXISTS { ?judgment <https://ns.cascadeprotocol.org/cascade#countsUnderLens> true } AS ?counts)
+            } GROUP BY ?judgment ?used ?counts`,
           });
           return {
             kept: checked.flatMap(({ kept }) => kept),
@@ -1735,6 +1736,13 @@ ${shots.join("\n")}`);
         )
         .sort(),
       ["first: 141 150", "second: 140 141"],
+    );
+    assert.deepEqual(
+      after.sames
+        .filter(({ used }) => used === first)
+        .map(({ counts }) => counts),
+      ["true"],
+      "the Same by the first version does not count on though the second joins it too",
     );
     assert.ok(
       after.databases.some((name) => name.endsWith(":cascade-tables")),
