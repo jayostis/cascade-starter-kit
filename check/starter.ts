@@ -90,7 +90,7 @@ const REVIEW = "entry/What needs review";
 const SOURCES = "entry/Where it came from";
 const ROWAN = "Rowan Ellery Marsh";
 const INES = "Ines Calloway";
-const idOf = (entry) => entry.split(":").at(-1);
+const idOf = (entry) => entry.split(/[:#]/).at(-1);
 /** The question each tile of a pod's page counts, by the tile's title. */
 const TILES = {
   Allergies: ALLERGIES,
@@ -1503,7 +1503,7 @@ if (release === undefined) {
           ...new Set(
             held
               .filter(([, p]) => p.value === terms.clinvarClassification)
-              .map(([row]) => row.value.split("/").at(-1)),
+              .map(([row]) => row.value.slice(codeStems.ClinVar.length)),
           ),
         ].sort(),
         "the kit's ClinVar IDs are not the rows its story's table holds",
