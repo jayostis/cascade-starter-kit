@@ -6,8 +6,17 @@ import { fileURLToPath } from "node:url";
 import { codeStems } from "cascade-runtime/terms";
 
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
+const RETIRED = [
+  "snomed.info/sct/",
+  "loinc.org/",
+  "umls/rxnorm",
+  "hl7.org/fhir/sid/ndc/",
+  "ns.cascadeprotocol.org/codes/",
+  "varnomen.hgvs.org/",
+  "ncbi.nlm.nih.gov/clinvar/",
+];
 
-test("no source writes a code system's IRI stem: the starter reads each from the vocabulary", async () => {
+test("no source writes a code system's IRI stem, the runtime's or one retired: the starter reads each from the runtime", async () => {
   const sources = [
     ...(await readdir(join(ROOT, "app"), { recursive: true }))
       .map((name) => name.replaceAll("\\", "/"))
@@ -41,7 +50,7 @@ test("no source writes a code system's IRI stem: the starter reads each from the
   const writing: string[] = [];
   for (const path of sources) {
     const text = await readFile(join(ROOT, path), "utf8");
-    for (const stem of stems)
+    for (const stem of [...RETIRED, ...stems])
       if (text.includes(stem)) writing.push(`${path} writes ${stem}`);
   }
   assert.deepEqual(writing, []);

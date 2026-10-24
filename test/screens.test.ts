@@ -2054,7 +2054,10 @@ test("What changed says nothing stands out when no pair does, counts a pair with
     textOf(thin),
     /1 pair of a medication and a test had too few results to say anything\./,
   );
-  assert.match(textOf(thin), /3 results before, 1 after/);
+  assert.match(
+    textOf(thin),
+    /[A-Z][^.:]*: [^.]+ was prescribed May 6, 2024, with 3 results before and 1 after\./,
+  );
   assert.deepEqual(hrefsOf(thin, "Open the trend"), [
     paths.trend("rafferty-moon", { test: "2823-3", medication: "979492" }),
   ]);
@@ -2290,6 +2293,66 @@ test("the trend names its first date from the earliest result, and its test and 
     );
 });
 
+test("the Medications box gives the day each prescription was written beside the day its use started, leaving Since empty where no start of use is known", async () => {
+  const story = (await storyPods()).get("story-statin")!;
+  assert.ok(
+    textOf(podOf("ines-calloway", story)).includes(
+      "Medication Status Since Prescribed Atorvastatin 20 mg tablet Active Mar 4, 2024 Estradiol 1 mg tablet Active Apr 1, 2019",
+    ),
+  );
+});
+
+test("the trend marks every day a medication has, the day a prescription was written, its start of use and its stop, each the earliest of its entries, and its lane says each", () => {
+  const series = {
+    test: { code: `${codeStems.LOINC}18262-6`, notation: "18262-6" },
+    results: [{ date: "2024-03-10", value: 98, unit: "mg/dL" }],
+    left: { unparsed: 0, undated: 0 },
+  };
+  const timeline = [
+    { name: "Atorvastatin", notation: "617310", written: "2024-01-01" },
+    { name: "Atorvastatin", notation: "617310", started: "2024-03-04" },
+    { name: "Atorvastatin", notation: "617310", written: "2024-06-01" },
+    {
+      name: "Metformin",
+      notation: "861007",
+      written: "2023-05-01",
+      started: "2023-06-01",
+      ended: "2024-02-01",
+    },
+  ];
+  const drawn = (medication: string) =>
+    draw("TrendPage", {
+      pod: "a-pod",
+      titles: new Map(),
+      read: { labs: [], series, timeline, medication },
+    });
+  const marked = (page: string) =>
+    ["written", "start", "stop"].map((kind) =>
+      count(page, new RegExp(`class="mark ${kind}[ "]`, "g")),
+    );
+
+  const mixed = drawn("617310");
+  assert.deepEqual(marked(mixed), [1, 1, 0]);
+  assert.match(
+    textAt(mixed, "trend-chart-desc") ?? "",
+    /Atorvastatin prescribed Jan 1, 2024\. Atorvastatin started Mar 4, 2024\.$/,
+  );
+  const lane = textAt(mixed, "trend-lane-desc") ?? "";
+  assert.ok(
+    lane.includes(
+      "Atorvastatin: prescribed Jan 1, 2024, from Mar 4, 2024, not stopped.",
+    ),
+    lane,
+  );
+  assert.ok(
+    lane.includes(
+      "Metformin: prescribed May 1, 2023, from Jun 1, 2023 to Feb 1, 2024.",
+    ),
+    lane,
+  );
+  assert.deepEqual(marked(drawn("861007")), [1, 1, 1]);
+});
+
 test("the trend states that the chart leaves out a result in another unit, while its table still lists it", () => {
   const series = {
     test: { code: `${codeStems.LOINC}18262-6`, notation: "18262-6" },
@@ -2331,7 +2394,7 @@ test("the trend round-trips through its address: the state read from it draws th
   const medication = story.changes[0]!.medication.name;
   assert.ok(
     textAt(page, "trend-lane-desc")?.includes(
-      `${medication} prescribed Mar 4, 2024, start of use not known, not stopped.`,
+      `${medication}: prescribed Mar 4, 2024, start of use not known, not stopped.`,
     ),
     textAt(page, "trend-lane-desc"),
   );
