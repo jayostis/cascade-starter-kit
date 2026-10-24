@@ -7,6 +7,7 @@ import {
   near,
   rounded,
   spread,
+  therapySpan,
   timeOf,
   type Mark,
   type Plot,
@@ -167,8 +168,11 @@ export function Lane({
       <desc id={`${id}-desc`}>{desc}</desc>
       {drugs.map((drug, at) => {
         const top = 4 + at * rowHeight;
-        const begun = drug.started ?? drug.written;
-        const start = begun ? timeOf(begun) : undefined;
+        const begun = [drug.written, drug.started].filter(
+          (on): on is string => on !== undefined,
+        );
+        const start =
+          begun.length > 0 ? Math.min(...begun.map(timeOf)) : undefined;
         const end = drug.ended ? timeOf(drug.ended) : to;
         const drawn = start !== undefined && start <= to && end >= from;
         const left = drawn ? x(Math.max(start, from)) : margin.left;
@@ -192,9 +196,7 @@ export function Lane({
                 height="8"
                 rx="4"
               >
-                <title>
-                  {`${drug.name}: ${drug.started ? `from ${day(drug.started)}` : drug.written ? `prescribed ${day(drug.written)}, start of use not known` : "start not known"}${drug.ended ? ` to ${day(drug.ended)}` : ", not stopped"}`}
-                </title>
+                <title>{`${drug.name}: ${therapySpan(drug, day)}`}</title>
               </rect>
             )}
           </g>

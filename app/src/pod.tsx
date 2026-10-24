@@ -484,10 +484,7 @@ function Changed({
               const names = changeNames(finding, about);
               return (
                 <li key={finding.key}>
-                  {capitalised(names.test)} and {names.medication},{" "}
-                  {medicationDay(finding).said} {day(finding.medication.date)}:{" "}
-                  {resultsSaid(finding.before.count)} before,{" "}
-                  {finding.after.count} after.{" "}
+                  {`${capitalised(names.test)}: ${names.medication} ${medicationDay(finding).said} ${day(finding.medication.date)}, with ${resultsSaid(finding.before.count)} before and ${finding.after.count} after.`}{" "}
                   <a href={trendHref(finding)}>Open the trend</a>
                 </li>
               );

@@ -1,7 +1,9 @@
 // What a pod's page says, as data: the sections and their rows, the names, dates and sentences the pages draw, from a
-// pod's question rows and what the tables answer. Plain functions whose one import is the runtime's terms, which
-// the view, PodApi, the chat, MCP and the tests all read, in Node and in a browser alike.
+// pod's question rows and what the tables answer. Plain functions whose one import is the runtime's terms (beside its
+// types, which are erased), which the view, PodApi, the chat, MCP and the tests all read, in Node and in a browser
+// alike.
 
+import type { DateIs } from "cascade-runtime";
 import { terms } from "cascade-runtime/terms";
 
 /** A question's row: each variable it binds, as text. */
@@ -218,7 +220,7 @@ export interface Left {
   readonly otherUnit?: number;
   readonly undated?: number;
 }
-/** A change after a medication started or stopped, as `changesIn` gives it. */
+/** A change after a medication was prescribed, started or stopped, as `changesIn` gives it. */
 export interface Finding {
   readonly key: string;
   readonly kind: string;
@@ -236,8 +238,8 @@ export interface Finding {
   readonly medication: Coded & {
     readonly entry?: string;
     readonly date: string;
-    /** Which of the medication's days `date` is, a key of `MEDICATION_DAY`. */
-    readonly dateIs: string;
+    /** Which of the medication's days `date` is. */
+    readonly dateIs: DateIs;
   };
 }
 /** A trend's test and medication, as an address names them. */
@@ -534,6 +536,7 @@ export const SECTIONS: readonly Section[] = [
         show: medicationStatus,
       },
       date("Since", (row) => row.started),
+      date("Prescribed", (row) => row.written),
     ],
     sortBy: 1,
   },
@@ -1515,7 +1518,7 @@ export function opening(
 
 /** What happened to a medication on the day a finding is placed on, by the finding's `dateIs`. */
 export const MEDICATION_DAY: Readonly<
-  Record<string, { readonly said: string; readonly mark: string }>
+  Record<DateIs, { readonly said: string; readonly mark: string }>
 > = {
   "start of use": { said: "started", mark: "start" },
   "prescription written": { said: "was prescribed", mark: "written" },
@@ -1523,7 +1526,7 @@ export const MEDICATION_DAY: Readonly<
 };
 
 export const medicationDay = ({ medication }: Pick<Finding, "medication">) =>
-  MEDICATION_DAY[medication.dateIs]!;
+  MEDICATION_DAY[medication.dateIs];
 
 /**
  * What a finding says, by its direction: that a test's results were lower or higher after what happened to a medication
@@ -1542,7 +1545,7 @@ export const CHANGED: Readonly<
 export const TREND_VIEW = {
   name: "open_trend",
   description:
-    "Opens the trend of one lab test over time, the days a medication started and stopped marked on it. It shows what changed after what, never why.",
+    "Opens the trend of one lab test over time, the days a medication was prescribed, started and stopped marked on it. It shows what changed after what, never why.",
   inputSchema: {
     type: "object",
     properties: {
@@ -1698,6 +1701,35 @@ export function therapiesOf(
       kept.ended = entry.ended;
   }
   return [...drugs.values()];
+}
+
+/** Each day a therapy has, oldest kind first: the day it was prescribed, its start of use and its stop. */
+export function therapyDays({
+  written,
+  started,
+  ended,
+}: Therapy): { kind: string; day: string; said: string }[] {
+  return [
+    ...(written ? [{ kind: "written", day: written, said: "prescribed" }] : []),
+    ...(started ? [{ kind: "start", day: started, said: "started" }] : []),
+    ...(ended ? [{ kind: "stop", day: ended, said: "stopped" }] : []),
+  ];
+}
+
+/** When a therapy ran, its days said by `dayOf`: `prescribed Jan 1, 2024, from Mar 4, 2024, not stopped`. */
+export function therapySpan(
+  { written, started, ended }: Therapy,
+  dayOf: (text: string) => string,
+): string {
+  const begun = [
+    ...(written ? [`prescribed ${dayOf(written)}`] : []),
+    started
+      ? `from ${dayOf(started)}`
+      : written
+        ? "start of use not known"
+        : "start not known",
+  ].join(", ");
+  return `${begun}${ended ? ` to ${dayOf(ended)}` : ", not stopped"}`;
 }
 
 /** Where a time and a value fall in a drawing of `size`, over the days and numbers of `points` and `marks`. */
