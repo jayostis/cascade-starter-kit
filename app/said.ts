@@ -2064,9 +2064,12 @@ export function pullSaid({
   return `From ${placeName(hospital ?? label)}, ${when}: ${records}${newer}.`;
 }
 
-/** An entry's part in an address: the last `:`-separated part of its IRI, which a host never turns back into one. */
+/**
+ * An entry's part in an address: the end of its IRI after its last `:` or `#`, which a host never turns back into one.
+ * An entry is named under its pod's base, and this part is not, so one entry has one address in every pod.
+ */
 export function entryId(entry: string): string {
-  return entry.split(":").at(-1)!;
+  return entry.split(/[:#]/).at(-1)!;
 }
 
 /** The held series that holds the version `origin`, with that version; none when no series does. */
