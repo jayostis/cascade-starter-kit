@@ -893,6 +893,68 @@ test("connect signs in with every scope and pulls, bring brings the record in on
   assert.ok(brought.sources.length > 0);
 });
 
+const CONNECT_ROWS = `PREFIX cascade: <https://ns.cascadeprotocol.org/cascade#>
+SELECT ?act (COUNT(DISTINCT ?version) AS ?versions) (SAMPLE(?client) AS ?client) WHERE {
+  { SELECT (COUNT(*) AS ?act) WHERE { ?a a cascade:ConnectToServer } }
+  ?version cascade:connectClientId ?client .
+} GROUP BY ?act`;
+
+test("a connect records the server in the pod before its pull: one act, one version holding the client id the starter registered, and a second sign-in reporting the same facts writes nothing", async () => {
+  const at = await mkdtemp(join(tmpdir(), "pod-api-recorded-"));
+  folders.push(at);
+  const local = api({ ...host(at), hospitals: northHospitals() });
+  await local.makePod({ person: "Ada" });
+  for (let signIn = 0; signIn < 2; signIn += 1) {
+    const { connection } = await local.connect({
+      pod: "ada",
+      fhirBase: rowOf(north).fhirBase,
+    });
+    const settled = await local.connection({
+      pod: "ada",
+      connection,
+      wait: true,
+    });
+    assert.equal(settled.step, "pulled");
+    assert.equal(settled.notRecorded, undefined);
+  }
+  await local.close();
+  const pod = await openPod(join(at, "ada"));
+  const [row] = await pod.ask({ query: CONNECT_ROWS });
+  assert.deepEqual(
+    [row?.act, row?.versions, row?.client],
+    ["1", "1", "cascade-app"],
+  );
+  await pod.close();
+});
+
+test("a server that will not report is shown on the connection, and the pull goes on", async () => {
+  const at = await mkdtemp(join(tmpdir(), "pod-api-unrecorded-"));
+  folders.push(at);
+  const north_ = northHospitals();
+  const silent = {
+    ...north_,
+    fetch: (async (input, init) => {
+      const request = new Request(input, init);
+      return new URL(request.url).pathname.endsWith("/metadata")
+        ? new Response("{}", { status: 404 })
+        : north_.fetch(request);
+    }) as typeof globalThis.fetch,
+  };
+  const local = api({ ...host(at), hospitals: silent });
+  await local.makePod({ person: "Ada" });
+  const { connection } = await local.connect({
+    pod: "ada",
+    fhirBase: rowOf(north).fhirBase,
+  });
+  const settled = await local.connection({
+    pod: "ada",
+    connection,
+    wait: true,
+  });
+  assert.equal(settled.step, "pulled");
+  assert.match(settled.notRecorded, /answered 404 to metadata/);
+});
+
 test("a connection's wait answers as the connection is after its bound, and Delete all and close stop what is under way", async (t: TestContext) => {
   const signals: AbortSignal[] = [];
   const parked = {
