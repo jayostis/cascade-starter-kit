@@ -902,8 +902,22 @@ SELECT ?act (COUNT(DISTINCT ?version) AS ?versions) (SAMPLE(?client) AS ?client)
 test("a connect records the server in the pod before its pull: one act, one version holding the client id the starter registered, and a second sign-in reporting the same facts writes nothing", async () => {
   const at = await mkdtemp(join(tmpdir(), "pod-api-recorded-"));
   folders.push(at);
-  const local = api({ ...host(at), hospitals: northHospitals() });
+  const files = async () =>
+    (await readdir(join(at, "ada"), { recursive: true })).sort();
+  const north_ = northHospitals();
+  const atFirstRecord: string[][] = [];
+  const watching = {
+    ...north_,
+    fetch: (async (input, init) => {
+      const request = new Request(input, init);
+      if (new URL(request.url).pathname.includes("/Patient"))
+        atFirstRecord.push(await files());
+      return north_.fetch(request);
+    }) as typeof globalThis.fetch,
+  };
+  const local = api({ ...host(at), hospitals: watching });
   await local.makePod({ person: "Ada" });
+  const listings: string[][] = [];
   for (let signIn = 0; signIn < 2; signIn += 1) {
     const { connection } = await local.connect({
       pod: "ada",
@@ -916,7 +930,12 @@ test("a connect records the server in the pod before its pull: one act, one vers
     });
     assert.equal(settled.step, "pulled");
     assert.equal(settled.notRecorded, undefined);
+    listings.push(await files());
   }
+  assert.ok(atFirstRecord.length > 0);
+  assert.deepEqual(atFirstRecord[0], listings[0]);
+  assert.deepEqual(listings[1], listings[0]);
+  assert.ok(listings[0]!.length > 0);
   await local.close();
   const pod = await openPod(join(at, "ada"));
   const [row] = await pod.ask({ query: CONNECT_ROWS });
@@ -1252,4 +1271,36 @@ test("the world's date's old address goes back to the page of this app it came f
     );
     assert.equal(response.headers.get("location"), to, back);
   }
+});
+
+test("a server whose report is no CapabilityStatement is refused by the connect: the connection says so, the pod holds no server record, and the pull goes on", async () => {
+  const at = await mkdtemp(join(tmpdir(), "pod-api-refused-"));
+  folders.push(at);
+  const north_ = northHospitals();
+  const odd = {
+    ...north_,
+    fetch: (async (input, init) => {
+      const request = new Request(input, init);
+      return new URL(request.url).pathname.endsWith("/metadata")
+        ? Response.json({ resourceType: "Basic" })
+        : north_.fetch(request);
+    }) as typeof globalThis.fetch,
+  };
+  const local = api({ ...host(at), hospitals: odd });
+  await local.makePod({ person: "Ada" });
+  const { connection } = await local.connect({
+    pod: "ada",
+    fhirBase: rowOf(north).fhirBase,
+  });
+  const settled = await local.connection({
+    pod: "ada",
+    connection,
+    wait: true,
+  });
+  assert.equal(settled.step, "pulled");
+  assert.match(settled.notRecorded, /^Refused: .*CapabilityStatement/);
+  await local.close();
+  const pod = await openPod(join(at, "ada"));
+  assert.deepEqual(await pod.ask({ query: CONNECT_ROWS }), []);
+  await pod.close();
 });

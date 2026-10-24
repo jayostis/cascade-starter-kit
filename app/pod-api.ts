@@ -1012,6 +1012,9 @@ export function podApi(host: PodHost) {
       settled: settled(connection),
       requests: connection.requests,
       ...(connection.asOf !== undefined && { asOf: connection.asOf }),
+      ...(connection.notRecorded !== undefined && {
+        notRecorded: connection.notRecorded,
+      }),
       ...(connection.bringing !== undefined && {
         bringing: connection.bringing,
       }),
@@ -1031,7 +1034,6 @@ export function podApi(host: PodHost) {
         ...(connection.retry && { retry: true }),
       };
     const { pulled, files } = saved;
-    const { notRecorded } = connection;
     const patient = patientName(pulled.bundle);
     return {
       ...shown,
@@ -1040,7 +1042,6 @@ export function podApi(host: PodHost) {
       ...(patient !== undefined && { patient }),
       patientNames: patientNames(pulled.bundle),
       ...(connection.broughtIn && { broughtIn: true }),
-      ...(notRecorded !== undefined && { notRecorded }),
     };
   }
 
