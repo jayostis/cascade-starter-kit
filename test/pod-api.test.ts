@@ -427,8 +427,9 @@ test(`${via}: pods lists every pod by its name, and a pod's answers are read wit
     (await first.pods({})).pods,
     [EMPTY, SEALED, STATIN].map((name) => ({ name, title: name })),
   );
-  const { answers, changes } = await first.answers({ pod: STATIN });
+  const { answers, changes, unheld } = await first.answers({ pod: STATIN });
   assert.ok(answers[LABS].length > 0);
+  assert.deepEqual(unheld, []);
   assert.ok(
     changes.some(
       ({ key }: { key: string }) => key === `start:${ATORVASTATIN}:${LDL}`,
