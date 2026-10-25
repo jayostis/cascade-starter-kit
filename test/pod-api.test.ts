@@ -427,8 +427,9 @@ test(`${via}: pods lists every pod by its name, and a pod's answers are read wit
     (await first.pods({})).pods,
     [EMPTY, SEALED, STATIN].map((name) => ({ name, title: name })),
   );
-  const { answers, changes } = await first.answers({ pod: STATIN });
+  const { answers, changes, unheld } = await first.answers({ pod: STATIN });
   assert.ok(answers[LABS].length > 0);
+  assert.deepEqual(unheld, []);
   assert.ok(
     changes.some(
       ({ key }: { key: string }) => key === `start:${ATORVASTATIN}:${LDL}`,
@@ -516,6 +517,7 @@ test(`${via}: find_changes gives the finding, and worth_a_look the page's lines`
           title: async () => undefined,
           open: async () => ({
             ask: async (question: string) => answered[question] ?? [],
+            unheldTableVersions: async () => ["urn:x:ingredient-map-2"],
             close: async () => {},
           }),
         },
@@ -530,6 +532,9 @@ test(`${via}: find_changes gives the finding, and worth_a_look the page's lines`
   assert.match(lines.value[0].sentence, /Latex/);
   assert.equal(lines.value[0].entry, entryId("urn:uuid:0e1f"));
   assert.ok(lines.value[0].tag);
+  assert.deepEqual((await reviewed.answers({ pod: "reviewed" })).unheld, [
+    "urn:x:ingredient-map-2",
+  ]);
   assert.deepEqual(
     (await shared.tool({ pod: STATIN, tool: "worth_a_look" })).value,
     [],

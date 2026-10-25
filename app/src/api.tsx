@@ -18,7 +18,10 @@ export interface PodListed {
   readonly title: string;
 }
 
-/** A pod's answers by question, the changes in them and the table versions it names that the app does not hold. */
+/**
+ * A pod's answers by question, the changes in them and the table versions it names that the app does not hold, those
+ * undefined while not known, as for a copied pod drawn before the engine loads.
+ */
 export interface Answered {
   readonly answers: Answers;
   readonly changes: readonly Finding[];

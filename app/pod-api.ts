@@ -432,7 +432,7 @@ export function podApi(host: PodHost) {
         pod.ask(question),
       ),
       changes,
-      unheld: pod.opened?.unheld,
+      unheld: await pod.unheldTableVersions(),
     };
   }
   type Answered = Awaited<ReturnType<typeof asked>>;
