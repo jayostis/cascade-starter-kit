@@ -79,6 +79,7 @@ export interface PodShown {
   readonly pod: string;
   readonly answers: Answers;
   readonly changes?: readonly Finding[];
+  /** Undefined while not known, which draws no note, as none missing does. */
   readonly unheld?: readonly string[];
   /** The tables' names of the pod's codes; undefined while still asked, empty when they cannot say. */
   readonly about?: Abouts;
