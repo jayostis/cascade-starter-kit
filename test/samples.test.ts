@@ -8,7 +8,10 @@ const { looks } = (await import(
 
 test("a first-paint lookup that fails at the site build fails the build, naming each failure", async () => {
   const down = new Error("the tables are down");
-  const pod = { ask: async () => [] } as unknown as Pod;
+  const pod = {
+    ask: async () => [],
+    unheldTableVersions: async () => [],
+  } as unknown as Pod;
   const tables = {
     about: async () => {
       throw down;

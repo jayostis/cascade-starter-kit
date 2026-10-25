@@ -517,6 +517,7 @@ test(`${via}: find_changes gives the finding, and worth_a_look the page's lines`
           title: async () => undefined,
           open: async () => ({
             ask: async (question: string) => answered[question] ?? [],
+            unheldTableVersions: async () => [],
             close: async () => {},
           }),
         },
