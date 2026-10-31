@@ -31,7 +31,7 @@ async function bundled(mode?: string) {
 
 /** The modules `cascade-runtime/tools` is made of: plain functions that read through what they are given, with no wasm. */
 const TOOLS_MODULES =
-  /\/dist\/src\/(pod-tools|changes|table-checks|check)\.js$|\/@cascade-runtime\/runtime\/dist\/src\/refusal\.js$/;
+  /\/node_modules\/cascade-runtime\/dist\/src\/(pod-tools|changes|table-checks|check)\.js$|\/@cascade-runtime\/runtime\/dist\/src\/refusal\.js$/;
 
 /** A module of the chat window: the AI SDK, assistant-ui, or the window's own code. */
 const ofChat = (id: string) =>
