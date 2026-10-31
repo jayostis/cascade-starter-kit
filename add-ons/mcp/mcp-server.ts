@@ -6,17 +6,18 @@ import { readFile } from "node:fs/promises";
 import { URL } from "node:url";
 import { fromJsonSchema, McpServer } from "@modelcontextprotocol/server";
 import { Refusal } from "cascade-runtime";
+import { withPod } from "cascade-runtime/tools";
 import type { PodApi } from "./pod-api.ts";
-import { type Door, TOOLS, type ToolInput, withPod } from "./tools.ts";
+import { type Door, TOOLS, type ToolInput } from "./tools.ts";
 
-export { DEFAULT_ROWS, MAXIMUM_ROWS, QUESTIONS } from "./tools.ts";
+export { DEFAULT_ROWS, MAXIMUM_ROWS, QUESTIONS } from "cascade-runtime/tools";
 
 export const WARNING =
   "A hosted client (Claude Desktop, VS Code with a hosted model, any chat service) sends what these tools return to its provider. The example and story pods are made up; a person's own pod is theirs to decide about before it is asked here.";
 
 const INSTRUCTIONS = `${WARNING}
 
-Every tool but list_pods takes the pod's name: list_pods gives the names. find_changes states what changed in a person's lab results after a medication started or stopped, with the numbers; never why. Use its numbers as they are, and say when it finds nothing. worth_a_look is a good first call: it lists what the pod's page flags (an entry that needs review, a report that differs from ClinVar today, medications that share an ingredient), each with its entry's ID, saying what is flagged and never why. Each finding's view is the address of a page that draws its results as a chart; it opens while the app is running (npm start).`;
+Every tool but list_pods takes the pod's name: list_pods gives the names. find_changes states what changed in a person's lab results after a medication started or stopped, with the numbers; never why. Use its numbers as they are, and say when it finds nothing. reference_table_checks states what the pod's records and the reference tables say together, with the table version each row cites. worth_a_look is a good first call: it lists what the pod's page flags (an entry that needs review, a report that differs from ClinVar today, medications that share an ingredient), each with its entry's ID, saying what is flagged and never why. Each finding's view is the address of a page that draws its results as a chart; it opens while the app is running (npm start).`;
 
 const READS = TOOLS.filter(
   ({ tier, opens }) => tier === "free" && opens === undefined,

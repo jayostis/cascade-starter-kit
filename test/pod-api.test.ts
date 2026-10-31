@@ -17,6 +17,7 @@ import {
   timelineIn,
   Unopened,
 } from "cascade-runtime";
+import { trendOf } from "cascade-runtime/tools";
 import { answering, type Loaded, pulled, routed, rowOf } from "./hospitals.js";
 import { removed } from "./settled.js";
 
@@ -52,12 +53,11 @@ type Api = Record<
 > & { close(): Promise<void> };
 type Host = Record<string, unknown> & { tables: unknown };
 
-const { podApi, maps, trendOf, notOpenedHere } = (await import(
+const { podApi, maps, notOpenedHere } = (await import(
   new URL("../../app/pod-api.ts", import.meta.url).href
 )) as {
   podApi: (host: Host) => Api;
   maps: (output: Output) => Output;
-  trendOf: (finding: unknown) => Input;
   notOpenedHere: (name: string) => string;
 };
 /** The Node target's server, as far as this test serves it, and what it answers as. */
@@ -356,7 +356,7 @@ function api(given: Host = host()) {
   const checked = {} as Api;
   for (const [name, operation] of Object.entries(built))
     (checked as Record<string, unknown>)[name] =
-      name === "close"
+      name === "close" || name === "tables"
         ? operation
         : async (input: Input) => {
             const output = await (operation as Operation)(input);
@@ -498,6 +498,11 @@ test(`${via}: find_changes gives the finding, and worth_a_look the page's lines`
   const { value } = await shared.tool({ pod: STATIN, tool: "find_changes" });
   assert.ok(
     value.some(({ key }: Output) => key === `start:${ATORVASTATIN}:${LDL}`),
+  );
+  assert.ok(
+    value.every(
+      ({ medication }: Output) => typeof medication.entry === "string",
+    ),
   );
   const answered: Record<string, unknown[]> = {
     "entry/What needs review": [
@@ -1194,6 +1199,7 @@ test("over HTTP, /tools lists the reads of the one list and runs one by name on 
     "finding_rows",
     "lab_series",
     "list_pods",
+    "reference_table_checks",
     "timeline",
     "worth_a_look",
   ]);
@@ -1206,6 +1212,9 @@ test("over HTTP, /tools lists the reads of the one list and runs one by name on 
   const pods = await run("list_pods", {});
   assert.equal(pods.status, 200);
   assert.ok(Array.isArray(await pods.json()));
+  const checks = await run("reference_table_checks", { pod: STATIN });
+  assert.equal(checks.status, 200);
+  assert.equal(((await checks.json()) as { tables: string }).tables, "on");
   const wrong = await run("ask", { pod: "x", question: "SELECT * WHERE {}" });
   assert.equal(wrong.status, 400);
   assert.match(

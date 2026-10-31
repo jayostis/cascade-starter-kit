@@ -3,12 +3,13 @@
 // The tools that move the app or write are the page's own (`PAGE_TOOLS` of `said.ts`), and are not here.
 import type { InputSchema } from "cascade-runtime";
 import { checkInput } from "cascade-runtime/check";
+import { withPod } from "cascade-runtime/tools";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { addresses } from "../addresses.ts";
 import { podPath, trendPath } from "../pods.ts";
 import { PAGE_TOOLS } from "../said.ts";
-import { TOOLS, withPod } from "../tools.ts";
+import { TOOLS } from "../tools.ts";
 import type { Operations } from "./api.ts";
 
 const MAX_BODY_BYTES = 1024 * 1024;

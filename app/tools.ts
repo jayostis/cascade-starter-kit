@@ -1,14 +1,14 @@
 // The one list of tools a model reaches the app by, over PodApi alone: the browser target's WebMCP, and the chat
 // (`server/chat.ts`) and the MCP server (`mcp-server.ts`) when they are added, each offer those their door may. A tool's `tier` is the person's consent: `free`
 // reads or moves the app, `ask` writes once the person has said yes. What no tool ever calls is `NEVER`.
+import { type Finding, type InputSchema, Refusal } from "cascade-runtime";
 import {
-  type CompactFinding,
-  type Finding,
-  type InputSchema,
-  Refusal,
-} from "cascade-runtime";
-import { POD_TOOLS, type PodApi, trendOf } from "./pod-api.ts";
-import { NO_INPUT, PAGE_TOOLS, type PageDoor, type PageTool } from "./said.ts";
+  type PodReads,
+  type PodTool,
+  TOOLS as RUNTIME_TOOLS,
+} from "cascade-runtime/tools";
+import { POD_TOOLS, type PodApi } from "./pod-api.ts";
+import { PAGE_TOOLS, type PageDoor, type PageTool } from "./said.ts";
 
 /** A tool's input, as its door checked it against the tool's schema: `pod` beside it for a tool with `ofPod`. */
 export type ToolInput = Readonly<Record<string, unknown>>;
@@ -34,23 +34,6 @@ export interface Tool {
     door?: Door,
   ): Promise<{ value: unknown[]; found: Finding[] }>;
 }
-
-/** The questions `ask` offers: the person's own records, who they are and where an entry came from. Never free SPARQL. */
-export const QUESTIONS = [
-  "pod/My active allergies",
-  "pod/My active conditions",
-  "pod/My active medications",
-  "pod/My medication history",
-  "pod/My lab results",
-  "pod/My immunizations",
-  "pod/My procedures",
-  "pod/My genetic variants",
-  "pod/The person this pod is about",
-  "entry/Where it came from",
-];
-/** How many rows `ask` gives unless asked for more: a pod's lab results run to thousands of tokens. */
-export const DEFAULT_ROWS = 50;
-export const MAXIMUM_ROWS = 500;
 
 /**
  * The PodApi operations no tool calls, whatever the person says; `with` names the input that makes a call one of
@@ -81,65 +64,35 @@ export const NEVER: readonly {
   { op: "resetAll", why: "it removes every pod" },
 ];
 
-/** `schema` with the pod's name beside its own properties: a tool of one pod as MCP and the chat take its input. */
-export function withPod(schema: InputSchema): InputSchema {
-  const { properties = {}, required = [] } = schema;
-  return {
-    ...schema,
-    properties: {
-      pod: {
-        type: "string",
-        description: "The pod's name, one of those list_pods gives.",
-      },
-      ...properties,
+/** PodApi as the runtime's tools read it: its operations, and the lookups `reference_table_checks` asks of the tables. */
+const readsOf = (api: PodApi): PodReads => ({
+  pods: (input) => api.pods(input),
+  ask: (input) => api.ask(input),
+  tool: (input) => api.tool(input as Parameters<PodApi["tool"]>[0]),
+  tables: (input) => api.tables(input),
+});
+
+/** A tool of the runtime's list, which reads over `PodApi`. */
+const reading = ({ run, findings, ...tool }: PodTool): Tool => ({
+  ...tool,
+  run: (api, input, door) => run(readsOf(api), input, door),
+  ...(findings !== undefined && {
+    findings: async (api, input, door) => {
+      const { value, found } = await findings(readsOf(api), input, door);
+      return { value, found: [...found] };
     },
-    required: ["pod", ...required],
-  };
-}
+  }),
+});
 
-/**
- * `find_changes` as `run` gives it, with `found`, the findings with their rows, beside `value`; with `address.trend`,
- * each finding of `value` carries `view`, the address of the page that draws its results.
- */
-async function findings(
-  api: PodApi,
-  { pod, ...input }: ToolInput,
-  { address }: Door = {},
-) {
-  const { value, found } = (await api.tool({
-    pod: pod as string,
-    tool: "find_changes",
-    input,
-  })) as { value: CompactFinding[]; found: Finding[] };
-  const trend = address?.trend;
-  return {
-    found,
-    value:
-      trend === undefined
-        ? value
-        : value.map((finding) => ({
-            ...finding,
-            view: trend(pod as string, trendOf(finding)),
-          })),
-  };
-}
-
-const ofPod = POD_TOOLS.map(({ name, description, inputSchema }): Tool => ({
+/** `worth_a_look`, the kit's own: what the page lists under Worth a look, read through PodApi's `tool`. */
+const OWN: Tool[] = POD_TOOLS.map(({ name, description, inputSchema }) => ({
   name,
   description,
   inputSchema,
   tier: "free",
   ofPod: true,
-  ...(name === "find_changes"
-    ? {
-        findings,
-        run: async (api, input, door) =>
-          (await findings(api, input, door)).value,
-      }
-    : {
-        run: async (api, { pod, ...input }) =>
-          (await api.tool({ pod: pod as string, tool: name, input })).value,
-      }),
+  run: async (api, { pod, ...input }) =>
+    (await api.tool({ pod: pod as string, tool: name, input })).value,
 }));
 
 /** A tool of `PAGE_TOOLS`, which refuses by an error's name, refusing with the runtime's `Refusal` as every door here tells one. */
@@ -173,44 +126,7 @@ const refusing = (tool: PageTool): Tool => ({
  * moves the app.
  */
 export const TOOLS: readonly Tool[] = [
-  {
-    name: "list_pods",
-    description: "The names of the pods there are.",
-    inputSchema: NO_INPUT as InputSchema,
-    tier: "free",
-    run: async (api) => (await api.pods({})).pods.map(({ name }) => name),
-  },
-  ...ofPod,
-  {
-    name: "ask",
-    description:
-      "A pod's records by the name of a question, as rows: its allergies, conditions, medications (active, or all with when each started and stopped), lab results, immunizations, procedures, genetic variants, the person it is about, or where an entry came from.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        question: {
-          type: "string",
-          description: "The question's name.",
-          enum: QUESTIONS,
-        },
-        limit: {
-          type: "integer",
-          description: `At most this many rows; ${DEFAULT_ROWS} if left out. The answer says how many there are.`,
-          minimum: 1,
-          maximum: MAXIMUM_ROWS,
-        },
-      },
-      required: ["question"],
-      additionalProperties: false,
-    },
-    tier: "free",
-    ofPod: true,
-    run: (api, { pod, question, limit }) =>
-      api.ask({
-        pod: pod as string,
-        question: question as string,
-        limit: (limit as number | undefined) ?? DEFAULT_ROWS,
-      }),
-  },
+  ...RUNTIME_TOOLS.map(reading),
+  ...OWN,
   ...PAGE_TOOLS.map(refusing),
 ];

@@ -19,6 +19,7 @@ import {
   validateUIMessages,
 } from "ai";
 import { checkInput, type InputSchema, Refusal } from "cascade-runtime";
+import { withPod } from "cascade-runtime/tools";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
@@ -27,7 +28,7 @@ import { type Model, modelFrom } from "../models.ts";
 import { maps } from "../pod-api.ts";
 import { podPath, trendPath } from "../pods.ts";
 import { CHANGED, changeSaid, entryId } from "../said.ts";
-import { TOOLS, withPod } from "../tools.ts";
+import { TOOLS } from "../tools.ts";
 import type { ChatServed } from "./app.ts";
 
 /** How many rounds of tool calls a chat runs before the model must answer. */

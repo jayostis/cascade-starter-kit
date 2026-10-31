@@ -5,6 +5,7 @@
 // were offered for, and taken away in the commit that draws the next, never after the next paint.
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { checkInput, type Input, type Schema } from "cascade-runtime/check";
+import { withPod } from "cascade-runtime/tools";
 import { useLocation } from "react-router";
 import {
   PAGE_TOOLS,
@@ -45,21 +46,6 @@ async function answering(run: () => Promise<unknown>): Promise<unknown> {
     if (isRefusal(error)) return { refused: error.message };
     throw error;
   }
-}
-
-/** `schema` with the pod's name beside its own properties, required: a tool of one pod, on a screen that shows none. */
-function withPod(schema: Schema): Schema {
-  return {
-    ...schema,
-    properties: {
-      pod: {
-        type: "string",
-        description: "The pod's name, one of those list_pods gives.",
-      },
-      ...schema.properties,
-    },
-    required: ["pod", ...(schema.required ?? [])],
-  };
 }
 
 /** The pod last read as open: a locked pod is offered as no pod shown; `checked` is the pod that read was of. */

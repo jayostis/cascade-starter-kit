@@ -11,6 +11,7 @@ import { loadHospital, loadStories } from "@the-cascade-protocol/sandbox/node";
 import { APICallError } from "ai";
 import { MockLanguageModelV4 } from "ai/test";
 import { openPod, type Pod, pullFiles, timelineIn } from "cascade-runtime";
+import { withPod } from "cascade-runtime/tools";
 import { pulled } from "./hospitals.js";
 
 type Chunk = { type: string; [key: string]: unknown };
@@ -64,7 +65,7 @@ const { maps, podApi } = (await import(
   podApi: (host: object) => Api;
 };
 type Schema = { properties?: Record<string, unknown> };
-const { NEVER, TOOLS, withPod } = (await import(
+const { NEVER, TOOLS } = (await import(
   new URL("../../build/app/tools.ts", import.meta.url).href
 )) as {
   NEVER: { op: string; with?: string }[];
@@ -75,7 +76,6 @@ const { NEVER, TOOLS, withPod } = (await import(
     opens?: true;
     inputSchema: Schema;
   }[];
-  withPod: (schema: Schema) => Schema;
 };
 const { changeSaid, entryId, HISTORY } = (await import(
   new URL("../../build/app/said.ts", import.meta.url).href
@@ -402,7 +402,7 @@ test("the tools that move the app are offered to the model with their schemas as
   for (const { name, inputSchema, ofPod } of opening)
     assert.deepEqual(
       offered.get(name),
-      ofPod ? withPod(inputSchema) : inputSchema,
+      ofPod ? withPod(inputSchema as never) : inputSchema,
       name,
     );
   assert.deepEqual(kinds(chunks), ["start", "tool-input-available", "finish"]);

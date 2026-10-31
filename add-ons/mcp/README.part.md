@@ -27,10 +27,18 @@ an encrypted pod. It offers:
   medications that share an ingredient), never why.
 - `ask`: a pod's records by the name of a question (allergies, conditions,
   medications, medication history, lab results, immunizations, procedures,
-  genetic variants, the person, where an entry came from), a few rows of the
-  many; it never takes a query of your own.
+  genetic variants, reports and notes, the person, where an entry came from,
+  what needs review), a few rows of the many; it never takes a query of your
+  own.
+- `reference_table_checks`: what the pod's records and the app's reference
+  tables say together: each variant report that differs from ClinVar today and
+  each pair of active medications whose codes share an ingredient, each row
+  citing the table version it was read from, and each check saying whether its
+  series is held (`held: false` is not checked, not nothing found).
 
-Every tool but `list_pods` takes the pod's name. Ask "find anything interesting
+These are the tools of `cascade-runtime/tools`, which `cascade-mcp` serves too
+over a folder of pods outside an app (see its README); `worth_a_look` is this
+app's own. Every tool but `list_pods` takes the pod's name. Ask "find anything interesting
 in this pod" or "did anything change after I stopped metformin?" and the client
 calls the tools. Restart the client's server after `npm run pod:reset` of a pod
 it has shown.
