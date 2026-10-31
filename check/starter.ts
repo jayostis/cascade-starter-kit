@@ -717,14 +717,20 @@ await setUp("the command makes the app", async () => {
     await readFile(join(vocabulary, KIT, "expected", "allergies.ttl")),
     `file:///${KIT}/expected/allergies.ttl`,
   );
-  const active = new Set(
+  const left = new Set(
     triples
       .filter(
         ([, p, o]) =>
           p.value === terms.statusOf.AllergyOrIntolerance &&
-          o.value === "active",
+          o.value !== "active",
       )
       .map(([s]) => s.value),
+  );
+  const active = new Set(
+    triples
+      .filter(([, p]) => p.value === terms.allergen)
+      .map(([s]) => s.value)
+      .filter((s) => !left.has(s)),
   );
   story = {
     vocabulary,
