@@ -5,6 +5,11 @@
 
 import type { DateIs } from "cascade-runtime";
 import { terms } from "cascade-runtime/terms";
+import {
+  medicationsSharingAnIngredient,
+  reportDiffers,
+  reportsDifferingFromClinVar,
+} from "cascade-runtime/tools";
 
 /** A question's row: each variable it binds, as text. */
 export type Row = Readonly<Record<string, string>>;
@@ -1051,16 +1056,27 @@ export function worthALook(
       entry: row.entry,
       tag: NEEDS_REVIEW,
     });
-  const differing = [...variantReports(answers, said)].flatMap(
-    ([entry, { name, reports }]) =>
-      reports
-        .filter(({ tag }) => tag === DIFFERS)
-        .map(({ when, place }) => ({
-          sentence: `${name}: ${when === undefined ? "an undated" : `your ${when}`} report${place === undefined ? "" : ` from ${place}`} differs from ClinVar today.`,
-          entry,
-          tag: DIFFERS,
-        })),
-  );
+  const named = variantReports(answers, said);
+  const differing =
+    said === undefined
+      ? []
+      : reportsDifferingFromClinVar(
+          {
+            variants: answers[VARIANTS] ?? [],
+            reports: answers[REPORTS] ?? [],
+          },
+          { says: said.says, verdicts: said.verdicts },
+        ).map(({ entry, report }) => {
+          const { name, reports } = named.get(entry)!;
+          const { when, place } = reports.find(
+            (each) => each.report === report,
+          )!;
+          return {
+            sentence: `${name}: ${when === undefined ? "an undated" : `your ${when}`} report${place === undefined ? "" : ` from ${place}`} differs from ClinVar today.`,
+            entry,
+            tag: DIFFERS,
+          };
+        });
   return [
     ...review.values(),
     ...differing,
@@ -1102,44 +1118,24 @@ interface Shared {
  */
 export function sharedIngredients(answers: Answers, about: Abouts): Shared[] {
   const medications = SECTIONS.find(({ one }) => one === "medication")!;
-  const rows = sectionRows(medications, answers)
-    .filter((row) => row.lifecycle === ACTIVE)
-    .map((row) => ({
-      entry: row.entry,
-      name: row.medication || fromLabel(row.entryLabel).name,
-      code: row.code,
-      ingredients: about.get(row.code)?.ingredients?.codes ?? [],
-    }));
-  const same = new Set(
-    rows.flatMap((one, at) =>
-      rows
-        .slice(at + 1)
-        .filter((other) => other.code !== undefined && other.code === one.code)
-        .map((other) => JSON.stringify([one.entry, other.entry].sort())),
-    ),
-  );
-  const said = new Set(same);
-  const sentences: Shared[] = [];
-  for (const [at, one] of rows.entries())
-    for (const other of rows.slice(at + 1)) {
-      const pair = JSON.stringify([one.entry, other.entry].sort());
-      const shared = one.ingredients.find((each) =>
-        other.ingredients.includes(each),
-      );
-      if (one.entry === other.entry || shared === undefined || said.has(pair))
-        continue;
-      said.add(pair);
-      const name = about.get(shared)?.name?.label ?? shared.split("/").at(-1)!;
+  const rows = sectionRows(medications, answers);
+  const nameOf = (entry: string, code: string) => {
+    const row = rows.find(
+      (each) =>
+        each.entry === entry && each.code === code && each.lifecycle === ACTIVE,
+    )!;
+    return row.medication || fromLabel(row.entryLabel).name;
+  };
+  return medicationsSharingAnIngredient(rows, about).map(
+    ({ entries: [one, other], ingredient }) => {
+      const name = ingredient.label ?? ingredient.code.split("/").at(-1)!;
       const what = name.includes(" / ") ? "the combination" : "an ingredient";
-      sentences.push({
-        sentence: `${one.name} and ${other.name} share ${what}, ${name}, and are shown apart.`,
-        entries: [one, other].map(({ entry, code }) => ({
-          entry,
-          origin: about.get(code)?.ingredients?.origin,
-        })),
-      });
-    }
-  return sentences;
+      return {
+        sentence: `${nameOf(one.entry, one.code)} and ${nameOf(other.entry, other.code)} share ${what}, ${name}, and are shown apart.`,
+        entries: [one, other].map(({ entry, origin }) => ({ entry, origin })),
+      };
+    },
+  );
 }
 
 /** The five ACMG values, in the order a classification names them. */
@@ -1325,7 +1321,6 @@ export function variantSaid({
   labels?: ReadonlyMap<string, string>;
   places?: ReadonlyMap<string, string>;
 }): { reports: ReportSaid[]; clinvar: string | undefined } {
-  const row = says?.found === "rows" ? says.rows[0] : undefined;
   const dates = reports.flatMap((report) => report.date ?? []);
   const ordered = [...reports].sort((a, b) =>
     a.date === undefined || b.date === undefined
@@ -1341,15 +1336,7 @@ export function variantSaid({
         report.classification === undefined
           ? `${head} gives no ACMG classification.`
           : `${head} said ${lowered(labels.get(report.classification) ?? wordsOf(report.classification))}.`;
-      const differs =
-        row !== undefined &&
-        verdicts.some(
-          (each) =>
-            each.report === report.report &&
-            each.row === row.variation &&
-            each.origin === says!.version &&
-            each.verdict === "differs",
-        );
+      const differs = reportDiffers(report.report, says, verdicts);
       return {
         report: report.report,
         ...(when !== undefined && { when }),

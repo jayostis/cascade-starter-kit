@@ -14,9 +14,9 @@ export default tseslint.config(
         "error",
         {
           selector:
-            "ImportDeclaration[source.value!='cascade-runtime/terms'][source.value!='cascade-runtime'], ImportDeclaration[source.value='cascade-runtime'][importKind!='type'], ImportExpression, ExportNamedDeclaration[source], ExportAllDeclaration",
+            "ImportDeclaration[source.value!='cascade-runtime/terms'][source.value!='cascade-runtime/tools'][source.value!='cascade-runtime'], ImportDeclaration[source.value='cascade-runtime'][importKind!='type'], ImportExpression, ExportNamedDeclaration[source], ExportAllDeclaration",
           message:
-            "What the pages say runs everywhere, as plain functions: said.ts imports only the runtime's terms, and its types.",
+            "What the pages say runs everywhere, as plain functions: said.ts imports only the runtime's terms and tools, and its types.",
         },
       ],
     },
@@ -28,9 +28,9 @@ export default tseslint.config(
         "error",
         {
           selector:
-            "ImportDeclaration[source.value!=/^(cascade-runtime|\\.\\/said\\.ts|\\.\\/server\\/inputs\\.ts)$/], ImportDeclaration[source.value='./server/inputs.ts'][importKind!='type'], ImportExpression, ExportNamedDeclaration[source], ExportAllDeclaration",
+            "ImportDeclaration[source.value!=/^(cascade-runtime|cascade-runtime\\/tools|\\.\\/said\\.ts|\\.\\/server\\/inputs\\.ts)$/], ImportDeclaration[source.value='./server/inputs.ts'][importKind!='type'], ImportExpression, ExportNamedDeclaration[source], ExportAllDeclaration",
           message:
-            "PodApi runs in a browser too: it imports only cascade-runtime and ./said.ts, the types of its inputs from ./server/inputs.ts, and re-exports nothing.",
+            "PodApi runs in a browser too: it imports only cascade-runtime, cascade-runtime/tools and ./said.ts, the types of its inputs from ./server/inputs.ts, and re-exports nothing.",
         },
         {
           selector:

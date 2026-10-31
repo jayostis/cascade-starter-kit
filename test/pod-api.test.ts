@@ -17,6 +17,8 @@ import {
   timelineIn,
   Unopened,
 } from "cascade-runtime";
+import { replayKit } from "cascade-runtime/fixtures";
+import { trendOf } from "cascade-runtime/tools";
 import { answering, type Loaded, pulled, routed, rowOf } from "./hospitals.js";
 import { removed } from "./settled.js";
 
@@ -52,12 +54,11 @@ type Api = Record<
 > & { close(): Promise<void> };
 type Host = Record<string, unknown> & { tables: unknown };
 
-const { podApi, maps, trendOf, notOpenedHere } = (await import(
+const { podApi, maps, notOpenedHere } = (await import(
   new URL("../../app/pod-api.ts", import.meta.url).href
 )) as {
   podApi: (host: Host) => Api;
   maps: (output: Output) => Output;
-  trendOf: (finding: unknown) => Input;
   notOpenedHere: (name: string) => string;
 };
 /** The Node target's server, as far as this test serves it, and what it answers as. */
@@ -116,6 +117,7 @@ const EMPTY = "empty";
 const SEALED = "sealed";
 const LDL = "18262-6";
 const ATORVASTATIN = "617310";
+const SECOND_ATORVASTATIN = "617314";
 const LABS = "pod/My lab results";
 
 let folder: string;
@@ -356,7 +358,7 @@ function api(given: Host = host()) {
   const checked = {} as Api;
   for (const [name, operation] of Object.entries(built))
     (checked as Record<string, unknown>)[name] =
-      name === "close"
+      name === "close" || name === "tables"
         ? operation
         : async (input: Input) => {
             const output = await (operation as Operation)(input);
@@ -498,6 +500,11 @@ test(`${via}: find_changes gives the finding, and worth_a_look the page's lines`
   const { value } = await shared.tool({ pod: STATIN, tool: "find_changes" });
   assert.ok(
     value.some(({ key }: Output) => key === `start:${ATORVASTATIN}:${LDL}`),
+  );
+  assert.ok(
+    value.every(
+      ({ medication }: Output) => typeof medication.entry === "string",
+    ),
   );
   const answered: Record<string, unknown[]> = {
     "entry/What needs review": [
@@ -1194,6 +1201,7 @@ test("over HTTP, /tools lists the reads of the one list and runs one by name on 
     "finding_rows",
     "lab_series",
     "list_pods",
+    "reference_table_checks",
     "timeline",
     "worth_a_look",
   ]);
@@ -1206,6 +1214,9 @@ test("over HTTP, /tools lists the reads of the one list and runs one by name on 
   const pods = await run("list_pods", {});
   assert.equal(pods.status, 200);
   assert.ok(Array.isArray(await pods.json()));
+  const checks = await run("reference_table_checks", { pod: STATIN });
+  assert.equal(checks.status, 200);
+  assert.equal(((await checks.json()) as { tables: string }).tables, "on");
   const wrong = await run("ask", { pod: "x", question: "SELECT * WHERE {}" });
   assert.equal(wrong.status, 400);
   assert.match(
@@ -1308,4 +1319,104 @@ test("a server whose report is no CapabilityStatement is refused by the connect:
   const pod = await openPod(join(at, "ada"));
   assert.deepEqual(await pod.ask({ query: CONNECT_ROWS }), []);
   await pod.close();
+});
+
+/** `reference_table_checks` and `worth_a_look` over the pods of `at` and the real tables, as a model runs them. */
+function modelOver(at: string) {
+  const origin = "http://app.test";
+  const [app] = served(api(nodeHost({ folder: at })), () => ({
+    hosts: new Set(["app.test"]),
+    origins: new Set([origin]),
+  }));
+  return async (name: string, pod: string) => {
+    const response = await app.request(`${origin}/tools/${name}`, {
+      method: "POST",
+      headers: { origin, "content-type": "application/json" },
+      body: JSON.stringify({ pod }),
+    });
+    assert.equal(response.status, 200, name);
+    return (await response.json()) as Output;
+  };
+}
+
+/** The pods the table checks run over: Martin's kit pod, and the statin story's with a second atorvastatin. */
+let checked: Promise<ReturnType<typeof modelOver>> | undefined;
+function checks() {
+  checked ??= (async () => {
+    const at = await mkdtemp(join(tmpdir(), "pod-api-checks-"));
+    folders.push(at);
+    await replayKit("martin-okafor", join(at, "martin-okafor"));
+    const { pull } = await pulled(north, STATIN);
+    const files = pullFiles(pull, "north");
+    const bundle = JSON.parse(
+      new TextDecoder().decode(files.get("north/bundle.json")),
+    );
+    const [first] = bundle.entry.filter(
+      ({ resource }: Output) =>
+        resource.resourceType === "MedicationRequest" &&
+        resource.medicationCodeableConcept.coding[0].code === ATORVASTATIN,
+    );
+    const [coding] = first.resource.medicationCodeableConcept.coding;
+    bundle.entry.push({
+      ...first,
+      fullUrl: first.fullUrl.replace("med-1", "med-3"),
+      resource: {
+        ...first.resource,
+        id: "story-statin-med-3",
+        medicationCodeableConcept: {
+          coding: [
+            {
+              ...coding,
+              code: SECOND_ATORVASTATIN,
+              display: "atorvastatin 40 MG Oral Tablet",
+            },
+          ],
+          text: "Atorvastatin 40 mg tablet",
+        },
+      },
+    });
+    const pod = await openPod(join(at, "two-atorvastatins"));
+    const imported = await pod.import(
+      new Map([
+        ...files,
+        ["north/bundle.json", new TextEncoder().encode(JSON.stringify(bundle))],
+      ]),
+      { aboutSubject: true },
+    );
+    assert.equal(imported.refused, undefined);
+    await pod.close();
+    return modelOver(at);
+  })();
+  return checked;
+}
+
+test("reference_table_checks over the real tables: a report that differs from ClinVar is a row citing the series and version it was read from", async () => {
+  const model = await checks();
+  const { held, versions, rows } = (
+    await model("reference_table_checks", "martin-okafor")
+  ).reportsDifferingFromClinVar;
+  assert.equal(held, true);
+  assert.equal(rows.length, 1);
+  assert.match(rows[0].date, /^2022/);
+  assert.ok(versions.includes(rows[0].clinvar.version));
+  assert.equal(typeof rows[0].clinvar.series, "string");
+});
+
+test("reference_table_checks over the real tables: two active medications in two entries that share an ingredient are a row, and Worth a look says them", async () => {
+  const model = await checks();
+  const { held, rows } = (
+    await model("reference_table_checks", "two-atorvastatins")
+  ).medicationsSharingAnIngredient;
+  assert.equal(held, true);
+  assert.equal(rows.length, 1);
+  const lines = (await model(
+    "worth_a_look",
+    "two-atorvastatins",
+  )) as unknown as Output[];
+  assert.ok(
+    lines.some(({ sentence }) =>
+      /share an ingredient, atorvastatin/.test(sentence),
+    ),
+    JSON.stringify(lines),
+  );
 });

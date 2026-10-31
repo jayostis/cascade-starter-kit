@@ -5,7 +5,6 @@ import {
   changesIn,
   changeTools,
   checkInput,
-  compact,
   connect,
   ConnectionFailure,
   ConnectRefused,
@@ -33,6 +32,11 @@ import {
   type SignIn,
   type Tables,
 } from "cascade-runtime";
+import {
+  citedFinding,
+  type TableLookups,
+  unknownChangeTool,
+} from "cascade-runtime/tools";
 import {
   type Abouts,
   type Answers,
@@ -118,33 +122,8 @@ const WORTH_A_LOOK: PodTool = {
   inputSchema: { type: "object", properties: {}, additionalProperties: false },
 };
 
-/** The tools `tool` runs, as a model is told of them: the change tools, then `worth_a_look`. */
-export const POD_TOOLS: readonly PodTool[] = [
-  ...changeTools({ ask: async () => [] }).map(
-    ({ name, description, inputSchema }) => ({
-      name,
-      description,
-      inputSchema,
-    }),
-  ),
-  WORTH_A_LOOK,
-];
-const TOOLS = POD_TOOLS.map(({ name }) => name);
-
-/** The test and medication codes of the trend a finding is about, the medication's name where it has no code. */
-export function trendOf({
-  test,
-  medication,
-}: {
-  readonly test: { readonly code: string; readonly notation?: string };
-  readonly medication: { readonly name: string; readonly notation?: string };
-}): { test: string; medication?: string } {
-  const drug = medication.notation ?? medication.name;
-  return {
-    test: test.notation ?? test.code,
-    ...(drug === "" ? {} : { medication: drug }),
-  };
-}
+/** The tools `tool` runs that the runtime's `cascade-runtime/tools` does not offer, as a model is told of them. */
+export const POD_TOOLS: readonly PodTool[] = [WORTH_A_LOOK];
 
 /** What a field a client may send can be: how its refusal reads, and which values pass. */
 type Check = readonly [what: string, is: (value: unknown) => boolean];
@@ -689,8 +668,7 @@ export function podApi(host: PodHost) {
   }
 
   async function tool({ pod: given, tool: called, input = {} }: Input<"tool">) {
-    if (called === undefined || !TOOLS.includes(called))
-      throw new Refusal(`no tool ${called}; the tools are ${TOOLS.join(", ")}`);
+    if (called !== WORTH_A_LOOK.name) unknownChangeTool(String(called));
     const name = await known(given);
     const pod = await podNamed(name);
     if (called === WORTH_A_LOOK.name) {
@@ -709,13 +687,27 @@ export function podApi(host: PodHost) {
         })),
       };
     }
-    const run = changeTools(pod).find((each) => each.name === called);
-    if (run === undefined)
-      throw new Refusal(`no tool ${called}; the tools are ${TOOLS.join(", ")}`);
+    const run = changeTools(pod).find((each) => each.name === called)!;
     if (called !== "find_changes") return { value: await run.execute(input) };
     checkInput(run.inputSchema, input);
     const found = await findChanges(pod, input);
-    return { value: found.map(compact), found };
+    return { value: found.map(citedFinding), found };
+  }
+
+  /** What `reference_table_checks` asks of the tables and of the pod against them, as `cascade-runtime/tools` reads it. */
+  async function tablesFor({
+    pod: given,
+  }: {
+    pod: string;
+  }): Promise<TableLookups> {
+    const pod = await podNamed(await known(given));
+    const tables = await host.tables(pod);
+    return {
+      held: () => tables.held(),
+      about: (codes) => tables.about(codes),
+      variantClassification: (variant) => tables.variantClassification(variant),
+      agreement: () => pod.agreement(),
+    };
   }
 
   async function makePod({ person = "", encrypt = false }: Input<"makePod">) {
@@ -1160,6 +1152,8 @@ export function podApi(host: PodHost) {
         input?: Input<K>,
       ) => ReturnType<Operations[K]>;
     }),
+    /** Not an operation: it gives functions, which cross no wire, for the tools that run where the pods are. */
+    tables: tablesFor,
     close: async () => {
       forgetConnections();
       await closeOpened();

@@ -119,6 +119,7 @@ test("every tool is free or ask, and its run calls only the PodApi operations it
     timeline: [{ pod }, ["tool"], "free"],
     worth_a_look: [{ pod }, ["tool"], "free"],
     ask: [{ pod, question: QUESTIONS[0] }, ["ask"], "free"],
+    reference_table_checks: [{ pod }, ["tables"], "free"],
     open_pod: [{ pod }, ["pod"], "free"],
     open_trend: [{ pod, test: "t", medication: "m" }, ["trend"], "free"],
     open_entry: [{ pod, entry: "e" }, ["ask"], "free"],
@@ -133,6 +134,7 @@ test("every tool is free or ask, and its run calls only the PodApi operations it
     pods: { pods: [{ name: pod }] },
     tool: { value: [], found: [] },
     ask: { rows: [{ entry: "e" }] },
+    tables: undefined,
     trend: {
       series: { test: { notation: "t" } },
       timeline: [{ notation: "m", name: "M" }],
@@ -166,7 +168,7 @@ test("every tool is free or ask, and its run calls only the PodApi operations it
           (_, op: string) =>
           async (input: Input = {}) => {
             called.push([op, input]);
-            return answers[op] ?? {};
+            return op in answers ? answers[op] : {};
           },
       },
     );
@@ -222,7 +224,7 @@ test("a client lists the pods and the free reads of the one tool list, each but 
       .map(({ name }) => name)
       .sort(),
   );
-  assert.equal(tools.length, 7);
+  assert.equal(tools.length, 8);
   for (const { name, inputSchema } of tools)
     assert.equal(
       (inputSchema.required as string[] | undefined)?.includes("pod") ?? false,

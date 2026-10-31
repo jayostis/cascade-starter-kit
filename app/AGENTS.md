@@ -140,7 +140,7 @@ at `/encrypted-pods/<name>`), and `npm run ask` refuses it, as its host is
 `nodeHost({ opensEncrypted: false })` (`node-host.ts`), and `console.ts` refuses it too;
 `tools.ts` holds the one list of tools a model reaches the app by (`TOOLS`), each
 calling `podApi`'s operations only, with its consent `tier`: `free` reads
-(`list_pods`, `changeTools` of `cascade-runtime` run by `podApi`'s `tool`, `worth_a_look`, `ask`) and moves the app
+(`list_pods`, the change tools, `ask` and `reference_table_checks`, which are `TOOLS` of `cascade-runtime/tools` run over `podApi` as its `PodReads`; and `worth_a_look`, the kit's own) and moves the app
 (`open_pod`, `open_trend`, `open_entry`, `open_classes`, `open_panel`, `open_table`, through the door's `open` and its own addresses), and `ask` writes,
 which the person confirms first (`make_pod`, never encrypted; `check_tables`; `set_world_date`). `NEVER` is what
 no tool calls: `makePod` with `encrypt`, `waitingWords`, `confirmWords`, `unlock`, `connect`, `bring`,
@@ -353,7 +353,8 @@ To add a tool:
 - one the page runs itself (it moves the app, or writes after the person's Allow): one entry in `PAGE_TOOLS` in
   `said.ts`, with `run(api, input, door)` calling only PodApi's operations and moving through `door.open`. A write
   also needs an entry in `ACTIONS` in `src/confirm.tsx`. Every door then offers it.
-- one the server runs (a read): one entry in `TOOLS` in `tools.ts`, with `tier: "free"`. Both targets' WebMCP offer
-  it, the Node page through `/tools`, and so does every door an add-on adds.
+- one the server runs (a read) that any app would want: one entry in `TOOLS` of `cascade-runtime/tools`, which `tools.ts`
+  takes whole. One only this app has (`worth_a_look`): one entry in `tools.ts`, with `tier: "free"`. Both targets' WebMCP
+  offer it, the Node page through `/tools`, and so does every door an add-on adds.
 
 Either way, add its row to the `RUNS` table in `test/tools.test.ts`, which fails for a tool with none.

@@ -29,12 +29,16 @@ async function bundled(mode?: string) {
   return { chunks, modules };
 }
 
+/** The modules `cascade-runtime/tools` is made of: plain functions that read through what they are given, with no wasm. */
+const TOOLS_MODULES =
+  /\/node_modules\/cascade-runtime\/dist\/src\/(pod-tools|changes|table-checks|check)\.js$|\/@cascade-runtime\/runtime\/dist\/src\/refusal\.js$/;
+
 /** A module of the chat window: the AI SDK, assistant-ui, or the window's own code. */
 const ofChat = (id: string) =>
   /\/node_modules\/(ai|@ai-sdk|@assistant-ui)\//.test(id) ||
   id.includes("/app/src/chat/");
 
-test("the Node target's bundle is the app over its typed client, with the chat window in a chunk of its own: no cascade-runtime but its check and terms, no server code and no wasm", async () => {
+test("the Node target's bundle is the app over its typed client, with the chat window in a chunk of its own: no cascade-runtime but its check, terms and tools, no server code and no wasm", async () => {
   const { chunks, modules } = await bundled();
   assert.ok(
     modules.some((id) => id.includes("/node_modules/hono/dist/client/")),
@@ -56,7 +60,8 @@ test("the Node target's bundle is the app over its typed client, with the chat w
       (id) =>
         (id.includes("/node_modules/cascade-runtime/") &&
           !id.endsWith("/dist/browser/check.js") &&
-          !id.endsWith("/dist/src/terms.js")) ||
+          !id.endsWith("/dist/src/terms.js") &&
+          !TOOLS_MODULES.test(id)) ||
         id.includes("/app/server/") ||
         id.endsWith("/app/pod-api.ts") ||
         id.includes("/node_modules/@hono/") ||
