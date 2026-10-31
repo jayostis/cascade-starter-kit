@@ -1,3 +1,4 @@
+import { QUESTIONS, TOOLS as RUNTIME } from "cascade-runtime/tools";
 import { expect, test } from "vitest";
 import { NEVER, TOOLS } from "../tools.ts";
 
@@ -10,6 +11,7 @@ const RUNS: Record<string, [Record<string, unknown>, string[]]> = {
   timeline: [{ pod: "p" }, ["tool"]],
   worth_a_look: [{ pod: "p" }, ["tool"]],
   ask: [{ pod: "p", question: "pod/My lab results" }, ["ask"]],
+  reference_table_checks: [{ pod: "p" }, ["tables"]],
   open_pod: [{ pod: "p" }, ["pod"]],
   open_trend: [{ pod: "p", test: "t", medication: "m" }, ["trend"]],
   open_entry: [{ pod: "p", entry: "e" }, ["ask"]],
@@ -25,6 +27,7 @@ const ANSWERS: Record<string, unknown> = {
   tool: { value: [], found: [] },
   ask: { rows: [{ entry: "e" }] },
   trend: { series: { test: { notation: "t" } }, timeline: [] },
+  tables: undefined,
 };
 const address = () => "/";
 
@@ -43,7 +46,7 @@ test("every tool is free or ask, and calls no operation the never list holds", a
           (_, op: string) =>
           async (given: Record<string, unknown> = {}) => {
             called.push([op, given]);
-            return ANSWERS[op] ?? {};
+            return op in ANSWERS ? ANSWERS[op] : {};
           },
       },
     );
@@ -72,4 +75,23 @@ test("every tool is free or ask, and calls no operation the never list holds", a
         `${tool.name} calls ${op}`,
       ).toBe(false);
   }
+});
+
+test("every read tool of the runtime is the kit's, by name, description and schema, and ask offers the runtime's questions", () => {
+  for (const { name, description, inputSchema, ofPod } of RUNTIME) {
+    const mine = TOOLS.find((tool) => tool.name === name);
+    expect(mine, name).toBeDefined();
+    expect(
+      {
+        description: mine?.description,
+        inputSchema: mine?.inputSchema,
+        ofPod: mine?.ofPod,
+      },
+      name,
+    ).toEqual({ description, inputSchema, ofPod });
+  }
+  const ask = TOOLS.find((tool) => tool.name === "ask");
+  expect(
+    (ask?.inputSchema.properties?.question as { enum?: string[] }).enum,
+  ).toEqual(QUESTIONS);
 });
