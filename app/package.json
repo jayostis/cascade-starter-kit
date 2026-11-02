@@ -27,7 +27,7 @@
   "dependencies": {
     "@hono/node-server": "2.1.3",
     "@hono/zod-validator": "0.9.1",
-    "cascade-runtime": "https://github.com/jayostis/cascade-runtime-js/releases/download/build-c702dac2108e792bff22eec0f436dbb0197fcfc2/cascade-runtime-0.0.0-commit-c702dac2108e792bff22eec0f436dbb0197fcfc2.tgz",
+    "cascade-runtime": "https://github.com/jayostis/cascade-runtime-js/releases/download/build-9b683019b7ceb8090e77c4a7019b5761c06875c9/cascade-runtime-0.0.0-commit-9b683019b7ceb8090e77c4a7019b5761c06875c9.tgz",
     "hono": "4.13.13",
     "react": "19.3.0",
     "react-dom": "19.3.0",
