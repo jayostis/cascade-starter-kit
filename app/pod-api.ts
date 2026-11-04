@@ -34,7 +34,11 @@ import {
 } from "cascade-runtime";
 import {
   citedFinding,
+  type CompactAnswer,
+  type CompactInput,
+  type PodReads,
   type TableLookups,
+  TOOLS as RUNTIME_TOOLS,
   unknownChangeTool,
 } from "cascade-runtime/tools";
 import {
@@ -122,6 +126,8 @@ const WORTH_A_LOOK: PodTool = {
   inputSchema: { type: "object", properties: {}, additionalProperties: false },
 };
 
+const RUNTIME_ASK = RUNTIME_TOOLS.find(({ name }) => name === "ask")!;
+
 /** The tools `tool` runs that the runtime's `cascade-runtime/tools` does not offer, as a model is told of them. */
 export const POD_TOOLS: readonly PodTool[] = [WORTH_A_LOOK];
 
@@ -133,6 +139,15 @@ const boolean: Check = ["true or false", (value) => typeof value === "boolean"];
 const positiveInteger: Check = [
   "a whole number from 1",
   (value) => Number.isSafeInteger(value) && (value as number) > 0,
+];
+const wholeNumber: Check = [
+  "a whole number from 0",
+  (value) => Number.isSafeInteger(value) && (value as number) >= 0,
+];
+const strings: Check = [
+  "a list of strings",
+  (value) =>
+    Array.isArray(value) && value.every((each) => typeof each === "string"),
 ];
 const object: Check = [
   "an object",
@@ -157,7 +172,14 @@ export const INPUTS: Readonly<
   classes: { pod: string },
   panel: { pod: string, panel: string },
   table: { id: string, q: string, page: positiveInteger, code: string },
-  ask: { pod: string, question: string, limit: positiveInteger },
+  ask: {
+    pod: string,
+    question: string,
+    limit: positiveInteger,
+    offset: wholeNumber,
+    format: string,
+    entries: strings,
+  },
   tool: { pod: string, tool: string, input: object },
   makePod: { person: string, encrypt: boolean },
   waitingWords: { pod: string },
@@ -238,6 +260,8 @@ export interface PodHost {
   copySample?(name: string): Promise<Pod>;
   /** Loads the kits' pods again, giving their names, on a host that has no samples. */
   restore?(): Promise<string[]>;
+  /** A page of the pod's compact read, `pod` being the open pod `name` names; absent on a host that cannot make it. */
+  compact?(name: string, pod: Pod, input: CompactInput): Promise<CompactAnswer>;
   tables(pod?: Pod): Promise<Tables>;
   checkTables(): Promise<Checked[]>;
   /** Whether an encrypted pod is asked for its words, rather than refused. */
@@ -657,13 +681,39 @@ export function podApi(host: PodHost) {
     };
   }
 
-  async function ask({ pod: given, question = "", limit }: Input<"ask">) {
+  /** The runtime's `ask` tool, which makes the compact read's pages and their `next`, run over the host's compact read. */
+  async function askCompact(input: Input<"ask">) {
+    const { compact } = host;
+    const reads = (
+      compact === undefined
+        ? {}
+        : {
+            compact: async ({ pod: given, ...page }) => {
+              const name = await known(given);
+              return compact(name, await podNamed(name), page);
+            },
+          }
+    ) as PodReads;
+    return (await RUNTIME_ASK.run(reads, input)) as CompactAnswer;
+  }
+
+  async function ask(input: Input<"ask">) {
+    if (input.format === "compact") return askCompact(input);
+    if (input.format !== undefined && input.format !== "rows")
+      throw new Refusal("format must be rows or compact");
+    if (input.entries !== undefined)
+      throw new Refusal("entries need format compact");
+    const { pod: given, question = "", limit, offset = 0 } = input;
     const pod = await podNamed(await known(given));
     const rows = await pod.ask(question);
     return {
       question,
       total: rows.length,
-      rows: limit === undefined ? rows : rows.slice(0, limit),
+      ...(offset === 0 ? {} : { offset }),
+      rows: rows.slice(
+        offset,
+        limit === undefined ? undefined : offset + limit,
+      ),
     };
   }
 

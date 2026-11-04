@@ -26,6 +26,8 @@ const ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 const STARTER = join(ROOT, "app");
 /** The add-ons' registry: a folder each, named for the add-on, holding its `registry-item.json` and its files. */
 const ADD_ONS = join(ROOT, "add-ons");
+/** The lockfiles the packed package carries, one per combination of add-ons, made when it is packed. */
+export const LOCKS = join(ROOT, "locks");
 const COMMAND = "create-cascade-app";
 const RELEASES =
   "https://github.com/jayostis/cascade-starter-kit/releases/download";
@@ -64,8 +66,11 @@ export interface Terminal {
   readonly err: (text: string) => void;
   /** Asks the person for the folder's name; absent when no person is at a terminal. */
   readonly ask?: () => Promise<string>;
-  /** Installs the project's dependencies in the folder, resolving whether it succeeded. */
-  readonly install: (folder: string) => Promise<boolean>;
+  /** Installs the project's dependencies in the folder, resolving whether it succeeded; `locked` when the folder holds a lockfile to install exactly from. */
+  readonly install: (
+    folder: string,
+    options: { readonly locked: boolean },
+  ) => Promise<boolean>;
   /** The installed project's own fixtures, which set up its tables and load its kits on the runtime it installed. */
   readonly fixtures: (folder: string) => Promise<Fixtures>;
   /** Asks the person which of the add-ons to add, by name, none unless they name one; absent when no person is at a terminal. */
@@ -237,6 +242,11 @@ export function agentPrompt(folder: string): string {
   ].join("\n");
 }
 
+/** The name of the lockfile for an app made with the add-ons: their names in order, joined by "+", or "none". */
+export function lockName(names: readonly string[]): string {
+  return [...names].sort().join("+") || "none";
+}
+
 /** How a project depends on the package at the address: a URL as it is, a file by its absolute path. */
 function dependencyOn(address: string): string {
   return /^[a-z][a-z0-9+.-]+:/i.test(address)
@@ -295,10 +305,37 @@ async function copyStarter(
   );
 }
 
+/**
+ * The lockfile `locks` holds for the add-ons, written into the app named `name` as its own; whether the app has one.
+ * None is written when the app's runtime is not the pin the lockfiles were made with, or when `locks` has none.
+ */
+async function lockApp(
+  target: string,
+  name: string,
+  addOns: readonly string[],
+  locks: string,
+  runtime: string | undefined,
+): Promise<boolean> {
+  const path = join(locks, `${lockName(addOns)}.json`);
+  if (runtime !== undefined || !existsSync(path)) return false;
+  const lock = JSON.parse(await readFile(path, "utf8")) as {
+    name?: string;
+    packages?: Record<string, { name?: string }>;
+  };
+  lock.name = name;
+  if (lock.packages?.[""] !== undefined) lock.packages[""].name = name;
+  await writeFile(
+    join(target, "package-lock.json"),
+    `${JSON.stringify(lock, null, 2)}\n`,
+  );
+  return true;
+}
+
 /** `create-cascade-app <folder> [--with <add-on>,…] [--tarball <address>]`: the exit code, having written only what it says. */
 export async function create(
   args: readonly string[],
   terminal: Terminal,
+  locks: string = LOCKS,
 ): Promise<number> {
   const refuse = (reason: string): number => {
     terminal.err(`${reason}\n`);
@@ -353,9 +390,17 @@ export async function create(
   const chosen = known.filter(({ name }) => names.includes(name));
 
   const name = basename(target);
+  let locked;
   try {
     await copyStarter(target, name, parsed.values.tarball);
     for (const each of chosen) await addOn(target, each);
+    locked = await lockApp(
+      target,
+      name,
+      chosen.map((each) => each.name),
+      locks,
+      parsed.values.tarball,
+    );
   } catch (error) {
     terminal.err(
       `the starter could not be copied into ${target}, which may be left half made: ${(error as Error).message}
@@ -363,7 +408,13 @@ export async function create(
     );
     return 1;
   }
-  if (!(await terminal.install(target))) {
+  if (locked)
+    terminal.out("Installing what the lockfile names, with npm ci.\n");
+  else if (parsed.values.tarball !== undefined)
+    terminal.out(
+      "No lockfile: --tarball names another runtime than the one the lockfiles were made with, so npm install resolves every dependency afresh.\n",
+    );
+  if (!(await terminal.install(target, { locked }))) {
     terminal.err(
       `the install failed; ${target} is left as it is: run \`npm install\` in it\n`,
     );
@@ -467,9 +518,12 @@ function npm(folder: string, args: readonly string[]): Promise<boolean> {
   });
 }
 
-/** npm's install in the folder, its output shown. */
-export function npmInstall(folder: string): Promise<boolean> {
-  return npm(folder, ["install"]);
+/** npm's install in the folder, its output shown: exactly the lockfile's packages (`npm ci`) when it holds one. */
+export function npmInstall(
+  folder: string,
+  { locked }: { readonly locked: boolean },
+): Promise<boolean> {
+  return npm(folder, [locked ? "ci" : "install"]);
 }
 
 /** The made app's `npm run model`, on the terminal. */

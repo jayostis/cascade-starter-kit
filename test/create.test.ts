@@ -96,15 +96,19 @@ function recording(
   tables: Fixtures["setUpTables"] = async () => undefined,
 ): Terminal & {
   readonly done: string[];
+  /** Whether each install was told the folder holds a lockfile to install from. */
+  readonly locked: boolean[];
   text(): string;
 } {
   const written: string[] = [];
   const done: string[] = [];
+  const locked: boolean[] = [];
   return {
     out: (text) => written.push(text),
     err: (text) => written.push(text),
-    install: async (folder) => {
+    install: async (folder, { locked: lockfile }) => {
       done.push(`install ${folder}`);
+      locked.push(lockfile);
       return true;
     },
     fixtures: async (folder) => {
@@ -125,6 +129,7 @@ function recording(
       };
     },
     done,
+    locked,
     text: () => written.join(""),
   };
 }
@@ -205,6 +210,56 @@ test("--tarball names the made app's runtime instead of the pin: an address as i
     ) as { dependencies: Record<string, string> };
     assert.equal(dependencies["cascade-runtime"], runtime);
   }
+});
+
+test("the app is made with the lockfile of its add-ons, named for the app, and installed from it; --tarball names another runtime, so no lockfile ships and the install is npm's own", async () => {
+  const locks = join(parent, "locks");
+  await mkdir(locks);
+  for (const each of ["none", "chat", "mcp", "chat+mcp"])
+    await writeFile(
+      join(locks, `${each}.json`),
+      JSON.stringify({
+        name: "cascade-app",
+        lockfileVersion: 3,
+        packages: { "": { name: "cascade-app" } },
+        for: each,
+      }),
+    );
+  const lockOf = async (folder: string) =>
+    JSON.parse(await readFile(join(folder, "package-lock.json"), "utf8")) as {
+      name: string;
+      packages: Record<string, { name: string }>;
+      for: string;
+    };
+  for (const [given, lock] of [
+    [[], "none"],
+    [["chat"], "chat"],
+    [["mcp", "chat"], "chat+mcp"],
+    [["mcp"], "mcp"],
+  ] as const) {
+    const app = `lock-${lock.replace("+", "-")}`;
+    const folder = join(parent, app);
+    const terminal = recording();
+    const args = given.length === 0 ? [] : ["--with", given.join(",")];
+    assert.equal(await create([folder, ...args], terminal, locks), 0, lock);
+    const made = await lockOf(folder);
+    assert.deepEqual(
+      [made.for, made.name, made.packages[""]!.name],
+      [lock, app, app],
+    );
+    assert.deepEqual(terminal.locked, [true], lock);
+    assert.match(terminal.text(), /with npm ci./);
+  }
+
+  const folder = join(parent, "lock-tarball");
+  const terminal = recording();
+  assert.equal(
+    await create([folder, "--tarball", ADDRESS], terminal, locks),
+    0,
+  );
+  assert.ok(!existsSync(join(folder, "package-lock.json")));
+  assert.deepEqual(terminal.locked, [false]);
+  assert.match(terminal.text(), /no lockfile.*--tarball/i);
 });
 
 test("--with adds exactly each named add-on's files, pinned dependencies and commands, at the versions the repository tests, and the end names its commands", async () => {

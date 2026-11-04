@@ -9,6 +9,7 @@ import {
   tablesBeside,
   TEST_DIRECTORY,
 } from "cascade-runtime";
+import { podReads } from "cascade-runtime/tools/node";
 import type {
   LoadedHospital,
   serveDemo,
@@ -41,6 +42,11 @@ export function nodeHost({
           await rm(join(folder, ".answers"), { recursive: true, force: true });
       },
     },
+    compact: (name, pod, input) =>
+      podReads({ names: async () => [name], open: async () => pod }).compact!({
+        ...input,
+        pod: name,
+      }),
     samples: [],
     restore: () => restoreKits(folder),
     tables: () => tablesBeside(folder),

@@ -2,13 +2,25 @@
 // add-ons and the demo hospital in it, and packed into build/ beside its release notes.
 import { execFile } from "node:child_process";
 import { statSync } from "node:fs";
-import { cp, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  cp,
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { basename, dirname, join, relative } from "node:path";
 import { env, execPath, stdout } from "node:process";
 import { fileURLToPath, URL } from "node:url";
 import { promisify } from "node:util";
 import {
+  addOn,
+  addOns,
   LEFT_OUT,
+  lockName,
   releaseAddress,
   startLine,
 } from "../dist/create/src/create.js";
@@ -77,15 +89,70 @@ async function packDemoHospital(app) {
   });
 }
 
-async function npmPack() {
+/** npm's own script, which the pack runs through Node. */
+function npmScript() {
   const npm = env.npm_execpath;
   if (npm === undefined)
     throw new Error(
       "npm_execpath is unset: run the pack as `npm run build:create`",
     );
+  return npm;
+}
+
+/** Every combination of the items, the empty one first. */
+const combinations = (items) =>
+  items.reduce(
+    (made, item) => [...made, ...made.map((each) => [...each, item])],
+    [[]],
+  );
+
+/**
+ * The lockfile of an app made with each combination of add-ons, resolved by npm from the staged template and the
+ * add-ons applied to it, in `locks/` of the stage. `create` copies the one of the add-ons it is given. The lock only
+ * names packages and their hashes and lists every platform's optional ones, so one made here serves every system. None
+ * is made when the template's runtime is not an address, as in a pull request that names a runtime still being built.
+ * @param {string} app
+ */
+async function packLocks(app) {
+  const runtime = (await readJson(join(app, "package.json"))).dependencies[
+    "cascade-runtime"
+  ];
+  if (!/^https:/.test(runtime)) return;
+  const locks = join(STAGE, "locks");
+  await mkdir(locks, { recursive: true });
+  await Promise.all(
+    combinations(await addOns()).map(async (chosen) => {
+      const work = await mkdtemp(join(tmpdir(), "lock-"));
+      try {
+        await cp(app, work, { recursive: true });
+        for (const each of chosen) await addOn(work, each);
+        await run(
+          execPath,
+          [
+            npmScript(),
+            "install",
+            "--package-lock-only",
+            "--ignore-scripts",
+            "--no-audit",
+            "--no-fund",
+          ],
+          { cwd: work, maxBuffer: 64 * 1024 * 1024 },
+        );
+        await cp(
+          join(work, "package-lock.json"),
+          join(locks, `${lockName(chosen.map(({ name }) => name))}.json`),
+        );
+      } finally {
+        await rm(work, { recursive: true, force: true });
+      }
+    }),
+  );
+}
+
+async function npmPack() {
   const { stdout } = await run(
     execPath,
-    [npm, "pack", "--json", "--pack-destination", BUILD],
+    [npmScript(), "pack", "--json", "--pack-destination", BUILD],
     { cwd: STAGE, maxBuffer: 64 * 1024 * 1024 },
   );
   const [packed] = JSON.parse(stdout);
@@ -111,6 +178,7 @@ await cp(TEMPLATE, join(STAGE, "app"), {
 });
 await packDemoHospital(join(STAGE, "app"));
 await cp(join(ROOT, "add-ons"), join(STAGE, "add-ons"), { recursive: true });
+await packLocks(join(STAGE, "app"));
 await cp(join(ROOT, "LICENSE"), join(STAGE, "LICENSE"));
 await writeJson(join(STAGE, "package.json"), {
   ...manifest,

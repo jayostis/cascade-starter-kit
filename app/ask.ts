@@ -1,6 +1,7 @@
 // `npm run ask -- [--pod <name>] "<question>"`: the question's rows, one JSON object a line.
 import { argv, stdout } from "node:process";
 import { Refusal } from "cascade-runtime";
+import type { PodReads } from "cascade-runtime/tools";
 import { nodeHost } from "./node-host.ts";
 import { podApi } from "./pod-api.ts";
 import { argumentsOf, choosePod, PODS, refuse } from "./pods.ts";
@@ -15,7 +16,10 @@ const name = await choosePod(values.pod);
 const api = podApi(nodeHost({ folder: PODS, opensEncrypted: false }));
 let rows;
 try {
-  ({ rows } = await api.ask({ pod: name, question: positionals[0] }));
+  ({ rows } = (await api.ask({
+    pod: name,
+    question: positionals[0],
+  })) as Awaited<ReturnType<PodReads["ask"]>>);
 } catch (error) {
   if (!(error instanceof Refusal)) throw error;
   await api.close();

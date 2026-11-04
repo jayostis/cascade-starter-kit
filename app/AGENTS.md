@@ -144,7 +144,7 @@ calling `podApi`'s operations only, with its consent `tier`: `free` reads
 (`open_pod`, `open_trend`, `open_entry`, `open_classes`, `open_panel`, `open_table`, through the door's `open` and its own addresses), and `ask` writes,
 which the person confirms first (`make_pod`, never encrypted; `check_tables`; `set_world_date`). `NEVER` is what
 no tool calls: `makePod` with `encrypt`, `waitingWords`, `confirmWords`, `unlock`, `connect`, `bring`,
-`deleteAll` and `resetAll`. WebMCP (`src/tools.ts`), on both
+`deleteAll` and `resetAll`. `ask` takes the runtime's `format: "compact"` (the whole pod as tab-separated pages, each page's `next` being the input of the page after) and `offset`, handed to the runtime's `ask` tool unchanged; the Node host makes the compact read (`compact` of `nodeHost`, `podReads` of `cascade-runtime/tools/node` over the pod the app has open), the browser host has none and refuses it. WebMCP (`src/tools.ts`), on both
 targets and every screen, offers every tool by its tier (the last section says how). A model reached
 by any door sends what the tools return to its provider when it is hosted:
 never point one at a person's own pod without their say. The starter holds only

@@ -8,6 +8,14 @@ const boolean = z.boolean({ error: "true or false" });
 const positiveInteger = z
   .int({ error: "a whole number from 1" })
   .positive({ error: "a whole number from 1" });
+const wholeNumber = z
+  .int({ error: "a whole number from 0" })
+  .nonnegative({ error: "a whole number from 0" });
+const strings = z.custom<string[]>(
+  (value) =>
+    Array.isArray(value) && value.every((each) => typeof each === "string"),
+  { error: "a list of strings" },
+);
 const object = z.custom<Record<string, unknown>>(
   (value) =>
     value !== null && typeof value === "object" && !Array.isArray(value),
@@ -35,7 +43,14 @@ export const INPUTS = {
   classes: input({ pod: string }),
   panel: input({ pod: string, panel: string }),
   table: input({ id: string, q: string, page: positiveInteger, code: string }),
-  ask: input({ pod: string, question: string, limit: positiveInteger }),
+  ask: input({
+    pod: string,
+    question: string,
+    limit: positiveInteger,
+    offset: wholeNumber,
+    format: string,
+    entries: strings,
+  }),
   tool: input({ pod: string, tool: string, input: object }),
   makePod: input({ person: string, encrypt: boolean }),
   waitingWords: input({ pod: string }),
