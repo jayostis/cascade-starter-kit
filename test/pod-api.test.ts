@@ -490,10 +490,97 @@ test(`${via}: table gives the first source, and a code's facts`, async () => {
   );
 });
 
-test(`${via}: ask gives as many rows as the limit, and how many there are`, async () => {
+test(`${via}: ask gives as many rows as the limit from the offset, and how many there are`, async () => {
+  const all = await labs();
   const out = await shared.ask({ pod: STATIN, question: LABS, limit: 2 });
-  assert.equal(out.total, (await labs()).length);
+  assert.equal(out.total, all.length);
   assert.equal(out.rows.length, 2);
+  const later = await shared.ask({
+    pod: STATIN,
+    question: LABS,
+    limit: 2,
+    offset: 1,
+  });
+  assert.deepEqual(later.rows, all.slice(1, 3));
+  assert.equal(later.offset, 1);
+});
+
+/** The statin story's pod with its lab results repeated on other days, so that the compact read of it is two pages. */
+let pagedApi: Promise<Api> | undefined;
+function paged() {
+  pagedApi ??= (async () => {
+    const at = await mkdtemp(join(tmpdir(), "pod-api-paged-"));
+    folders.push(at);
+    const { pull } = await pulled(north, STATIN);
+    const files = pullFiles(pull, "north");
+    const bundle = JSON.parse(
+      new TextDecoder().decode(files.get("north/bundle.json")),
+    );
+    const labs = bundle.entry.filter(
+      ({ resource }: Output) => resource.resourceType === "Observation",
+    );
+    for (let day = 0; day < 12; day += 1)
+      for (const lab of labs)
+        bundle.entry.push({
+          ...lab,
+          fullUrl: `${lab.fullUrl}-${day}`,
+          resource: {
+            ...lab.resource,
+            id: `${lab.resource.id}-${day}`,
+            effectiveDateTime: new Date(
+              Date.UTC(2020, 0, 1 + day),
+            ).toISOString(),
+          },
+        });
+    const pod = await openPod(join(at, "paged"));
+    const imported = await pod.import(
+      new Map([
+        ...files,
+        ["north/bundle.json", new TextEncoder().encode(JSON.stringify(bundle))],
+      ]),
+      { aboutSubject: true },
+    );
+    assert.equal(imported.refused, undefined);
+    await pod.close();
+    return new Map(await both(api(host(at)))).get(via)!;
+  })();
+  return pagedApi;
+}
+
+test(`${via}: ask with format compact gives the whole pod a page at a time, each page's next being the input of the page after, and refuses a limit`, async () => {
+  const small = await shared.ask({ pod: STATIN, format: "compact" });
+  assert.equal(small.format, "compact");
+  assert.equal(small.next, undefined);
+  assert.ok(small.views.some(({ total }: Output) => total > 0));
+
+  const big = await paged();
+  const pages: Output[] = [];
+  let input: Input | undefined = { pod: "paged", format: "compact" };
+  while (input !== undefined && pages.length < 10) {
+    const page: Output = await big.ask(input);
+    pages.push(page);
+    input = page.next;
+  }
+  assert.ok(pages.length >= 2, "the pod is read in more than one page");
+  assert.equal(pages.at(-1)!.next, undefined);
+  assert.equal(pages[0]!.next.offset > 0, true);
+  const shown = new Map<string, number>();
+  const total = new Map<string, number>();
+  for (const { views } of pages)
+    for (const view of views) {
+      shown.set(view.question, (shown.get(view.question) ?? 0) + view.shown);
+      total.set(view.question, view.total);
+    }
+  assert.deepEqual(shown, total, "the pages show every row of every view once");
+
+  await assert.rejects(
+    shared.ask({ pod: STATIN, format: "compact", limit: 2 }),
+    /limit is for rows/,
+  );
+  await assert.rejects(
+    shared.ask({ pod: STATIN, format: "compact", offset: -1 }),
+    /offset must be/,
+  );
 });
 
 test(`${via}: find_changes gives the finding, and worth_a_look the page's lines`, async () => {
@@ -1217,6 +1304,12 @@ test("over HTTP, /tools lists the reads of the one list and runs one by name on 
   const checks = await run("reference_table_checks", { pod: STATIN });
   assert.equal(checks.status, 200);
   assert.equal(((await checks.json()) as { tables: string }).tables, "on");
+  const compact = await run("ask", { pod: STATIN, format: "compact" });
+  assert.equal(compact.status, 200);
+  assert.equal(
+    ((await compact.json()) as { format: string }).format,
+    "compact",
+  );
   const wrong = await run("ask", { pod: "x", question: "SELECT * WHERE {}" });
   assert.equal(wrong.status, 400);
   assert.match(
