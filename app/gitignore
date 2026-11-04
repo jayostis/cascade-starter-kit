@@ -1,6 +1,6 @@
 node_modules/
 pods/
 .env
-dist/
-dist-browser/
+/dist/
+/dist-browser/
 test-results/
