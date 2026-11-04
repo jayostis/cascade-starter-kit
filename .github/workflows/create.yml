@@ -40,8 +40,10 @@ jobs:
             build/release-notes.md
           if-no-files-found: error
 
-  # What a person receives with each add-on alone: the command into a temp folder, then `npm install && npm test`. The
-  # base is the `create` check's on each system, which makes the app by the same command and runs its `npm test`.
+  # What a person receives with each add-on, alone and both: the command into a temp folder, which installs by `npm ci`
+  # from the lockfile it ships (and fails when it does not match), then `npm test`. The base is the `create` check's on
+  # each system, which makes the app by the same command and runs its `npm test`. A lockfile made on one system serves
+  # every other, which these two systems prove by installing it.
   made:
     name: made (${{ matrix.os }}, ${{ matrix.with }})
     needs: pack
@@ -49,7 +51,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
-        with: [chat, mcp]
+        with: [chat, mcp, "chat,mcp"]
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -68,7 +70,7 @@ jobs:
         with:
           name: create
           path: ${{ runner.temp }}/create
-      - name: create, then npm install && npm test
+      - name: create (npm ci from the shipped lockfile), then npm test
         working-directory: ${{ runner.temp }}
         env:
           WITH: ${{ matrix.with }}
@@ -76,9 +78,9 @@ jobs:
         run: |
           set -euo pipefail
           tarball=$(node -p "require('node:path').resolve(process.argv[1])" create/create-cascade-app-*.tgz)
-          npx --yes --package="$tarball" create-cascade-app my-app --with "$WITH" ${RUNTIME:+--tarball "$RUNTIME"}
+          npx --yes --package="$tarball" create-cascade-app my-app --with "$WITH" ${RUNTIME:+--tarball "$RUNTIME"} | tee made.log
+          if [ -z "$RUNTIME" ]; then grep -qF 'with npm ci.' made.log; fi
           cd my-app
-          npm install
           npm test
 
   # An app made by the command from the tarball, on the template's pinned runtime, and used as a person would: the base

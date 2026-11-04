@@ -79,6 +79,13 @@ https://github.com/jayostis/cascade-runtime-js/pull/N`). While that PR is
   with the template into `build/`; on main, `create.yml` publishes it as the
   pre-release `build-<sha>`, never the latest, and runs the command from it
   exactly as a person is told (`startLine(releaseAddress(sha), …)`).
+- **A lockfile for each combination of add-ons.** `create/pack.mjs` has npm resolve the staged template, with each
+  combination of add-ons applied (none, chat, mcp, chat+mcp), into `locks/` of the package; `create` copies the one of
+  the add-ons it is given as the app's `package-lock.json`, named for the app, and installs by `npm ci`, so a fresh
+  install takes what the lockfile names and fails when it does not match. `--tarball` names another runtime than the
+  lockfiles were made with, so it ships none, says so and installs by `npm install`; a template pin that is no
+  address (a pull request's runtime still being built) packs none. `create.yml` proves the install on ubuntu and
+  windows for every combination.
 - **No runtime dependency.** It loads a made app's tables and kits through
   that app's own `cascade-runtime/fixtures`, resolved from the app's folder
   once it is installed.

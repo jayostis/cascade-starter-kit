@@ -677,6 +677,11 @@ await setUp("the command makes the app", async () => {
         );
   assert.equal(code, 0, "the command failed");
   assert.ok(out.includes(agentPrompt("my-app")), "no agent prompt");
+  assert.match(
+    out,
+    runtime === undefined ? /with npm ci\./ : /No lockfile: --tarball/,
+    "the install did not go by the lockfile the command ships, or did not say why it had none",
+  );
   assert.deepEqual(await podsOf(), [...KITS].sort());
   const loads = [
     ...out.matchAll(/Loading the pod (\S+),[^\n]*? loaded in ([\d.]+) s/g),
@@ -749,9 +754,10 @@ await setUp("the command makes the app", async () => {
 await addOnBehaviour(
   "the app runs on the pinned runtime, or the one given, and installs with no git: each package is the runtime or bundled in it, the demo hospital beside the app, or from npm's registry",
   async () => {
-    const { dependencies } = JSON.parse(
+    const manifest = JSON.parse(
       await readFile(join(app, "package.json"), "utf8"),
     );
+    const { dependencies } = manifest;
     assert.equal(
       dependencies["cascade-runtime"],
       runtime === undefined ? PIN : `file:${runtime.replaceAll("\\", "/")}`,
@@ -765,9 +771,21 @@ await addOnBehaviour(
     ) as {
       packages: Record<
         string,
-        { inBundle?: boolean; resolved?: string; link?: boolean }
+        {
+          inBundle?: boolean;
+          resolved?: string;
+          link?: boolean;
+          dependencies?: Record<string, string>;
+          devDependencies?: Record<string, string>;
+        }
       >;
     };
+    if (runtime === undefined)
+      assert.deepEqual(
+        [packages[""]?.dependencies, packages[""]?.devDependencies],
+        [manifest.dependencies, manifest.devDependencies],
+        "the lockfile the command shipped is not the app's package.json's",
+      );
     const sandbox = packages["node_modules/@the-cascade-protocol/sandbox"];
     assert.deepEqual(
       [sandbox?.link, sandbox?.resolved],

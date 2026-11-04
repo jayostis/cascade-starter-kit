@@ -15,6 +15,7 @@
   "files": [
     "add-ons",
     "app",
-    "dist"
+    "dist",
+    "locks"
   ]
 }

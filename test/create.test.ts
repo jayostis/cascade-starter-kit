@@ -237,16 +237,18 @@ test("the app is made with the lockfile of its add-ons, named for the app, and i
     [["mcp", "chat"], "chat+mcp"],
     [["mcp"], "mcp"],
   ] as const) {
-    const folder = join(parent, `lock-${lock}`);
+    const app = `lock-${lock.replace("+", "-")}`;
+    const folder = join(parent, app);
     const terminal = recording();
     const args = given.length === 0 ? [] : ["--with", given.join(",")];
     assert.equal(await create([folder, ...args], terminal, locks), 0, lock);
     const made = await lockOf(folder);
     assert.deepEqual(
       [made.for, made.name, made.packages[""]!.name],
-      [lock, `lock-${lock}`, `lock-${lock}`],
+      [lock, app, app],
     );
     assert.deepEqual(terminal.locked, [true], lock);
+    assert.match(terminal.text(), /with npm ci./);
   }
 
   const folder = join(parent, "lock-tarball");
@@ -257,7 +259,7 @@ test("the app is made with the lockfile of its add-ons, named for the app, and i
   );
   assert.ok(!existsSync(join(folder, "package-lock.json")));
   assert.deepEqual(terminal.locked, [false]);
-  assert.match(terminal.text(), /no lockfile.*--tarball/);
+  assert.match(terminal.text(), /no lockfile.*--tarball/i);
 });
 
 test("--with adds exactly each named add-on's files, pinned dependencies and commands, at the versions the repository tests, and the end names its commands", async () => {

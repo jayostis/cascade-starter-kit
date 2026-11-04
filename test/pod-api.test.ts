@@ -573,6 +573,13 @@ test(`${via}: ask with format compact gives the whole pod a page at a time, each
     }
   assert.deepEqual(shown, total, "the pages show every row of every view once");
 
+  const without = new Map(
+    await both(api({ ...host(), compact: undefined })),
+  ).get(via)!;
+  await assert.rejects(
+    without.ask({ pod: STATIN, format: "compact" }),
+    /does not offer the compact read/,
+  );
   await assert.rejects(
     shared.ask({ pod: STATIN, format: "compact", limit: 2 }),
     /limit is for rows/,
