@@ -738,6 +738,17 @@ test(`${via}: input the rules refuse is a Refusal saying why`, async () => {
     ["table", { page: 1.5 }, /page must be a whole number from 1/],
     ["ask", { pod: STATIN, question: LABS, limit: -1 }, /limit must be/],
     ["ask", { pod: STATIN, question: LABS, limit: NaN }, /limit must be/],
+    ["ask", { pod: STATIN, question: LABS, offset: -1 }, /offset must be/],
+    [
+      "ask",
+      { pod: STATIN, question: LABS, format: "csv" },
+      /format must be rows or compact/,
+    ],
+    [
+      "ask",
+      { pod: STATIN, format: "compact", entries: [1] },
+      /entries must be a list of strings/,
+    ],
     ["ask", { pod: STATIN, question: 5 }, /question must be a string/],
     [
       "tool",
