@@ -749,6 +749,11 @@ test(`${via}: input the rules refuse is a Refusal saying why`, async () => {
       { pod: STATIN, format: "compact", entries: [1] },
       /entries must be a list of strings/,
     ],
+    [
+      "ask",
+      { pod: STATIN, question: LABS, entries: ["x"] },
+      /entries need format compact/,
+    ],
     ["ask", { pod: STATIN, question: 5 }, /question must be a string/],
     [
       "tool",

@@ -701,6 +701,8 @@ export function podApi(host: PodHost) {
     if (input.format === "compact") return askCompact(input);
     if (input.format !== undefined && input.format !== "rows")
       throw new Refusal("format must be rows or compact");
+    if (input.entries !== undefined)
+      throw new Refusal("entries need format compact");
     const { pod: given, question = "", limit, offset = 0 } = input;
     const pod = await podNamed(await known(given));
     const rows = await pod.ask(question);
