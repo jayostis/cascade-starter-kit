@@ -547,21 +547,42 @@ function paged() {
   return pagedApi;
 }
 
-test(`${via}: ask with format compact gives the whole pod a page at a time, each page's next being the input of the page after, and refuses a limit`, async () => {
+test(`${via}: ask with format compact, through the /tools route the chat reads, gives the whole pod a page at a time, each page's next being the input of the page after, and refuses a limit`, async () => {
   const small = await shared.ask({ pod: STATIN, format: "compact" });
   assert.equal(small.format, "compact");
   assert.equal(small.next, undefined);
   assert.ok(small.views.some(({ total }: Output) => total > 0));
 
-  const big = await paged();
+  const origin = "http://app.test";
+  const [app] = served(await paged(), () => ({
+    hosts: new Set(["app.test"]),
+    origins: new Set([origin]),
+  }));
   const pages: Output[] = [];
   let input: Input | undefined = { pod: "paged", format: "compact" };
   while (input !== undefined && pages.length < 10) {
-    const page: Output = await big.ask(input);
+    const response = await app.request(`${origin}/tools/ask`, {
+      method: "POST",
+      headers: { origin, "content-type": "application/json" },
+      body: JSON.stringify(input),
+    });
+    assert.equal(response.status, 200);
+    const page: Output = await response.json();
     pages.push(page);
     input = page.next;
   }
   assert.ok(pages.length >= 2, "the pod is read in more than one page");
+  assert.notDeepEqual(
+    pages[1]!.views,
+    pages[0]!.views,
+    "the second page is not the first again",
+  );
+  const starts = pages.slice(0, -1).map(({ next }) => next.offset);
+  assert.deepEqual(
+    starts,
+    [...new Set(starts)].sort((x, y) => x - y),
+    "each page goes on from further than the one before",
+  );
   assert.equal(pages.at(-1)!.next, undefined);
   assert.equal(pages[0]!.next.offset > 0, true);
   const shown = new Map<string, number>();
