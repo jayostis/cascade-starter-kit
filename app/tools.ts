@@ -3,6 +3,7 @@
 // reads or moves the app, `ask` writes once the person has said yes. What no tool ever calls is `NEVER`.
 import { type Finding, type InputSchema, Refusal } from "cascade-runtime";
 import {
+  type CompactAnswer,
   type PodReads,
   type PodTool,
   TOOLS as RUNTIME_TOOLS,
@@ -64,10 +65,16 @@ export const NEVER: readonly {
   { op: "resetAll", why: "it removes every pod" },
 ];
 
-/** PodApi as the runtime's tools read it: its operations, and the lookups `reference_table_checks` asks of the tables. */
+/** PodApi as the runtime's tools read it: its operations, the compact read as `ask` with the tool's own input (`again` and the page's offset), and the lookups `reference_table_checks` asks of the tables. */
 const readsOf = (api: PodApi): PodReads => ({
   pods: (input) => api.pods(input),
-  ask: (input) => api.ask(input),
+  ask: (input) => api.ask(input) as ReturnType<PodReads["ask"]>,
+  compact: ({ pod, offset, again }) =>
+    api.ask({
+      ...again,
+      pod,
+      ...(offset === undefined ? {} : { offset }),
+    }) as Promise<CompactAnswer>,
   tool: (input) => api.tool(input as Parameters<PodApi["tool"]>[0]),
   tables: (input) => api.tables(input),
 });

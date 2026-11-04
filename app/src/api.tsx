@@ -1,5 +1,6 @@
 // What the screens read and write through: PodApi, over HTTP on the Node target and in the page in the browser one,
 // and what only the host knows. A screen never knows which host it runs on.
+import type { CompactAnswer } from "cascade-runtime/tools";
 import { createContext, useContext, type ComponentType } from "react";
 import type {
   Answers,
@@ -57,9 +58,15 @@ export interface PodApi extends WritesApi, HospitalsApi {
   }): Promise<{ pod: string; waiting?: boolean }>;
   ask(input: {
     pod: string;
-    question: string;
+    question?: string;
     limit?: number;
-  }): Promise<{ question: string; total: number; rows: Row[] }>;
+    offset?: number;
+    format?: "rows" | "compact";
+    entries?: string[];
+  }): Promise<
+    | { question: string; total: number; offset?: number; rows: Row[] }
+    | CompactAnswer
+  >;
   setWorldDate(input: { date: string }): Promise<{ asOf?: string }>;
 }
 
