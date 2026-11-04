@@ -848,6 +848,55 @@ await addOnBehaviour(
   },
 );
 
+await behaviour(
+  "the app committed to git and cloned fresh installs and typechecks: its ignores swallow nothing the app is made of",
+  async () => {
+    // The repository sits beside the app, so the app's own folder is left as it was for the behaviours after this.
+    const repository = join(work, "my-app.git");
+    const git = async (...args: string[]) => {
+      const { code, err } = await run(
+        "git",
+        [
+          "-c",
+          "user.name=check",
+          "-c",
+          "user.email=check@example.com",
+          "-c",
+          "core.autocrlf=false",
+          `--git-dir=${repository}`,
+          `--work-tree=${app}`,
+          ...args,
+        ],
+        { cwd: work },
+      );
+      assert.equal(code, 0, `git ${args.join(" ")} failed:\n${err}`);
+    };
+    await git("init", "--quiet");
+    await git("add", "-A");
+    await git("commit", "--quiet", "-m", "x");
+    const cloned = join(work, "cloned-app");
+    const { code, err } = await run(
+      "git",
+      ["clone", "--quiet", repository, cloned],
+      {
+        cwd: work,
+      },
+    );
+    assert.equal(code, 0, `git clone failed:\n${err}`);
+    const install = existsSync(join(cloned, "package-lock.json"))
+      ? "ci"
+      : "install";
+    for (const args of [[install], ["run", "typecheck"]]) {
+      const ran = await run(execPath, [NPM, ...args], { cwd: cloned });
+      assert.equal(
+        ran.code,
+        0,
+        `npm ${args.join(" ")} failed in the clone:\n${ran.out}\n${ran.err}`,
+      );
+    }
+  },
+);
+
 const server = await (async () => {
   let server: Awaited<ReturnType<typeof started>>;
   await setUp("a loaded pod is shown", async () => {
