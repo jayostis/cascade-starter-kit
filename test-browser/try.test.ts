@@ -57,6 +57,9 @@ const ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const PAGES = join(ROOT, "build", "pages");
 /** The components the page serves, as the package carries them. */
 const SERVED = join(PAGES, "try", "cascade-runtime", "components");
+/** The hub, the front page of the runtime's site, which try/ is a row of. */
+const HUB = "https://jayostis.github.io/cascade-runtime-js/";
+
 /** The page's addresses: paths under its base, try/. */
 const AT = {
   home: "try/",
@@ -1158,7 +1161,7 @@ test("after a reload, the pods made in this browser are still on the left", asyn
   );
 });
 
-test("File, Delete all data empties the pods column, leaves no pod nor answers in the browser and says how many went, a later visit still has no pods, and Reset all data brings the four samples back; Help, About links the code to this repository", async () => {
+test("File, Delete all data empties the pods column, leaves no pod nor answers in the browser and says how many went, a later visit still has no pods, and Reset all data brings the four samples back; Help and About lead back to the hub and link the code to this repository", async () => {
   const context = await browser.newContext();
   try {
     const page = watched(await context.newPage());
@@ -1167,6 +1170,16 @@ test("File, Delete all data empties the pods column, leaves no pod nor answers i
     assert.equal(
       await page.getAttribute('#about a:has-text("The code")', "href"),
       "https://github.com/jayostis/cascade-starter-kit",
+    );
+    const hubLinks = (on: Page): Promise<(string | null)[]> =>
+      on.$$eval(
+        '.menu a:has-text("Cascade pods"), #about a:has-text("Cascade pods")',
+        (found) => found.map((each) => each.getAttribute("href")),
+      );
+    assert.deepEqual(
+      await hubLinks(page),
+      [HUB, HUB],
+      "the Help menu and the About box lead back to the hub",
     );
     const openMenus = (): Promise<string[]> =>
       texts(page, "details.menu[open] > summary");
@@ -1223,6 +1236,11 @@ test("File, Delete all data empties the pods column, leaves no pod nor answers i
       await loaded.isVisible("#about"),
       true,
       "a page loaded at a box's address shows the box",
+    );
+    assert.deepEqual(
+      await hubLinks(loaded),
+      [HUB, HUB],
+      "a pod's own page leads back to the hub too",
     );
   } finally {
     await context.close();
