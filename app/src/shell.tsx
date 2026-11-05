@@ -63,6 +63,9 @@ function useClosing() {
   }, []);
 }
 
+/** What the link back to the hub is called, as the hub's own pages call it. */
+const HUB_LABEL = "Cascade pods";
+
 function Menu({ name, items }: { name: string; items: [string, string][] }) {
   return (
     <details className="menu group relative text-[0.9rem]">
@@ -121,6 +124,11 @@ function MenuBoxes({ about }: { about: About }) {
         {about.code !== undefined && (
           <p>
             <a href={about.code}>The code</a>
+          </p>
+        )}
+        {about.hub !== undefined && (
+          <p>
+            <a href={about.hub}>{HUB_LABEL}</a>
           </p>
         )}
       </Box>
@@ -247,7 +255,15 @@ export function Layout({
             ["#reset-all", "Reset all data"],
           ]}
         />
-        <Menu name="Help" items={[["#about", "About"]]} />
+        <Menu
+          name="Help"
+          items={[
+            ["#about", "About"],
+            ...(about.hub === undefined
+              ? []
+              : [[about.hub, HUB_LABEL] as [string, string]]),
+          ]}
+        />
         <span className="demo ml-auto text-[0.8rem] opacity-75 max-md:text-right max-md:text-[0.72rem]">
           Demo: every person here is made up
         </span>

@@ -267,6 +267,7 @@ export const host: Host = {
     version: dataset.version ?? "",
     runtime: dataset.runtime ?? "",
     ...(dataset.code && { code: dataset.code }),
+    ...(dataset.hub && { hub: dataset.hub }),
   },
   openSignIn() {
     const opened = window.open(
