@@ -7,6 +7,13 @@ template, the same app in a browser, and the command that makes one.
 Status: a draft, as the runtime is. No compatibility is promised before a
 numbered v1, and no claim is made that it is fit for clinical use.
 
+## Docs
+
+- [The Cascade hub](https://jayostis.github.io/cascade-runtime-js/): where to go for each thing, and every repository.
+- [Quick start](https://jayostis.github.io/cascade-runtime-js/start.html): how to start an app on the runtime.
+- [API](https://jayostis.github.io/cascade-runtime-js/api/): the API an app calls.
+- [Try a pod in the browser](https://jayostis.github.io/cascade-starter-kit/try/): try a pod in the browser.
+
 ## What is here
 
 | Folder          | What it is                                                                                                                                  |
