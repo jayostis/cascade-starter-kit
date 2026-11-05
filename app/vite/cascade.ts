@@ -68,8 +68,8 @@ const signedIn = (runtime: string) => `<!doctype html>
 /**
  * The plugin, for the browser target when `browser`. `CASCADE_NAME`, `CASCADE_VERSION` and `CASCADE_CODE` name the
  * app, what it was built from and where its code is, in its About box (the app's package by default; no link when it
- * names none), and `CASCADE_SAMPLES` the samples a first visit
- * copies, by folder, beside the base.
+ * names none), `CASCADE_HUB` the page it leads back to from the Help menu and the About box (none by default), and
+ * `CASCADE_SAMPLES` the samples a first visit copies, by folder, beside the base.
  */
 export function cascade({ browser }: { browser: boolean }): Plugin[] {
   return [cascadeRuntime({ browser }), appPlugin({ browser })];
@@ -96,6 +96,7 @@ function appPlugin({ browser }: { browser: boolean }): Plugin {
             : app.repository?.url) ??
           app.homepage ??
           "",
+        "data-hub": env.CASCADE_HUB ?? "",
         ...(browser && { "data-samples": env.CASCADE_SAMPLES ?? "" }),
       };
       const attributes = Object.entries(body)

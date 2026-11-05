@@ -156,12 +156,13 @@ export interface WritesApi {
   resetAll(input?: object): Promise<{ pods: string[] }>;
 }
 
-/** What the About box says: the app, its version, the cascade-runtime it runs and where its code is. */
+/** What the About box says: the app, its version, the cascade-runtime it runs, where its code is and the hub it leads back to. */
 export interface About {
   readonly name: string;
   readonly version: string;
   readonly runtime: string;
   readonly code?: string;
+  readonly hub?: string;
 }
 
 /** The host the app runs on: its PodApi and what only it knows. */

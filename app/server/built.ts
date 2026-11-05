@@ -22,7 +22,12 @@ const SOURCES = [
 ];
 
 /** The settings baked into the pages. */
-const SETTINGS = ["CASCADE_NAME", "CASCADE_VERSION", "CASCADE_CODE"] as const;
+const SETTINGS = [
+  "CASCADE_NAME",
+  "CASCADE_VERSION",
+  "CASCADE_CODE",
+  "CASCADE_HUB",
+] as const;
 
 /** The file in `dist/` that records the settings the last build used. */
 const BUILT_WITH = ".built-with.json";
