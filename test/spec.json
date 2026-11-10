@@ -424,6 +424,11 @@
       "definition": "a word or two the app sets beside a line, a row or a view entry to mark it: `Needs review`, `Differs` or `Retired code`."
     },
     {
+      "term": "tarball",
+      "definition": "a single file that packs a build of a package, which `--tarball` names so that a new app installs it in place of the one the lockfiles were made with.",
+      "aliases": ["tarballs"]
+    },
+    {
       "term": "target",
       "definition": "one of the two ways the app is built: the Node target, whose pages call the server, and the browser target, which runs PodApi in the page with no server.",
       "aliases": ["targets"]
@@ -524,6 +529,7 @@
   "shaped": [
     "built.test.ts",
     "bundle.test.ts",
+    "create.test.ts",
     "failure-annotations.test.ts",
     "guide.test.ts",
     "inputs.test.ts",
