@@ -1,0 +1,532 @@
+{
+  "about": "cascade-starter-kit, the app a person starts from on cascade-runtime: a template of React pages over a small server, its two add-ons (a chat with a model, and an MCP server), and `create-cascade-app`, the command that makes an app from them.",
+  "capabilities": [
+    "Making an app · create-cascade-app <folder>",
+    "Adding the chat and the MCP server to a new app · --with, terminal.choose(), terminal.model()",
+    "Installing a new app's packages · package-lock.json, --tarball",
+    "Reading a pod for its screens · api.pods(), api.pod(), api.answers(), api.said(), api.trend(), api.classes(), api.panel()",
+    "Reading the reference tables for their screens · api.held(), api.table(), api.checkTables()",
+    "Asking a pod a named question, and running a tool on it · api.ask(), api.tool()",
+    "Making, opening and deleting pods · api.makePod(), api.waitingWords(), api.confirmWords(), api.unlock(), api.deleteAll(), api.resetAll(), nodeHost()",
+    "Connecting a pod to a hospital and bringing its records in · api.hospitals(), api.connect(), api.connection(), api.bring()",
+    "Setting the day the demo hospitals answer as of · api.setWorldDate(), worldInstant(), utcInstant(), worldDateSaid(), pulledAsOfSaid(), GET /world-date",
+    "Input PodApi refuses, and the sentence it gives · podApi(), Refusal",
+    "Calling PodApi over HTTP · /api/, INPUT_SCHEMAS, refusalOf()",
+    "Reaching the demo hospitals from the Node server · nodeHospitals()",
+    "Serving pages built from the app as it stands · npm start, buildStalePages()",
+    "Answering an address a person opens with the app's page · appServer()",
+    "Reading for a screen and running a step · routes(), watch()",
+    "Moving between screens without loading the page again · movesInPlace()",
+    "Reading a pod as a person's record · PodPage",
+    "Reading one entry of a pod · EntryPage, entryOf(), entryId()",
+    "Making a pod · NewPod",
+    "Encrypting a pod with six words · SixWords, Unlock",
+    "Connecting to a demo hospital · ConnectionBox, HospitalsPage",
+    "Setting the world's date · WorldDate",
+    "Browsing the reference tables · TablesNav, TablePage, SourcePage, CodePage",
+    "Seeing a pod's medicines by drug class · ClassesPage",
+    "Seeing a pod's lab results by panel · PanelPage",
+    "Seeing what changed after a medication · PodPage, TrendPage, withImportHistory(), trendInput()",
+    "Asking the chat about what a screen shows · AskProvider",
+    "What a pod's screen says is worth a look · worthALook()",
+    "Naming and ordering the rows of a pod's tables · codesOf(), codesSaid(), rounded(), compare(), openingOrder()",
+    "Saying what ClinVar says of a variant and of each report · variantSaid(), rowSaid(), variantsSaid(), variantReports()",
+    "Naming pods, people and places as a person says them · slug(), personName(), placeOf(), demoPeople(), familyFirst(), gradePerson(), didNote()",
+    "Grouping reference tables by publisher, and saying what a check did · sourcesOf(), pageNumber(), checkedNote()",
+    "Questions the chat offers before a person types · firstQuestion(), suggestedQuestions()",
+    "Tools a model may call, by consent tier · TOOLS, NEVER",
+    "Running the read tools over HTTP · GET /tools, POST /tools/<name>",
+    "Choosing the chat's model from settings · modelFrom(), modelOf(), CASCADE_MODEL_*",
+    "Checking that a model can call tools · checkCallsTools()",
+    "Setting up the chat's model from a terminal · npm run model, setUpModel(), save(), remove(), secret()",
+    "Answering a person's question with a model · POST /chat, GET /chat, chatRoutes()",
+    "Letting a model call the app's tools from the chat · chatTools(), MAX_ROUNDS",
+    "Checking a chat request before the model is called · POST /chat",
+    "Sending the chat's earlier messages with a question · sent()",
+    "Serving the pods to an MCP client · npm run mcp, podServer()"
+  ],
+  "glossary": [
+    {
+      "term": "ACMG classification",
+      "definition": "one of the five values a laboratory gives a variant under the guidelines of the American College of Medical Genetics and Genomics: pathogenic, likely pathogenic, uncertain significance, likely benign or benign.",
+      "aliases": ["ACMG classifications"]
+    },
+    {
+      "term": "add-on",
+      "definition": "a folder of files that `create-cascade-app --with` adds to the template: `chat`, a chat with a model, and `mcp`, an MCP server.",
+      "aliases": ["add-ons"]
+    },
+    {
+      "term": "address",
+      "definition": "here, where a page or a route of the app is reached: a path such as `/pods/alex-rivera/`, with its query.",
+      "aliases": ["addresses"]
+    },
+    {
+      "term": "base",
+      "definition": "of the template, the app with no add-on: its screens, its server, the sample pods and the tool list. Of an address, the path the app is served under, such as `/cascade/`."
+    },
+    {
+      "term": "box",
+      "definition": "a panel the app draws over a screen for one task, such as making a pod or showing a connection; closing it shows the screen again.",
+      "aliases": ["boxes"]
+    },
+    {
+      "term": "bring in",
+      "definition": "here, to import a hospital's pull into the pod from the connection's box (the button \"Bring it into …\").",
+      "aliases": ["brought in"]
+    },
+    {
+      "term": "CapabilityStatement",
+      "definition": "FHIR's resource in which a server says what software it is and what it supports, served at `<FHIR base>/metadata`.",
+      "vocabulary": "https://hl7.org/fhir/R4/capabilitystatement.html"
+    },
+    {
+      "term": "ClinVar",
+      "definition": "the public archive, kept by the US National Library of Medicine, of how laboratories classify variants, from benign to pathogenic; one of the reference tables.",
+      "vocabulary": "https://ns.cascadeprotocol.org/cascade#VariantClassifications"
+    },
+    {
+      "term": "ClinVar ID",
+      "definition": "the number ClinVar gives one variant, which a pod holds as `clinvarVariationId`.",
+      "aliases": ["ClinVar IDs"]
+    },
+    {
+      "term": "code system",
+      "aliases": ["code systems"],
+      "definition": "a published list of codes for one kind of thing, such as RxNorm for medicines, LOINC for lab tests and SNOMED CT for clinical findings."
+    },
+    {
+      "term": "combination",
+      "definition": "a medicine with more than one active ingredient, such as a tablet of lisinopril with hydrochlorothiazide.",
+      "aliases": ["combinations"]
+    },
+    {
+      "term": "compact read",
+      "definition": "the whole pod as tab-separated text, which the `ask` tool returns a part at a time when called with `format: \"compact\"`; each line is one row of a view, its cells separated by tabs.",
+      "aliases": ["compact reads"]
+    },
+    {
+      "term": "connection",
+      "definition": "one sign-in of one person at one hospital's server. `connect()` returns it as a `Connection`, good for one pull; `pod.connect()` stores the pod's record of it.",
+      "vocabulary": "https://ns.cascadeprotocol.org/cascade#ConnectToServer",
+      "aliases": ["connections"]
+    },
+    {
+      "term": "context",
+      "definition": "what an \"Ask about this\" button sends with a chat's first question: the kind of thing asked about and its identifier, such as a lab change's key."
+    },
+    {
+      "term": "counsellor sentence",
+      "definition": "the line every variant's entry ends with: \"Your clinician or a genetic counsellor can explain what this means for you.\""
+    },
+    {
+      "term": "credit",
+      "definition": "the sentence a reference table's publisher asks to be shown wherever the table's content is, such as LOINC's notice; the app prints it once on each screen that shows what the table says.",
+      "aliases": ["credits"]
+    },
+    {
+      "term": "demo hospital",
+      "definition": "a pretend hospital with made-up patients, from the package cascade-sandbox, which an app or a test signs in to and pulls from with no account and no network; Cascade North and Cascade South are two.",
+      "aliases": ["demo hospitals"]
+    },
+    {
+      "term": "demo person",
+      "definition": "one of the demo hospitals' made-up patients, offered by name when a pod is made; one person may be at two hospitals.",
+      "aliases": ["demo people"]
+    },
+    {
+      "term": "directory",
+      "definition": "the list of hospitals an app offers a person to connect to: one row for each hospital, with its name, the vendor of its system, its FHIR base and the places it serves.",
+      "aliases": ["directories"]
+    },
+    {
+      "term": "door",
+      "definition": "one way a model reaches the app's tools: the chat, WebMCP in the page, or the MCP server.",
+      "aliases": ["doors"]
+    },
+    {
+      "term": "drug class",
+      "definition": "a group of medicines that work alike or are built alike, such as ACE inhibitors, as the US Food and Drug Administration assigns them.",
+      "vocabulary": "https://ns.cascadeprotocol.org/cascade#DrugClasses",
+      "aliases": ["drug classes", "class"]
+    },
+    {
+      "term": "engine",
+      "definition": "the part of cascade-runtime that answers questions about a pod and its reference tables, which a page loads after its first screen is drawn."
+    },
+    {
+      "term": "expression",
+      "definition": "here, a variant written out in HGVS notation, such as `NM_000249.3:c.2042C>T`; one variant may have several.",
+      "aliases": ["expressions"]
+    },
+    {
+      "term": "feed",
+      "definition": "a published list of the versions of reference tables, which an app reads to find newer ones.",
+      "aliases": ["feeds"]
+    },
+    {
+      "term": "FHIR base",
+      "definition": "the URL of a hospital's FHIR server; each record there is at `<FHIR base>/<type>/<id>`.",
+      "vocabulary": "https://ns.cascadeprotocol.org/cascade#serverBaseUrl",
+      "aliases": ["FHIR bases"]
+    },
+    {
+      "term": "Find a hospital",
+      "definition": "the screen that lists the hospitals a person can sign in at, each on a card with its sign-in."
+    },
+    {
+      "term": "host",
+      "definition": "here, the object `podApi(host)` reads its pods, reference tables and hospitals through: `nodeHost()` over folders on Node, another over the browser's own storage in a page.",
+      "aliases": ["hosts"]
+    },
+    {
+      "term": "hosted",
+      "definition": "of a model, run by a provider on the internet, as against on the person's own computer."
+    },
+    {
+      "term": "isError",
+      "definition": "the flag on an MCP tool's result that says the call failed; the result's text is then the reason."
+    },
+    {
+      "term": "key",
+      "definition": "here, a model provider's API key: the password an app sends with each request to a hosted model."
+    },
+    {
+      "term": "kit",
+      "definition": "a story and the exports it uses, which the vocabulary carries for testing, such as `alex-rivera`.",
+      "aliases": ["kits"]
+    },
+    {
+      "term": "lab change",
+      "definition": "a difference between one lab test's results before and after the day a medication started or stopped, as `findChanges()` reports it; it says what moved and never why.",
+      "aliases": ["lab changes"]
+    },
+    {
+      "term": "lane",
+      "definition": "the strip under a trend's chart that draws each medication's days: prescribed, started, stopped."
+    },
+    {
+      "term": "listener",
+      "definition": "the local web server, from cascade-sandbox's `serveDemo()`, that answers for the demo hospitals while the app runs."
+    },
+    {
+      "term": "lockfile",
+      "definition": "`package-lock.json`: npm's record of the exact version of every package an install takes.",
+      "aliases": ["lockfiles"]
+    },
+    {
+      "term": "made app",
+      "definition": "an app as `create-cascade-app` leaves it in a new folder: the template, the chosen add-ons, its packages installed and its sample pods loaded."
+    },
+    {
+      "term": "manifest",
+      "definition": "an add-on's `registry-item.json`: its files, the packages it pins and the npm scripts it adds, in shadcn's registry-item shape.",
+      "aliases": ["manifests"]
+    },
+    {
+      "term": "MCP",
+      "definition": "Model Context Protocol: an open standard by which an app that runs a model, the MCP client, starts a program, the MCP server, and calls the tools it offers.",
+      "aliases": ["MCP client", "MCP clients", "MCP server"]
+    },
+    {
+      "term": "MED-RT",
+      "definition": "the US Veterans Health Administration's table of what medicines do and are made of, from which the drug classes come."
+    },
+    {
+      "term": "model",
+      "definition": "a language model that an app lets answer a person's questions about their records.",
+      "aliases": ["models"]
+    },
+    {
+      "term": "named question",
+      "definition": "a query the vocabulary carries under a name, such as `pod/My active allergies`.",
+      "aliases": ["named questions"]
+    },
+    {
+      "term": "nested panel",
+      "definition": "a panel that LOINC lists as one of another panel's tests.",
+      "aliases": ["nested panels"]
+    },
+    {
+      "term": "never list",
+      "definition": "`NEVER` in `tools.ts`: the PodApi operations no tool may call, such as making an encrypted pod, connecting to a hospital or deleting every pod."
+    },
+    {
+      "term": "panel",
+      "definition": "a set of lab tests reported together, such as a thyroid panel.",
+      "aliases": ["panels"]
+    },
+    {
+      "term": "pin",
+      "definition": "the one address in `app/package.json` naming the build of cascade-runtime the template runs on."
+    },
+    {
+      "term": "pod",
+      "definition": "one person's records, and what that person has said about them, kept as files in one folder.",
+      "aliases": ["pods"]
+    },
+    {
+      "term": "PodApi",
+      "definition": "`podApi(host)` in `pod-api.ts`: every read and write the app makes of its pods and reference tables, as operations that take and give plain JSON. The server, the pages, the commands and the tools all go through it."
+    },
+    {
+      "term": "provider",
+      "definition": "the service a model is reached at, such as Anthropic, Google Gemini, Groq, or a model server on the person's own computer.",
+      "aliases": ["providers"]
+    },
+    {
+      "term": "publisher",
+      "definition": "of a reference table, the body that issues it, such as the Regenstrief Institute for LOINC; the app's code calls it the table's `source`.",
+      "aliases": ["publishers"]
+    },
+    {
+      "term": "pull",
+      "definition": "the records one patient has at one hospital, as `pull()` fetched them in one go, with the FHIR base they came from and when; also the fetching itself.",
+      "aliases": ["pulls", "pulled", "pulling"]
+    },
+    {
+      "term": "record",
+      "definition": "one thing said about a person's health, such as an allergy, a medication or a lab result.",
+      "vocabulary": "https://ns.cascadeprotocol.org/cascade#Record",
+      "aliases": ["records"]
+    },
+    {
+      "term": "redirect URI",
+      "definition": "the app's own URL to which a hospital sends the person's browser when the sign-in is over.",
+      "aliases": ["redirect URIs"]
+    },
+    {
+      "term": "reference tables",
+      "definition": "public code lists, such as RxNorm for medicines, that tell a runtime when two codes mean one thing.",
+      "vocabulary": "https://ns.cascadeprotocol.org/cascade#ReferenceSeries",
+      "aliases": ["reference table"]
+    },
+    {
+      "term": "Refusal",
+      "definition": "the error thrown when the package declines a request it understood, such as a name it does not have; it has written nothing."
+    },
+    {
+      "term": "relation",
+      "definition": "here, the way MED-RT ties a medicine to a class: its established pharmacologic class, its mechanism of action, its physiologic effect or its chemical structure.",
+      "aliases": ["relations"]
+    },
+    {
+      "term": "report",
+      "definition": "one laboratory's classification of one of a person's variants, as a pod holds it; `pod.agreement()` compares each with ClinVar. (A hospital server's `serverReport()` is another thing: what the server says of itself.)"
+    },
+    {
+      "term": "requirement",
+      "definition": "whether LOINC lists a test in a panel as required or optional, or under a condition of its own such as `R-a`."
+    },
+    {
+      "term": "retired code",
+      "definition": "a code its code system no longer uses; the app tags a record that carries one \"Retired code\".",
+      "aliases": ["Retired code"]
+    },
+    {
+      "term": "review status",
+      "definition": "ClinVar's statement of how well a classification is supported, such as `criteria provided, multiple submitters, no conflicts`.",
+      "vocabulary": "https://ns.cascadeprotocol.org/cascade#clinvarReviewStatus"
+    },
+    {
+      "term": "round",
+      "definition": "in a chat, one turn of the model that calls tools, with their results sent back to it.",
+      "aliases": ["rounds"]
+    },
+    {
+      "term": "row",
+      "definition": "one line of a table: of a view, what one view entry holds, a cell per column; of a reference table, what it says of one code or variant.",
+      "aliases": ["rows"]
+    },
+    {
+      "term": "sample",
+      "definition": "a kit's pod saved as files a web page can read.",
+      "aliases": ["samples"]
+    },
+    {
+      "term": "sandbox story",
+      "definition": "a made-up patient at a demo hospital whose records were written to show one outcome, such as a lab result that falls after a medication starts, with that outcome written down beside them.",
+      "aliases": ["sandbox stories"]
+    },
+    {
+      "term": "schema",
+      "definition": "a description, in JSON Schema, of what a tool's input may hold: its properties, the type of each, which are required, and the values or bounds each allows (`enum`, `minimum`, `maximum`).",
+      "vocabulary": "https://json-schema.org/",
+      "aliases": ["schemas"]
+    },
+    {
+      "term": "scope",
+      "definition": "what an app asks a hospital, at sign-in, to let it read, such as `patient/*.read`: every record of the patient.",
+      "aliases": ["scopes"]
+    },
+    {
+      "term": "screen",
+      "definition": "one page of the app at an address of its own, such as a pod's or a reference table's; moving between screens does not load the page again.",
+      "aliases": ["screens"]
+    },
+    {
+      "term": "sealed",
+      "aliases": ["seal", "seals"],
+      "definition": "of a pod or a file, encrypted on disk so that only the secret opens it."
+    },
+    {
+      "term": "secret",
+      "aliases": ["secrets"],
+      "definition": "the six words that open an encrypted pod; `sixWords()` draws them from the EFF long word list, a public list of 7,776 easy-to-type words."
+    },
+    {
+      "term": "section",
+      "definition": "one kind of record on a pod's screen, such as Medications or Lab results: a tile that counts its rows, and a table of them.",
+      "aliases": ["sections"]
+    },
+    {
+      "term": "series",
+      "definition": "one of the reference tables across its versions, such as RxNorm's product ingredients.",
+      "vocabulary": "https://ns.cascadeprotocol.org/cascade#ReferenceSeries"
+    },
+    {
+      "term": "six words",
+      "definition": "the words an encrypted pod is sealed with, shown once when it is made; a person proves they kept them by typing words 2 and 5."
+    },
+    {
+      "term": "SPARQL",
+      "definition": "the W3C query language for data written as statements, as Turtle writes them; `pod.ask()` runs an app's own SPARQL SELECT.",
+      "vocabulary": "https://www.w3.org/TR/sparql11-query/"
+    },
+    {
+      "term": "standard error",
+      "definition": "a program's second output stream, where it writes what it has to say to a person; cascade-mcp's standard output carries only the protocol.",
+      "aliases": ["standard output", "standard input"]
+    },
+    {
+      "term": "step",
+      "definition": "here, one change a person asks the app for from a form on a screen, such as setting a date or making a pod; the screen's route runs it and draws what came of it.",
+      "aliases": ["steps"]
+    },
+    {
+      "term": "story pod",
+      "definition": "a pod of a sandbox story's made-up patient, as against a real person's.",
+      "aliases": ["story pods"]
+    },
+    {
+      "term": "subject",
+      "definition": "the person a pod is about.",
+      "vocabulary": "https://ns.cascadeprotocol.org/cascade#Subject",
+      "aliases": ["subjects"]
+    },
+    {
+      "term": "submitter",
+      "definition": "a laboratory that sent ClinVar its classification of a variant.",
+      "aliases": ["submitters"]
+    },
+    {
+      "term": "tag",
+      "definition": "a word or two the app sets beside a line, a row or a view entry to mark it: `Needs review`, `Differs` or `Retired code`."
+    },
+    {
+      "term": "target",
+      "definition": "one of the two ways the app is built: the Node target, whose pages call the server, and the browser target, which runs PodApi in the page with no server.",
+      "aliases": ["targets"]
+    },
+    {
+      "term": "template",
+      "definition": "here, the folder `app/`: the app as `create-cascade-app` copies it, before any add-on."
+    },
+    {
+      "term": "tier",
+      "definition": "a tool's consent level: `free`, a read that runs unasked, or `ask`, a write the person confirms first.",
+      "aliases": ["tiers"]
+    },
+    {
+      "term": "tile",
+      "definition": "here, a square on a pod's page for one kind of record, with the count of its rows; a click opens its box.",
+      "aliases": ["tiles"]
+    },
+    {
+      "term": "tool",
+      "definition": "a function a model may call: a name, a description, a JSON Schema for its input, and the code that runs it.",
+      "aliases": ["tools"]
+    },
+    {
+      "term": "tool call",
+      "definition": "one run of a tool by a model: the tool's name, the input it was given, whether it succeeded, and what it returned.",
+      "aliases": ["tool calls"]
+    },
+    {
+      "term": "trend",
+      "definition": "the screen that charts one lab test's results over time against the days of one medication."
+    },
+    {
+      "term": "try/",
+      "definition": "the app's browser target as published on the web with the kits' samples, for trying a pod with nothing installed."
+    },
+    {
+      "term": "UI message stream",
+      "definition": "the Vercel AI SDK's format for a chat's reply as server-sent events: the text as it comes, each tool call and its result."
+    },
+    {
+      "term": "Unopened",
+      "definition": "the `Refusal` thrown when a pod does not open with the secret given, or with none; its `outcome` gives the reason, such as `incorrect secret`."
+    },
+    {
+      "term": "variant",
+      "definition": "a difference in one of a person's genes from the reference sequence, as a genetic test reports it.",
+      "vocabulary": "https://ns.cascadeprotocol.org/cascade#GeneticVariantFinding",
+      "aliases": ["variants"]
+    },
+    {
+      "term": "verdict",
+      "definition": "the column of `pod.agreement()`'s rows saying how a report stands to ClinVar: `agrees` when its classification is among the row's, `differs` when the row holds another, and none when ClinVar cannot say."
+    },
+    {
+      "term": "version",
+      "definition": "what a record says at one time; when a source changes a record, the pod keeps the old version and adds a new one. (Of a reference table or the runtime, \"version\" has its everyday meaning.)",
+      "vocabulary": "https://ns.cascadeprotocol.org/cascade#version",
+      "aliases": ["versions"]
+    },
+    {
+      "term": "view",
+      "definition": "a pod's records of one kind, such as medications, as its judgments leave them: one line for each thing however many sources reported it. A named question such as `pod/My medication history` returns a view's rows.",
+      "vocabulary": "https://ns.cascadeprotocol.org/cascade#View",
+      "aliases": ["views"]
+    },
+    {
+      "term": "view entry",
+      "definition": "one thing in a view, such as one medication or one lab result: the records that are one thing, shown as one. A row names it in `entry`, by an IRI that ends in `#` and 64 hexadecimal digits.",
+      "vocabulary": "https://ns.cascadeprotocol.org/cascade#inEntry",
+      "aliases": ["view entries", "entry", "entries"]
+    },
+    {
+      "term": "waiting",
+      "definition": "of an encrypted pod, asked for but not yet made: PodApi holds its six words until the person types back words 2 and 5, and writes nothing before."
+    },
+    {
+      "term": "WebMCP",
+      "definition": "a proposed browser API by which a web page offers tools to a model the browser runs (cascade-runtime's \"model context\" entry names the object)."
+    },
+    {
+      "term": "What changed",
+      "definition": "the part of a pod's screen that draws a card for each lab change, with the results behind it and a link to its trend."
+    },
+    {
+      "term": "world's date",
+      "definition": "the day the demo hospitals answer as of, which the app can set so a story's later records are not yet there."
+    },
+    {
+      "term": "Worth a look",
+      "definition": "here, the list at the top of a pod's page of the few things the app would point a person to, each a sentence linking to its entry."
+    }
+  ],
+  "shaped": ["built.test.ts"],
+  "build": [
+    "The add-ons' manifests, against their folders and the versions the repository tests",
+    "The app's AGENTS.md, against the app it describes",
+    "Screens App.tsx routes, against the addresses the app takes in place",
+    "The app's bundle for each target · vite build",
+    "Building try/, when the tables cannot be read · looks()",
+    "Moving the runtime pin · scripts/pin.mjs",
+    "Annotating a red run's failures · failure-annotations.ts",
+    "Tripwire: a code system's IRI stem written in a source file"
+  ],
+  "randomOrder": []
+}
