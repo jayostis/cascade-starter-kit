@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { join } from "node:path";
-import { test } from "node:test";
+import { before, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import { build, type Rolldown } from "vite";
 
@@ -38,64 +38,106 @@ const ofChat = (id: string) =>
   /\/node_modules\/(ai|@ai-sdk|@assistant-ui)\//.test(id) ||
   id.includes("/app/src/chat/");
 
-test("the Node target's bundle is the app over its typed client, with the chat window in a chunk of its own: no cascade-runtime but its check, terms and tools, no server code and no wasm", async () => {
-  const { chunks, modules } = await bundled();
-  assert.ok(
-    modules.some((id) => id.includes("/node_modules/hono/dist/client/")),
-    "the bundle has no typed client",
-  );
-  assert.ok(
-    modules.some((id) => id.endsWith("/app/src/chat/window.tsx")) &&
-      modules.some((id) => id.includes("/node_modules/@assistant-ui/react/")),
-    "the bundle has no chat window",
-  );
-  assert.ok(
-    modules.some((id) =>
-      id.endsWith("/node_modules/cascade-runtime/dist/browser/check.js"),
-    ),
-    "the bundle has no check of a tool's input",
-  );
-  assert.deepEqual(
-    modules.filter(
-      (id) =>
-        (id.includes("/node_modules/cascade-runtime/") &&
-          !id.endsWith("/dist/browser/check.js") &&
-          !id.endsWith("/dist/src/terms.js") &&
-          !TOOLS_MODULES.test(id)) ||
-        id.includes("/app/server/") ||
-        id.endsWith("/app/pod-api.ts") ||
-        id.includes("/node_modules/@hono/") ||
-        /\/node_modules\/hono\/dist\/(?!client\/|utils\/)/.test(id),
-    ),
-    [],
-  );
-  assert.deepEqual(
-    chunks
-      .filter(({ isEntry }) => isEntry)
-      .flatMap(({ moduleIds }) => moduleIds)
-      .filter(
-        (id) =>
-          /[\\/]node_modules[\\/]zod[\\/]/.test(id) ||
-          ofChat(id.replaceAll("\\", "/")),
-      ),
-    [],
-    "the screens carry the routes' validation or the chat, which only the chat window loads",
-  );
-  assert.ok(
-    chunks
-      .filter(({ isEntry }) => isEntry)
-      .every(({ code }) => code.length < 500_000),
-    "the first visit's chunk passed 500 kB: the chat window is lazy so that it stays under Vite's warning",
-  );
-  assert.deepEqual(
-    chunks
-      .filter(({ code }) => /\.wasm\b/.test(code))
-      .map(({ fileName }) => fileName),
-    [],
-  );
-});
+/**
+ * What the app is built into for each target, read from a build kept in memory. The Node target's pages call the server
+ * through its typed client and load the chat window in a chunk of their own; the browser target runs PodApi in the page
+ * and draws no chat.
+ */
+describe("The app's bundle for each target · vite build", () => {
+  describe("given the Node target's bundle", () => {
+    let chunks: Awaited<ReturnType<typeof bundled>>["chunks"];
+    let modules: string[];
 
-test("the browser target's bundle draws no chat: it carries no AI SDK, no assistant-ui and no chat window", async () => {
-  const { modules } = await bundled("browser");
-  assert.deepEqual(modules.filter(ofChat), []);
+    before(async () => {
+      ({ chunks, modules } = await bundled());
+    });
+
+    it("holds the typed client of the server's routes", () => {
+      assert.ok(
+        modules.some((id) => id.includes("/node_modules/hono/dist/client/")),
+        "the bundle has no typed client",
+      );
+    });
+
+    it("holds the chat window and assistant-ui", () => {
+      assert.ok(
+        modules.some((id) => id.endsWith("/app/src/chat/window.tsx")) &&
+          modules.some((id) =>
+            id.includes("/node_modules/@assistant-ui/react/"),
+          ),
+        "the bundle has no chat window",
+      );
+    });
+
+    it("holds cascade-runtime's check of a tool's input", () => {
+      assert.ok(
+        modules.some((id) =>
+          id.endsWith("/node_modules/cascade-runtime/dist/browser/check.js"),
+        ),
+        "the bundle has no check of a tool's input",
+      );
+    });
+
+    it("holds no other module of cascade-runtime than its check, its terms and its tools, no server code and no PodApi", () => {
+      assert.deepEqual(
+        modules.filter(
+          (id) =>
+            (id.includes("/node_modules/cascade-runtime/") &&
+              !id.endsWith("/dist/browser/check.js") &&
+              !id.endsWith("/dist/src/terms.js") &&
+              !TOOLS_MODULES.test(id)) ||
+            id.includes("/app/server/") ||
+            id.endsWith("/app/pod-api.ts") ||
+            id.includes("/node_modules/@hono/") ||
+            /\/node_modules\/hono\/dist\/(?!client\/|utils\/)/.test(id),
+        ),
+        [],
+      );
+    });
+
+    it("keeps zod and the chat window out of the chunk a first visit loads", () => {
+      assert.deepEqual(
+        chunks
+          .filter(({ isEntry }) => isEntry)
+          .flatMap(({ moduleIds }) => moduleIds)
+          .filter(
+            (id) =>
+              /[\\/]node_modules[\\/]zod[\\/]/.test(id) ||
+              ofChat(id.replaceAll("\\", "/")),
+          ),
+        [],
+        "the screens carry the routes' validation or the chat, which only the chat window loads",
+      );
+    });
+
+    it("keeps the chunk a first visit loads under 500 kB", () => {
+      assert.ok(
+        chunks
+          .filter(({ isEntry }) => isEntry)
+          .every(({ code }) => code.length < 500_000),
+        "the first visit's chunk passed 500 kB: the chat window is lazy so that it stays under Vite's warning",
+      );
+    });
+
+    it("names no `.wasm` file in any chunk", () => {
+      assert.deepEqual(
+        chunks
+          .filter(({ code }) => /\.wasm\b/.test(code))
+          .map(({ fileName }) => fileName),
+        [],
+      );
+    });
+  });
+
+  describe("given the browser target's bundle (`--mode browser`)", () => {
+    let modules: string[];
+
+    before(async () => {
+      ({ modules } = await bundled("browser"));
+    });
+
+    it("holds no AI SDK, no assistant-ui and no chat window", () => {
+      assert.deepEqual(modules.filter(ofChat), []);
+    });
+  });
 });

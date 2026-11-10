@@ -127,7 +127,7 @@ export function Steps({
 }
 
 /**
- * The box over the pod's page of the connection `now`, which closes to `back`: while it signs in, fetches or brings its
+ * The box over the pod's page of the connection, which closes to `back`: while it signs in, fetches or brings its
  * record in, its steps; once it failed, why, to the person by the failure's kind (`failures` replacing a kind's row
  * for the host), with `signInAgain(label)` where signing in again can help, and Try again where bringing it in can be
  * tried again; else what the hospital has, whose record it is when not the pod's person, and the button that brings it
@@ -136,14 +136,14 @@ export function Steps({
 export function ConnectionBox({
   pod,
   titles,
-  now,
+  connection,
   back,
   failures,
   signInAgain,
 }: {
   pod: string;
   titles?: ReadonlyMap<string, string>;
-  now: ConnectionNow;
+  connection: ConnectionNow;
   back: string;
   failures?: Readonly<Record<string, Failure>>;
   signInAgain: (label: string) => ReactNode;
@@ -156,12 +156,12 @@ export function ConnectionBox({
   const grade =
     typed === undefined
       ? undefined
-      : gradePerson(typed, now.patientNames ?? []);
-  const name = hospitalName(now.row.name);
+      : gradePerson(typed, connection.patientNames ?? []);
+  const name = hospitalName(connection.row.name);
   const bring = (label: string, className?: string) => (
     <PostButton
       intent="bring"
-      fields={{ connection: String(now.n) }}
+      fields={{ connection: String(connection.n) }}
       className={className}
       doing={BRINGING}
     >
@@ -173,54 +173,54 @@ export function ConnectionBox({
       {body}
     </Box>
   );
-  if (now.step === "bringing in")
+  if (connection.step === "bringing in")
     return box(
       <div className={card}>
-        <Steps connection={now} />
+        <Steps connection={connection} />
       </div>,
     );
-  if (now.step === "signing in" || now.step === "pulling")
+  if (connection.step === "signing in" || connection.step === "pulling")
     return box(
       <div className={card}>
-        <Steps connection={now} />
+        <Steps connection={connection} />
         <p className={muted}>This refreshes itself until the record is here.</p>
       </div>,
     );
-  if (now.failed !== undefined) {
+  if (connection.failed !== undefined) {
     const person =
-      now.failure === undefined
+      connection.failure === undefined
         ? undefined
-        : failureSaid(now.failure, name, failures);
+        : failureSaid(connection.failure, name, failures);
     return box(
       <div className={card}>
         {person === undefined ? (
-          <p>{now.failed}</p>
+          <p>{connection.failed}</p>
         ) : (
           <>
             <p role="alert">{person.said}</p>
             {person.again && signInAgain(`Sign in again at ${name}`)}
             <p className="muted detail text-[0.85rem] text-muted">
-              {now.failed}
+              {connection.failed}
             </p>
           </>
         )}
-        {now.notRecorded !== undefined && (
-          <p className={muted}>Not recorded: {now.notRecorded}</p>
+        {connection.notRecorded !== undefined && (
+          <p className={muted}>Not recorded: {connection.notRecorded}</p>
         )}
-        {now.retry && bring("Try again")}
+        {connection.retry && bring("Try again")}
       </div>,
     );
   }
-  const about = now.patient;
-  const denied = (now.pulled?.denied ?? []).map(({ type, category }) =>
+  const about = connection.patient;
+  const denied = (connection.pulled?.denied ?? []).map(({ type, category }) =>
     category === undefined ? type : `${type} (${category})`,
   );
-  const missing = now.pulled?.missing ?? [];
-  const asOf = pulledAsOfSaid(now.asOf);
+  const missing = connection.pulled?.missing ?? [];
+  const asOf = pulledAsOfSaid(connection.asOf);
   return box(
     <>
       <div className={card}>
-        <Steps connection={now} />
+        <Steps connection={connection} />
       </div>
       {about !== undefined &&
         (grade === undefined ? (
@@ -239,7 +239,7 @@ export function ConnectionBox({
           )
         ))}
       <div className={card}>
-        {(now.sources ?? []).map((source, at) => (
+        {(connection.sources ?? []).map((source, at) => (
           <div key={at}>
             <p>
               <strong>What {name} has:</strong>{" "}
@@ -261,8 +261,8 @@ export function ConnectionBox({
           <p className={muted}>Not allowed to read: {denied.join(", ")}</p>
         )}
         {asOf !== undefined && <p className={muted}>{asOf}</p>}
-        {now.notRecorded !== undefined && (
-          <p className={muted}>Not recorded: {now.notRecorded}</p>
+        {connection.notRecorded !== undefined && (
+          <p className={muted}>Not recorded: {connection.notRecorded}</p>
         )}
         {grade === "certainly-not"
           ? bring(`Bring ${about}'s records into ${who}'s pod anyway`, quiet)
@@ -274,15 +274,15 @@ export function ConnectionBox({
   );
 }
 
-/** The box of the pod's connection `now`, its buttons signing in again and bringing the record in; it closes to the pod. */
+/** The box of the pod's connection, its buttons signing in again and bringing the record in; it closes to the pod. */
 export function Connection({
   pod,
   titles,
-  now,
+  connection,
 }: {
   pod: string;
   titles: ReadonlyMap<string, string>;
-  now: ConnectionNow;
+  connection: ConnectionNow;
 }) {
   const host = useHost();
   const address = useAddress();
@@ -290,11 +290,11 @@ export function Connection({
     <ConnectionBox
       pod={pod}
       titles={titles}
-      now={now}
+      connection={connection}
       back={address.pod(pod)}
       failures={host.failures}
       signInAgain={(label) => (
-        <SignIn fhirBase={now.row.fhirBase}>{label}</SignIn>
+        <SignIn fhirBase={connection.row.fhirBase}>{label}</SignIn>
       )}
     />
   );

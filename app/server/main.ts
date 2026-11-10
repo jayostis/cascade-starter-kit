@@ -21,7 +21,7 @@ import { podApi } from "../pod-api.ts";
 import { PODS } from "../pods.ts";
 import { demoPeople, worldInstant } from "../said.ts";
 import { appServer, type ChatServed, type Served } from "./app.ts";
-import { builtPages } from "./built.ts";
+import { buildStalePages } from "./built.ts";
 import type { Own } from "./guard.ts";
 
 const APP = fileURLToPath(new URL("../", import.meta.url));
@@ -32,7 +32,7 @@ const told = new Set<string>();
 
 /** The pages built into `dist/` when it has none, or what they are built from or with has changed since. */
 async function pagesBuilt() {
-  await builtPages(
+  await buildStalePages(
     APP,
     async () => {
       stdout.write("Building the app's pages into dist/…\n");

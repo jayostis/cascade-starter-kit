@@ -28,7 +28,7 @@ const waitFor = z.union([z.literal(true), z.literal("change")], {
 const input = <Shape extends z.ZodRawShape>(shape: Shape) =>
   z.looseObject(shape, { error: "the input must be an object" }).partial();
 
-export const INPUTS = {
+export const INPUT_SCHEMAS = {
   pods: input({}),
   held: input({}),
   pod: input({ pod: string }),
@@ -76,13 +76,15 @@ export const INPUTS = {
   bring: input({ pod: string, connection: positiveInteger }),
 };
 
-export type Operation = keyof typeof INPUTS;
+export type Operation = keyof typeof INPUT_SCHEMAS;
 
 /** Only the fields a schema names: its `looseObject` lets the server take others, but a caller may not send them. */
 type Named<T> = { [P in keyof T as string extends P ? never : P]: T[P] };
 
 /** What `operation` may be sent, as its route's schema says. */
-export type Input<K extends Operation> = Named<z.input<(typeof INPUTS)[K]>>;
+export type Input<K extends Operation> = Named<
+  z.input<(typeof INPUT_SCHEMAS)[K]>
+>;
 
 /** The sentence an input the schema refused is refused with, PodApi's own for the same input. */
 export function refusalOf(error: {
