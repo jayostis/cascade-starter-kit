@@ -22,7 +22,7 @@
     "build:try": "tsc -b && node dist/try/build/cli.js build-pages",
     "serve:pages": "tsc -b && node dist/try/build/cli.js serve-pages",
     "test:browser": "tsc -b && node scripts/with-add-ons.mjs && node --test dist/test-browser/try.test.js dist/test-browser/starter.test.js",
-    "test:launcher": "tsc -b && node --test dist/test-browser/launcher.test.js",
+    "test:launcher": "tsc -b && node --test --test-reporter=spec --test-reporter-destination=stdout --test-reporter=./dist/test-browser/failure-annotations.js --test-reporter-destination=stdout dist/test-browser/launcher.test.js",
     "test:live": "tsc -b && node --test dist/test-browser/live.test.js"
   },
   "devDependencies": {
