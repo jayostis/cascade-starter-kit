@@ -575,7 +575,7 @@ test("a table opens newest first, a row with no date last", () => {
     { test: "Creatinine", performed: "2025-01-05" },
   ];
   assert.deepEqual(
-    said.opening(section, rows).map(({ test }: { test: string }) => test),
+    said.openingOrder(section, rows).map(({ test }: { test: string }) => test),
     ["Potassium", "Creatinine", "Glucose", "Sodium"],
   );
 });

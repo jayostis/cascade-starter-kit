@@ -1489,7 +1489,7 @@ function variantRows(answers: Answers, said?: VariantsSaid): SectionRow[] {
 }
 
 /** The section's rows in the order its table opens in, a row with nothing to sort by last either way. */
-export function opening(
+export function openingOrder(
   section: Section,
   rows: readonly SectionRow[],
 ): SectionRow[] {

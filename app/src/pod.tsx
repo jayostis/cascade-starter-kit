@@ -27,7 +27,7 @@ import {
   localDay,
   named,
   namingCredits,
-  opening,
+  openingOrder,
   type Person,
   personName,
   placeOf,
@@ -93,7 +93,7 @@ export interface PodShown {
 }
 
 /**
- * A section's filter box and table of `rows`, given in `opening` order, a heading button per column, each cell holding
+ * A section's filter box and table of `rows`, given in `openingOrder`, a heading button per column, each cell holding
  * what it sorts by in `data-key`: a heading sorts by its column, one way then the other, and the filter hides the rows
  * without its text.
  */
@@ -212,7 +212,7 @@ function tile(
   by?: { href: string; label: string; title: string },
 ) {
   const id = `see-${slug(section.title)}`;
-  const opened = opening(section, rows);
+  const opened = openingOrder(section, rows);
   const current =
     section.current === undefined ? opened : opened.filter(section.current);
   const stopped = opened.length - current.length;
@@ -472,7 +472,7 @@ function Changed({
             )}
             <Table
               section={LAB_SECTION}
-              rows={opening(LAB_SECTION, all)}
+              rows={openingOrder(LAB_SECTION, all)}
               entryHref={entryHref}
             />
           </Box>
