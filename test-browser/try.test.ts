@@ -40,6 +40,8 @@ import { codeStems, terms } from "cascade-runtime/terms";
 import { openPodWith } from "cascade-runtime/published";
 import { type Served, servePages } from "../try/build/serve.js";
 import {
+  allowAs,
+  bringIn,
   called,
   inPlace,
   inputOf,
@@ -49,6 +51,7 @@ import {
   recordTools,
   type Registered,
   settled,
+  signInAt,
   tiles,
   watched,
 } from "./shown.js";
@@ -649,17 +652,11 @@ test("a demo person's new pod signs in at both hospitals in a popup through try/
     if (bearer?.[1]) secrets.add(bearer[1]);
   });
   const signIn = async (hospital: string, again = false): Promise<Page> => {
-    const [popup] = await Promise.all([
-      page.waitForEvent("popup"),
-      page.click(
-        `button:has-text("Sign in ${again ? "again " : ""}at ${view.hospitalName(hospital)}")`,
-      ),
-    ]);
+    const popup = await signInAt(page, view.hospitalName(hospital), again);
     popup.on("framenavigated", (frame) => {
       const code = new URL(frame.url()).searchParams.get("code");
       if (code) secrets.add(code);
     });
-    await popup.waitForSelector('button[value="allow"]');
     const scope = new URL(popup.url()).searchParams.get("scope") ?? "";
     assert.ok(
       scope.split(" ").includes("patient/*.rs"),
@@ -724,10 +721,7 @@ test("a demo person's new pod signs in at both hospitals in a popup through try/
       frame.src = `data:text/html,<script>parent.postMessage({ type: "cascade-runtime:signed-in", url: "${location.origin}/try/signed-in.html?code=forged&state=forged" }, "*")</script>`;
       document.body.append(frame);
     });
-    await allowed.check(
-      `input[name="patient"][value="${patients.get(hospital)}"]`,
-    );
-    await allowed.click('button[value="allow"]');
+    await allowAs(page, allowed, patients.get(hospital) ?? "");
     await boxed();
     assert.deepEqual(
       (await texts(page, "#connection .card p")).filter((line) =>
@@ -913,16 +907,12 @@ test("in try/, a new pod for Tobias Fenn signed in at North names his hip condit
     await settled(page);
     await newPod(page, view.familyFirst(person));
     const [north = ""] = person.at.map(({ name }) => name);
-    const [popup] = await Promise.all([
-      page.waitForEvent("popup"),
-      page.click(`button:has-text("Sign in at ${view.hospitalName(north)}")`),
-    ]);
-    await popup.waitForSelector('button[value="allow"]');
-    await popup.check(`input[name="patient"][value="${patients.get(north)}"]`);
-    await popup.click('button[value="allow"]');
-    await settled(page);
-    await page.click("#connection button:has-text('Bring it into')");
-    await settled(page, 300_000);
+    await allowAs(
+      page,
+      await signInAt(page, view.hospitalName(north)),
+      patients.get(north) ?? "",
+    );
+    await bringIn(page);
     await page.waitForSelector('body[data-tables="ready"]', {
       timeout: 120_000,
     });
@@ -1114,16 +1104,12 @@ test("in the lab results' box of Tamsin's pod, a heading sorts by its column one
     await settled(marsh);
     await newPod(marsh, view.familyFirst(person));
     const [north = ""] = person.at.map(({ name }) => name);
-    const [popup] = await Promise.all([
-      marsh.waitForEvent("popup"),
-      marsh.click(`button:has-text("Sign in at ${view.hospitalName(north)}")`),
-    ]);
-    await popup.waitForSelector('button[value="allow"]');
-    await popup.check(`input[name="patient"][value="${patients.get(north)}"]`);
-    await popup.click('button[value="allow"]');
-    await settled(marsh);
-    await marsh.click("#connection button:has-text('Bring it into')");
-    await settled(marsh, 300_000);
+    await allowAs(
+      marsh,
+      await signInAt(marsh, view.hospitalName(north)),
+      patients.get(north) ?? "",
+    );
+    await bringIn(marsh);
     await marsh.click('a.tile[href="#see-lab-results"]');
     await marsh.click('#see-lab-results th button:has-text("Value")');
     const values = await column(marsh, "Value");
@@ -2508,18 +2494,12 @@ test("in try/, Ines Calloway's new pod signed in at North says what changed afte
     await page.waitForFunction(
       () => navigator.serviceWorker.controller !== null,
     );
-    const [popup] = await Promise.all([
-      page.waitForEvent("popup"),
-      page.click(
-        `button:has-text("Sign in at ${view.hospitalName(north.name)}")`,
-      ),
-    ]);
-    await popup.waitForSelector('button[value="allow"]');
-    await popup.check(`input[name="patient"][value="${patient}"]`);
-    await popup.click('button[value="allow"]');
-    await settled(page);
-    await page.click("#connection button:has-text('Bring it into')");
-    await settled(page, 300_000);
+    await allowAs(
+      page,
+      await signInAt(page, view.hospitalName(north.name)),
+      patient,
+    );
+    await bringIn(page);
 
     const card = page.locator(".change");
     await card.first().waitFor({ timeout: 60_000 });
@@ -2595,13 +2575,7 @@ test("in try/, the world's date set before a sign-in shows on the hospital's sig
     const signInPage = async (
       allow: boolean,
     ): Promise<string | null | undefined> => {
-      const [popup] = await Promise.all([
-        page.waitForEvent("popup"),
-        page.click(
-          `button:has-text("Sign in at ${view.hospitalName(north.name)}")`,
-        ),
-      ]);
-      await popup.waitForSelector('button[value="allow"]');
+      const popup = await signInAt(page, view.hospitalName(north.name));
       const line = popup.locator("p.as-of time");
       const stood =
         (await line.count()) === 0
@@ -2781,9 +2755,7 @@ test("in try/, Tamsin Vale signed in at North with the world's date at her story
         ),
       ]);
       await popup.waitForSelector('button[value="allow"]');
-      await popup.check(`input[name="patient"][value="${story.patient}"]`);
-      await popup.click('button[value="allow"]');
-      await settled(page);
+      await allowAs(page, popup, story.patient);
       await page.click("#connection button:has-text('Bring')");
       await settled(page, 300_000);
     };
@@ -3053,16 +3025,11 @@ test("in try/, a pod for Rowan Ellery Marsh signed in at North as Odalys Brandt 
     await page.waitForFunction(
       () => navigator.serviceWorker.controller !== null,
     );
-    const [popup] = await Promise.all([
-      page.waitForEvent("popup"),
-      page.click(
-        `button:has-text("Sign in at ${view.hospitalName(north.name)}")`,
-      ),
-    ]);
-    await popup.waitForSelector('button[value="allow"]');
-    await popup.check(`input[name="patient"][value="${patient}"]`);
-    await popup.click('button[value="allow"]');
-    await settled(page);
+    await allowAs(
+      page,
+      await signInAt(page, view.hospitalName(north.name)),
+      patient,
+    );
     assert.equal(
       (await page.textContent("#connection .note.warm"))?.trim(),
       "This record is Odalys Brandt's, not Rowan Ellery Marsh's.",
