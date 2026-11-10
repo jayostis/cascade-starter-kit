@@ -616,7 +616,7 @@ test("a record's person against the pod's: the box's words and button by grade",
       pod: "rowan-ellery-marsh",
       titles: withTitle ? new Map([["rowan-ellery-marsh", rowan]]) : undefined,
       back: "#",
-      now: at("pulled", {
+      connection: at("pulled", {
         ...PULLED,
         patient: `${given} ${family}`,
         patientNames: named(given, family),
@@ -693,7 +693,7 @@ test("a failed connection's box speaks to a person by the failure's kind, naming
     drawn.connectionBox({
       pod: "rowan-ellery-marsh",
       back: "#",
-      now: at("failed", { failed: detail, failure }),
+      connection: at("failed", { failed: detail, failure }),
       ...more,
     });
   for (const [kind, [action, button]] of Object.entries(kinds) as [
@@ -729,7 +729,7 @@ test("a failed connection's box speaks to a person by the failure's kind, naming
   const plain = drawn.connectionBox({
     pod: "rowan-ellery-marsh",
     back: "#",
-    now: at("failed", { failed: "Refused: nothing to bring in" }),
+    connection: at("failed", { failed: "Refused: nothing to bring in" }),
   });
   assert.ok(plain.includes("Refused: nothing to bring in"));
   assert.ok(!plain.includes("Sign in again"));
@@ -753,7 +753,7 @@ test("a pod's page with a connection holds its tiles and the connection's box, w
     drawn.connectionBox({
       pod: "alex-rivera",
       back: "#",
-      now: at("pulled", {
+      connection: at("pulled", {
         sources: [{ records: { Condition: 2 }, holdsSubjectsRecords: false }],
         pulled: { missing: [], denied: [] },
       }),
@@ -985,7 +985,7 @@ test("the world's date: the form shows the day it is set to, with Set and Today,
       drawn.connectionBox({
         pod: "alex-rivera",
         back: "#",
-        now: at("pulled", { ...PULLED, ...more }),
+        connection: at("pulled", { ...PULLED, ...more }),
       }),
     );
   assert.ok(box({ asOf }).includes("Pulled as of 1 February 2024."));
