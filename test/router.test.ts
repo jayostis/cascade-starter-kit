@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { before, describe, it } from "node:test";
 import { screens, textOf } from "./render.js";
 
 /** A host whose PodApi is `api`, as the routes take it, and whose engine lands when `engine` settles. */
@@ -127,97 +127,151 @@ const api = {
 const main = (markup: string) =>
   textOf(/<main\b[^>]*>([\s\S]*)<\/main>/.exec(markup)?.[1] ?? "");
 
-test("a screen is drawn from its route's loader, and a step its action refuses is drawn as Not done with the rules' sentence, never as gone wrong, which stays when a box is opened over it", async () => {
-  const pod = main(await routed.draw(api, "/pods/alex-rivera/"));
-  assert.match(pod, /^Alex Rivera Nothing here yet\./);
-  const set = { intent: "world-date", date: "soon" };
-  const NOT_DONE = /^Not done "soon" is not a date\.$/;
-  assert.match(
-    main(await routed.draw(api, "/pods/alex-rivera/", set)),
-    NOT_DONE,
-  );
-  assert.match(
-    main(
-      await routed.draw(
-        api,
-        "/pods/alex-rivera/",
-        set,
-        "/pods/alex-rivera/#new-pod",
-      ),
-    ),
-    NOT_DONE,
-  );
-});
+/** The page as a fresh load leaves it: no state on the body, and every button on. */
+function resetPage() {
+  for (const key of Object.keys(body.dataset)) delete body.dataset[key];
+  for (const button of buttons) button.disabled = false;
+}
 
-test("a read of an encrypted pod that will not open draws the pod's unlock screen at the address asked for", async () => {
-  const unopened = async () => {
-    throw Object.assign(new Error("a secret is needed"), {
-      name: "Unopened",
-      outcome: "secret needed",
+/** Waits until `done` holds, or fails after two seconds. */
+async function until(done: () => boolean, what: string) {
+  const deadline = Date.now() + 2000;
+  while (!done()) {
+    assert.ok(Date.now() < deadline, `never ${what}`);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+}
+
+/**
+ * Each screen has a route: its loader reads what the screen shows from PodApi, and its action runs a step, one change a
+ * person asks for from a form. `watch` marks the page busy while either runs, and tells a refusal, which the person can
+ * act on, from the app going wrong.
+ */
+describe("Reading for a screen and running a step · routes(), watch()", () => {
+  describe("given a pod's screen", () => {
+    const set = { intent: "world-date", date: "soon" };
+    const NOT_DONE = /^Not done "soon" is not a date\.$/;
+
+    it("draws what the route's loader read: the pod's title, and that nothing is here yet", async () => {
+      const pod = main(await routed.draw(api, "/pods/alex-rivera/"));
+      assert.match(pod, /^Alex Rivera Nothing here yet\./);
     });
-  };
-  const markup = await routed.draw(
-    { ...api, answers: unopened },
-    "/pods/alex-rivera/entries/e1",
-  );
-  assert.match(textOf(markup), /Open Alex Rivera's pod This pod is encrypted/);
-  assert.match(markup, /autocomplete="current-password"/i);
-});
 
-test("while a step runs the page is busy, says what it is doing and has every button off, so no second step starts", async () => {
-  const router = await routed.watched(
-    { api: { ...api, setWorldDate: () => new Promise(() => undefined) } },
-    "/pods/alex-rivera/",
-  );
-  const formData = new FormData();
-  formData.set("intent", "world-date");
-  formData.set("doing", "Setting the date…");
-  formData.set("date", "2024-02-01");
-  void router.navigate("/pods/alex-rivera/", { formMethod: "post", formData });
-  assert.equal(body.dataset.state, "busy");
-  assert.equal(routed.isBusy(), true);
-  assert.equal(routed.sayingNow(), "Setting the date…");
-  assert.deepEqual(
-    buttons.map(({ disabled }) => disabled),
-    [true, true],
-  );
-});
+    it('draws a step PodApi refuses as "Not done" with the refusal\'s sentence', async () => {
+      assert.match(
+        main(await routed.draw(api, "/pods/alex-rivera/", set)),
+        NOT_DONE,
+      );
+    });
 
-test("a read every screen needs that fails says the page went wrong, and why", async () => {
-  await routed.watched(
-    {
-      api: {
-        ...api,
-        pods: async () => {
-          throw new Error("the pods' folder is gone");
+    it('keeps "Not done" and its sentence when a box is opened over the screen', async () => {
+      assert.match(
+        main(
+          await routed.draw(
+            api,
+            "/pods/alex-rivera/",
+            set,
+            "/pods/alex-rivera/#new-pod",
+          ),
+        ),
+        NOT_DONE,
+      );
+    });
+  });
+
+  describe("given an encrypted pod that does not open (`Unopened`)", () => {
+    it("draws the pod's open screen, with a field for its words, at the address asked for", async () => {
+      const unopened = async () => {
+        throw Object.assign(new Error("a secret is needed"), {
+          name: "Unopened",
+          outcome: "secret needed",
+        });
+      };
+      const markup = await routed.draw(
+        { ...api, answers: unopened },
+        "/pods/alex-rivera/entries/e1",
+      );
+      assert.match(
+        textOf(markup),
+        /Open Alex Rivera's pod This pod is encrypted/,
+      );
+      assert.match(markup, /autocomplete="current-password"/i);
+    });
+  });
+
+  describe("when a step is running", () => {
+    before(async () => {
+      resetPage();
+      const router = await routed.watched(
+        { api: { ...api, setWorldDate: () => new Promise(() => undefined) } },
+        "/pods/alex-rivera/",
+      );
+      const formData = new FormData();
+      formData.set("intent", "world-date");
+      formData.set("doing", "Setting the date…");
+      formData.set("date", "2024-02-01");
+      void router.navigate("/pods/alex-rivera/", {
+        formMethod: "post",
+        formData,
+      });
+    });
+
+    it("sets the page's state to `busy`", () => {
+      assert.equal(body.dataset.state, "busy");
+      assert.equal(routed.isBusy(), true);
+    });
+
+    it("returns from `sayingNow()` the words the form gave for what it is doing", () => {
+      assert.equal(routed.sayingNow(), "Setting the date…");
+    });
+
+    it("disables every button", () => {
+      assert.deepEqual(
+        buttons.map(({ disabled }) => disabled),
+        [true, true],
+      );
+    });
+  });
+
+  describe("when a read fails for a reason that is no refusal", () => {
+    it("sets the page's state to `error`, with the reason, for a read every screen needs", async () => {
+      resetPage();
+      await routed.watched(
+        {
+          api: {
+            ...api,
+            pods: async () => {
+              throw new Error("the pods' folder is gone");
+            },
+          },
         },
-      },
-    },
-    "/pods/alex-rivera/",
-  );
-  assert.equal(body.dataset.state, "error");
-  assert.match(body.dataset.error ?? "", /the pods' folder is gone/);
-});
+        "/pods/alex-rivera/",
+      );
+      assert.equal(body.dataset.state, "error");
+      assert.match(body.dataset.error ?? "", /the pods' folder is gone/);
+    });
 
-test("a part that fills once the engine lands, whose read then fails for a reason that is no refusal, says the page went wrong, and why", async () => {
-  let land: () => void = () => undefined;
-  const engine = new Promise<void>((resolve) => (land = resolve));
-  const series = { test: { code: "1", name: "Potassium" }, results: [] };
-  const host = {
-    api: {
-      ...api,
-      trend: async ({ named }: { named: boolean }) => {
-        if (named) throw new Error("the tables are unreadable");
-        return { labs: [], timeline: [], series };
-      },
-    },
-    engine,
-  };
-  await routed.watched(host, "/pods/alex-rivera/trend?test=1");
-  routed.warm(host);
-  routed.ready();
-  land();
-  await new Promise((resolve) => setTimeout(resolve, 50));
-  assert.equal(body.dataset.state, "error");
-  assert.match(body.dataset.error ?? "", /the tables are unreadable/);
+    it("sets the page's state to `error`, with the reason, for a part read after the engine has loaded", async () => {
+      resetPage();
+      let land: () => void = () => undefined;
+      const engine = new Promise<void>((resolve) => (land = resolve));
+      const series = { test: { code: "1", name: "Potassium" }, results: [] };
+      const host = {
+        api: {
+          ...api,
+          trend: async ({ named }: { named: boolean }) => {
+            if (named) throw new Error("the tables are unreadable");
+            return { labs: [], timeline: [], series };
+          },
+        },
+        engine,
+      };
+      await routed.watched(host, "/pods/alex-rivera/trend?test=1");
+      routed.warm(host);
+      routed.ready();
+      land();
+      await until(() => body.dataset.state === "error", "went to `error`");
+      assert.match(body.dataset.error ?? "", /the tables are unreadable/);
+    });
+  });
 });

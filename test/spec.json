@@ -526,7 +526,13 @@
     "bundle.test.ts",
     "failure-annotations.test.ts",
     "guide.test.ts",
-    "inputs.test.ts"
+    "inputs.test.ts",
+    "page.test.ts",
+    "pin.test.ts",
+    "pull.test.ts",
+    "router.test.ts",
+    "samples.test.ts",
+    "stems.test.ts"
   ],
   "build": [
     "The add-ons' manifests, against their folders and the versions the repository tests",
