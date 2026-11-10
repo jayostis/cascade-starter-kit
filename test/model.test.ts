@@ -42,16 +42,16 @@ const { modelFrom, modelOf } = (await import(
   modelOf(settings: Settings): Chosen;
   modelFrom(env: Record<string, string>): Chosen | undefined;
 };
-const { check, flow, save, remove, secret } = (await import(
+const { checkCallsTools, setUpModel, save, remove, secret } = (await import(
   new URL("../../build/app/model.ts", import.meta.url).href
 )) as {
   save(folder: string, values: Record<string, string>): Promise<void>;
   remove(folder: string): Promise<boolean>;
-  check(
+  checkCallsTools(
     model: Chosen,
     options?: { seconds?: number; waiting?: number; onWaiting?: () => void },
   ): Promise<{ ok: boolean; reason?: string }>;
-  flow(
+  setUpModel(
     args: string[],
     terminal: Terminal,
     folder: string,
@@ -348,7 +348,7 @@ test("a model that does not answer is waited for in the open, then given up on w
   const limits = { seconds: 0.5, waiting: 0.1 };
   let waiting = 0;
   const onWaiting = () => (waiting += 1);
-  const hosted = await check(
+  const hosted = await checkCallsTools(
     { ...modelOf(settings), local: false },
     {
       ...limits,
@@ -362,14 +362,14 @@ test("a model that does not answer is waited for in the open, then given up on w
   assert.match(String(hosted.reason), /npm run model/);
   assert.match(String(hosted.reason), /another model name/);
 
-  const local = await check(modelOf(settings), limits);
+  const local = await checkCallsTools(modelOf(settings), limits);
   assert.match(String(local.reason), /still be loading/);
   assert.match(String(local.reason), /npm run model/);
   assert.doesNotMatch(String(local.reason), /busy|another model name/);
 
   const app = await mkdtemp(join(folder, "app-"));
   const run = scripted(["6", `${url}/v1`, "slow", "n"], [KEY]);
-  assert.equal(await flow([], run.terminal, app, limits), 1);
+  assert.equal(await setUpModel([], run.terminal, app, limits), 1);
   assert.match(run.text(), /Still waiting for an answer…/);
 });
 
@@ -416,7 +416,7 @@ test("the check passes only when the model calls the tool with arguments its sch
             key: KEY,
           })
         : modelOf({ provider: "anthropic", url, name: "m", key: KEY });
-    const result = await check(model);
+    const result = await checkCallsTools(model);
     const label = `${what} (${protocol})`;
     if (expected === true) assert.deepEqual(result, { ok: true }, label);
     else {
@@ -432,7 +432,9 @@ test("the check passes only when the model calls the tool with arguments its sch
     ["gemini", false],
   ] as const) {
     const { url, bodies } = await serving(openai.text);
-    await check(modelOf({ provider, url: `${url}/v1`, name: "m", key: KEY }));
+    await checkCallsTools(
+      modelOf({ provider, url: `${url}/v1`, name: "m", key: KEY }),
+    );
     assert.equal(
       JSON.stringify(bodies[0]!.chat_template_kwargs) ===
         JSON.stringify({ enable_thinking: false }),
@@ -531,7 +533,7 @@ test("a rejected key or a busy model is said plainly, with what to do, and no re
           }
         : { status, json: { error: { message: text } } },
     );
-    const { ok, reason } = await check(
+    const { ok, reason } = await checkCallsTools(
       modelOf({
         provider: provider ?? "gemini",
         url: provider === "anthropic" ? url : `${url}/v1`,
@@ -584,7 +586,7 @@ test("the check sends the call's result back as the chat does, extra included, a
           },
         },
   );
-  const failed = await check(modelOf(settings(failing.url)));
+  const failed = await checkCallsTools(modelOf(settings(failing.url)));
   assert.equal(failed.ok, false);
   assert.match(failed.reason!, /second round.*thought_signature/);
   assert.equal(failing.bodies.length, 2);
@@ -601,7 +603,7 @@ test("the check sends the call's result back as the chat does, extra included, a
   const answering = await serving(() =>
     ++round === 1 ? call() : openai.text(),
   );
-  assert.deepEqual(await check(modelOf(settings(answering.url))), {
+  assert.deepEqual(await checkCallsTools(modelOf(settings(answering.url))), {
     ok: true,
   });
   assert.equal(answering.bodies.length, 2);
@@ -680,7 +682,7 @@ test("the flow keeps the four settings in .env after a model that calls a tool, 
   await writeFile(env, "KEEP=1\n");
   const good = await serving(openai.call);
   const run = scripted(["6", `${good.url}/v1`, "stub-model"], [KEY]);
-  assert.equal(await flow([], run.terminal, app), 0);
+  assert.equal(await setUpModel([], run.terminal, app), 0);
   assert.deepEqual(await settingsIn(env), {
     CASCADE_MODEL_PROVIDER: "other",
     CASCADE_MODEL_URL: `${good.url}/v1`,
@@ -695,7 +697,7 @@ test("the flow keeps the four settings in .env after a model that calls a tool, 
   assert.ok(!run.text().includes(KEY), "the key was shown");
   assert.equal(good.headers[0]!.authorization, `Bearer ${KEY}`);
 
-  assert.equal(await flow(["--off"], scripted([]).terminal, app), 0);
+  assert.equal(await setUpModel(["--off"], scripted([]).terminal, app), 0);
   assert.deepEqual(await envIn(env), { KEEP: "1" });
 });
 
@@ -738,7 +740,7 @@ test("the flow changes nothing for a model that does not call tools or a key the
   ] as const) {
     const { url } = await serving(reply);
     const run = scripted(["6", `${url}/v1`, "m", "n"], [KEY]);
-    assert.equal(await flow([], run.terminal, app), 1);
+    assert.equal(await setUpModel([], run.terminal, app), 1);
     assert.match(run.text(), said);
     assert.ok(!run.text().includes(KEY), "the key was shown");
     await assert.rejects(readFile(env), { code: "ENOENT" });
@@ -748,7 +750,7 @@ test("the flow changes nothing for a model that does not call tools or a key the
 test("the flow says a free provider's terms and where to make its key, and writes nothing without one", async () => {
   const app = await mkdtemp(join(folder, "app-"));
   const run = scripted(["2"], [""]);
-  assert.equal(await flow([], run.terminal, app), 2);
+  assert.equal(await setUpModel([], run.terminal, app), 2);
   assert.match(run.text(), /https:\/\/console\.groq\.com\/keys/);
   assert.match(run.text(), /30 days/);
   assert.match(run.text(), /story pods, not a person's own/);
