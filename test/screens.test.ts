@@ -2437,7 +2437,7 @@ test("Ask about this: once the chat names a model, each What changed card, each 
           person: undefined,
           held: [],
         },
-        ask,
+        { ask },
       );
   const lines = {
     [REVIEW]: [
@@ -2463,7 +2463,7 @@ test("Ask about this: once the chat names a model, each What changed card, each 
           medication: "617310",
         },
       },
-      ask,
+      { ask },
     );
   const entry = (ask: boolean) =>
     draw(
@@ -2474,7 +2474,7 @@ test("Ask about this: once the chat names a model, each What changed card, each 
         read: { entry: said.entryOf(ENTRY_ANSWERS, "bb22"), panels: [] },
         held: [],
       },
-      ask,
+      { ask },
     );
   for (const [page, asked] of [
     [

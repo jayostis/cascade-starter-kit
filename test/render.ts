@@ -100,7 +100,7 @@ import { PodPage } from "./pod.tsx";
 import { TrendPage } from "./trend.tsx";
 const pages = { ClassesPage, EntryPage, PanelPage, PodPage, TrendPage };
 const host = { api: {}, about: {}, samples: [] };
-export const markup = (page, props, ask = false) =>
+export const markup = (page, props, { ask = false } = {}) =>
   renderToStaticMarkup(
     createElement(
       HostProvider,
@@ -125,7 +125,7 @@ export const markup = (page, props, ask = false) =>
 export type Markup = (
   page: "ClassesPage" | "EntryPage" | "PanelPage" | "PodPage" | "TrendPage",
   props: object,
-  ask?: boolean,
+  options?: { ask?: boolean },
 ) => string;
 
 let bundled: Promise<Markup> | undefined;
