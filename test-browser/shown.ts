@@ -116,6 +116,23 @@ export async function bringIn(page: Page): Promise<void> {
   await settled(page, 300_000);
 }
 
+/** Opens the world's date form on the pod's page and sets the date to `day` (`YYYY-MM-DD`), or with none presses Today. */
+export async function setWorldDate(
+  page: Page,
+  day: string | undefined,
+): Promise<void> {
+  const form = page.locator(".world-date");
+  await form.locator("details").evaluate((details: HTMLDetailsElement) => {
+    details.open = true;
+  });
+  if (day === undefined)
+    await form.getByRole("button", { name: "Today", exact: true }).click();
+  else {
+    await form.locator('input[type="date"]').fill(day);
+    await form.getByRole("button", { name: "Set", exact: true }).click();
+  }
+}
+
 /**
  * Waits for the page showing to be drawn, `timeout` ms at most: its `main` is there, nothing in it is pending, and the
  * body is not busy and says `ready` (`opening` and any other state wait); it cannot tell a screen from before a click
