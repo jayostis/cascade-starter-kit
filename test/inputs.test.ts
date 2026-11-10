@@ -8,10 +8,10 @@ const { INPUTS: CHECKED, inputRefusal } = (await import(
   INPUTS: Record<string, Record<string, unknown>>;
   inputRefusal: (operation: string, input: unknown) => string | undefined;
 };
-const { INPUTS: SCHEMAS, refusalOf } = (await import(
+const { INPUT_SCHEMAS: SCHEMAS, refusalOf } = (await import(
   new URL("../../app/server/inputs.ts", import.meta.url).href
 )) as {
-  INPUTS: Record<string, z.ZodObject>;
+  INPUT_SCHEMAS: Record<string, z.ZodObject>;
   refusalOf: (error: z.ZodError) => string;
 };
 

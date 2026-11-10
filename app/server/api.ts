@@ -5,7 +5,7 @@ import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { HTTPException } from "hono/http-exception";
 import type { PodApi } from "../pod-api.ts";
-import { INPUTS, type Operation, refusalOf } from "./inputs.ts";
+import { INPUT_SCHEMAS, type Operation, refusalOf } from "./inputs.ts";
 
 /** What the server answers when it does not answer an operation's output: why it refused, or that it failed. */
 export type Output = Record<string, unknown>;
@@ -28,7 +28,7 @@ const refused = (error: unknown): error is Refused =>
   (error.name === "Refusal" || error.name === "Unopened");
 
 const checked = <K extends Operation>(operation: K) =>
-  zValidator("json", INPUTS[operation], (result, c) =>
+  zValidator("json", INPUT_SCHEMAS[operation], (result, c) =>
     result.success
       ? undefined
       : c.json({ refused: refusalOf(result.error) }, 400),
