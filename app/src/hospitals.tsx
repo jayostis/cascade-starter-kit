@@ -247,7 +247,7 @@ export function ConnectionBox({
             </p>
             <p className={muted}>
               {who}'s pod{" "}
-              {source.claimed
+              {source.holdsSubjectsRecords
                 ? "already has records from here"
                 : "has nothing from here yet"}
               .

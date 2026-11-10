@@ -302,7 +302,7 @@ async function nodeJoin(family: string): Promise<Joined> {
         hospitalId(loaded),
       );
       has.set(hospital.name, hasLines(hospital.name, await pod.look(files)));
-      const imported = await pod.import(files, { claim: true });
+      const imported = await pod.import(files, { claimProfiles: true });
       assert.equal(imported.refused, undefined);
     }
     const answers = await answersOf(pod);
@@ -1387,8 +1387,8 @@ test("a failed copy whose database another connection holds open says so, and on
 /** What a pod shows after an import, its own address left out, so two pods compare. */
 interface After {
   readonly refused?: string;
-  readonly claimed: number;
-  readonly unclaimed: number;
+  readonly claimedProfiles: number;
+  readonly unclaimedProfiles: number;
   readonly rows: string[][];
 }
 
@@ -1414,8 +1414,8 @@ async function shownAfter(
       ]);
   return {
     ...(imported.refused === undefined ? {} : { refused: imported.refused }),
-    claimed: imported.claimed.length,
-    unclaimed: imported.unclaimed.length,
+    claimedProfiles: imported.claimedProfiles.length,
+    unclaimedProfiles: imported.unclaimedProfiles.length,
     rows: rows.sort((a, b) => (JSON.stringify(a) < JSON.stringify(b) ? -1 : 1)),
   };
 }
@@ -1463,7 +1463,7 @@ test("in the browser, look and import read the files a person picks as Node read
         look: await node.look(path),
         after: await shownAfter(
           node,
-          await node.import(path, { claim: true }),
+          await node.import(path, { claimProfiles: true }),
           QUESTIONS,
         ),
       });
@@ -1570,7 +1570,7 @@ test("in the browser, look and import read the files a person picks as Node read
         ) => Promise<After>;
         return run(
           scope.pod,
-          await scope.pod.import(scope.picked, { claim: true }),
+          await scope.pod.import(scope.picked, { claimProfiles: true }),
           questions,
         );
       },

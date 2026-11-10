@@ -754,7 +754,7 @@ test("a pod's page with a connection holds its tiles and the connection's box, w
       pod: "alex-rivera",
       back: "#",
       now: at("pulled", {
-        sources: [{ records: { Condition: 2 }, claimed: false }],
+        sources: [{ records: { Condition: 2 }, holdsSubjectsRecords: false }],
         pulled: { missing: [], denied: [] },
       }),
     }),

@@ -84,7 +84,7 @@ before(async () => {
   const { pull } = await pulled(north, story.patient);
   const statin = await openPod();
   const imported = await statin.import(pullFiles(pull, "north"), {
-    claim: true,
+    claimProfiles: true,
   });
   assert.equal(imported.refused, undefined);
   pods.set(STATIN, statin);
