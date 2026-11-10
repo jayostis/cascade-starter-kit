@@ -314,16 +314,18 @@ smallest input that shows it, and asserts what it means, never bytes or a whole 
 
 - `test/api.test.ts` puts PodApi behind the server in the process: `appServer(...)` from `server/app.ts` over a pod
   replayed from a kit into a temporary folder, called with `app.request()`, so no port is opened. Copy it to test a new
-  operation or route: the pods are listed, a pod's answers come back, an input the rules refuse is a 400 `{ refused }`.
+  operation or route: it lists the pods by name, returns rows for a question's name, and answers 400 with the rules' reason, `{ refused }`, for a pod there is none of.
 - `test/tools.test.ts` holds the tool list to its rules: every tool in `tools.ts` is `free` or `ask`, and none calls an
   operation of `NEVER`. A tool you add needs a row in `RUNS`, or the test fails.
 - `e2e/pod.test.ts` is the one browser test, on Playwright: it starts the app with `npm start`, opens Alex Rivera's pod
   and waits for the page to say it is ready (`body[data-state="ready"]`, never `main`'s text), then looks for its
-  tiles (`.tiles .tile`). A failure prints `body[data-trace]`, the page's last changes of state. Chromium is not
+  tiles (`.tiles .tile`), as two steps of one test. A failure prints `body[data-trace]`, the page's last changes of state. Chromium is not
   downloaded by `npm install`; `npx playwright install chromium` once, then `npm run test:e2e`.
 
-To add a test, write a `*.test.ts` in `test/` (`import { expect, test } from "vitest"`); Vitest runs everything there
-(`vitest.config.ts`). Import the app's files by their `.ts` names.
+To add a test, write a `*.test.ts` in `test/` (`import { describe, expect, it } from "vitest"`); Vitest runs everything
+there (`vitest.config.ts`). Import the app's files by their `.ts` names. Name a `describe` for what the app can do and the
+API it does it with (`Serving PodApi to the app's pages · POST /api/<operation>`), a second `describe` for the situation
+(`with Alex Rivera's kit replayed through its second import`), and an `it` that completes "it …" with one outcome.
 
 ## WebMCP, the doors and the tiers
 

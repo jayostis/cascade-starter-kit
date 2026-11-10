@@ -16,9 +16,9 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { after, before, test } from "node:test";
+import { after, before, describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { type Browser, chromium, type Page } from "playwright";
+import { type Browser, chromium, type Locator, type Page } from "playwright";
 import {
   called,
   inPlace,
@@ -256,235 +256,33 @@ const storage = (page: Page) =>
     all: JSON.stringify([{ ...localStorage }, { ...sessionStorage }]),
   }));
 
-test("asking to open another pod moves the app there in place, and the question, the answer and Recent chats stay, the chat open", async () => {
-  const page = await browser.newPage();
-  await page.goto(`${modelled.origin}/pods/ada-lovelace/`);
-  await inPlace(page, async () => {
-    await ask(page, ASKS);
-    await page.waitForURL(`${modelled.origin}/pods/ines-calloway/`);
-    await page.locator(".chat-log .model", { hasText: "Done." }).waitFor();
-  });
-  await page
-    .locator("h1", { hasText: /^Ines Calloway$/ })
-    .first()
-    .waitFor();
-  assert.equal(await page.locator(".chat-log .you").textContent(), ASKS);
-  assert.equal(await page.locator(".chat-log .model").textContent(), "Done.");
-  assert.equal(
-    await page.locator(".chat-recent li button").textContent(),
-    ASKS,
-  );
-  await page.waitForFunction(
-    (title) =>
-      (
-        JSON.parse(localStorage.getItem("cascade.chats") ?? "[]") as {
-          title: string;
-          pod: string;
-        }[]
-      ).some((each) => each.title === title && each.pod === "ines-calloway"),
-    ASKS,
-  );
-  const { chats, open } = await storage(page);
-  assert.deepEqual(
-    chats.filter(({ title }) => title === ASKS).map(({ id, pod }) => [id, pod]),
-    [[open, "ines-calloway"]],
-  );
-  await page.close();
-});
+/** The names of the pods the app served by Node lists. */
+const podNames = async (): Promise<string[]> =>
+  (
+    (await (await post(modelled.origin, "/api/pods", {})).json()) as {
+      pods: { name: string }[];
+    }
+  ).pods.map(({ name }) => name);
 
-test("a move within the pod shown does not make the chat follow the next click to another pod", async () => {
-  const page = await browser.newPage();
-  await page.goto(`${modelled.origin}/pods/ines-calloway/`);
-  await ask(page, ASKS);
-  await page.locator(".chat-log .model", { hasText: "Done." }).waitFor();
-  await page.locator("aside nav a", { hasText: "Ada Lovelace" }).click();
-  await page
-    .locator("h1", { hasText: /^Ada Lovelace$/ })
-    .first()
-    .waitFor();
-  assert.equal(await page.locator(".chat-log .you").count(), 0);
-  assert.equal(await page.locator(".chat-recent li button").count(), 0);
-  await page.close();
-});
-
-test("on the Node target the pod shown offers the one list to the model context, the pod filled in, and a read runs over the server", async () => {
-  const context = await browser.newContext();
-  await context.addInitScript(recordTools);
-  try {
-    const page = await context.newPage();
-    await page.goto(`${modelled.origin}/pods/ines-calloway/`);
-    const { names } = await listed();
-    await page.waitForFunction(
-      (count) =>
-        (globalThis as unknown as Registered).registered.length >= count,
-      names.length,
-    );
-    assert.deepEqual(await offered(page), names);
-    assert.deepEqual(await inputOf(page, "open_trend", false), {
-      properties: ["test", "medication"],
-      required: ["test"],
-    });
-    const pods = await called(page, "list_pods");
-    assert.ok("result" in pods, JSON.stringify(pods));
-    assert.ok((pods.result as string[]).includes("ines-calloway"));
-    const rows = await called(
-      page,
-      "ask",
-      { question: "pod/My lab results" },
-      false,
-    );
-    assert.ok("result" in rows, JSON.stringify(rows));
-  } finally {
-    await context.close();
-  }
-});
-
-test("Stop ends the call to the model, not just the spinner", async () => {
-  const page = await browser.newPage();
-  await page.goto(`${modelled.origin}/pods/ada-lovelace/`);
-  await ask(page, "tell me a long story");
-  await page.locator(".chat-log .model", { hasText: "Once upon" }).waitFor();
-  await page.getByRole("button", { name: "Stop" }).click();
-  await page.locator(".chat-log .stopped").waitFor();
-  for (let waited = 0; stub.stopped() === 0 && waited < 5000; waited += 50)
-    await new Promise((done) => setTimeout(done, 50));
-  assert.equal(stub.stopped(), 1);
-  await page.close();
-});
-
-test("with no model set the window says to run npm run model and has no form; with one, its bar names the model and where it runs, and no page, request, stream or storage holds its key or address", async () => {
-  const page = await browser.newPage();
-  await page.goto(`${bare.origin}/`);
-  await page.locator(".chat-off").waitFor();
-  assert.match(
-    (await page.locator(".chat").textContent()) ?? "",
-    /npm run model/,
-  );
-  assert.equal(await page.locator(".chat-form").count(), 0);
-  await page.close();
-
-  const seen: Promise<string>[] = [];
-  const watched = await browser.newPage();
-  watched.on("request", (request) =>
-    seen.push(Promise.resolve(`${request.url()} ${request.postData() ?? ""}`)),
-  );
-  watched.on("response", (response) =>
-    seen.push(response.text().catch(() => "")),
-  );
-  await watched.goto(`${modelled.origin}/pods/ada-lovelace/`);
-  assert.equal(
-    await watched.locator(".chat-bar .muted").textContent(),
-    "stub-1, on this computer",
-  );
-  await ask(watched, ASKS);
-  await watched.locator(".chat-log .model", { hasText: "Done." }).waitFor();
-  seen.push(storage(watched).then(({ all }) => all));
-  seen.push(watched.content());
-  const shown = (await Promise.all(seen)).join("\n");
-  await watched.close();
-  assert.match(shown, /"type":"tool-input-available"/);
-  assert.match(shown, /"name":"stub-1"/);
-  assert.equal(shown.includes(KEY), false);
-  assert.equal(shown.includes(stub.url), false);
-});
-
-test("a write the model asks for waits on the page's confirm: Cancel makes no pod and tells the model no, and Allow makes it", async () => {
-  const page = await browser.newPage();
-  await page.goto(`${modelled.origin}/pods/ada-lovelace/`);
-  const asking = page.getByRole("alertdialog");
-  const pods = async () =>
-    (
-      (await (await post(modelled.origin, "/api/pods", {})).json()) as {
-        pods: { name: string }[];
-      }
-    ).pods.map(({ name }) => name);
-
-  await ask(page, "make a pod for Cora Diaz");
-  await asking.waitFor();
-  assert.match((await asking.textContent()) ?? "", /Make a pod.*Cora Diaz/);
-  await asking.getByRole("button", { name: "Cancel" }).click();
-  await page.locator(".chat-log .model", { hasText: "Done." }).waitFor();
-  assert.ok(stub.told().includes("The person said no"), stub.told().join());
-  assert.equal((await pods()).includes("cora-diaz"), false);
-
-  await page.getByRole("button", { name: "New chat" }).click();
-  await ask(page, "make a pod for Cora Diaz");
-  await asking.getByRole("button", { name: "Allow" }).click();
-  await page.locator("aside nav a", { hasText: "Cora Diaz" }).waitFor();
-  assert.equal((await pods()).includes("cora-diaz"), true);
-  await page.close();
-});
-
-test("a write the model asked for is withdrawn when its chat is closed: the box goes, nothing is made, and the model is not asked again", async () => {
-  const page = await browser.newPage();
-  await page.goto(`${modelled.origin}/pods/ada-lovelace/`);
-  const posts: string[] = [];
-  page.on("request", (request) => {
-    if (isPost(request)) posts.push(request.url());
-  });
-  await ask(page, "make a pod for Dora Xu");
-  const asking = page.getByRole("alertdialog");
-  await asking.waitFor();
-  const before = posts.length;
-  await page.getByRole("button", { name: "New chat" }).dispatchEvent("click");
-  await asking.waitFor({ state: "detached" });
-  await page.waitForTimeout(500);
-  assert.equal(posts.length, before);
+/** Makes an encrypted pod for `person` and confirms its six words, as the page does; gives the pod's name. */
+async function encryptedPod(person: string): Promise<string> {
   const made = (await (
-    await post(modelled.origin, "/api/pods", {})
-  ).json()) as {
-    pods: { name: string }[];
-  };
-  assert.equal(
-    made.pods.some(({ name }) => name === "dora-xu"),
-    false,
-  );
-  await page.close();
-});
-
-test("after Allow at a demo hospital the connection's box moves on by itself, to Bring it in, and from bringing it in to the pod's page", async () => {
-  const made = await post(bare.origin, "/api/makePod", {
-    person: "Ines Calloway",
+    await post(modelled.origin, "/api/makePod", { person, encrypt: true })
+  ).json()) as { pod: string };
+  const { words } = (await (
+    await post(modelled.origin, "/api/waitingWords", { pod: made.pod })
+  ).json()) as { words: string };
+  const six = words.split(" ");
+  const opened = await post(modelled.origin, "/api/confirmWords", {
+    pod: made.pod,
+    word2: six[1],
+    word5: six[4],
+    password: words,
+    username: made.pod,
   });
-  assert.equal(made.status, 200);
-  const page = await browser.newPage();
-  await page.goto(`${bare.origin}/pods/ines-calloway/`);
-  const signIn = page.getByRole("button", { name: /^Sign in at / }).first();
-  await signIn.click();
-  const allow = page.getByRole("button", { name: "Allow" });
-  await allow.waitFor();
-  await page.goBack();
-  await page.waitForSelector('body[data-state="ready"]');
-  assert.equal(
-    await page.getAttribute("body", "data-state"),
-    "ready",
-    "Back after the sign-in's full page did not restore a ready page",
-  );
-  assert.ok(
-    await signIn.isEnabled(),
-    "Back after the sign-in's full page left its buttons off",
-  );
-  await signIn.click();
-  await allow.click();
-  const bring = page.getByRole("button", { name: /^Bring it into / });
-  await bring.waitFor({ timeout: 30_000 });
-  assert.equal(new URL(page.url()).origin, bare.origin);
-  await bring.click();
-  await page
-    .locator("main .note", { hasText: /^Brought in the record from / })
-    .waitFor({ timeout: 60_000 });
-
-  await page.goto(`${bare.origin}/pods/ines-calloway/connections/999`);
-  await page.locator("h1", { hasText: /^Ines Calloway$/ }).waitFor();
-  assert.equal(
-    await page.locator("#connection").count(),
-    0,
-    "a connection the pod has not opens a box",
-  );
-  await page.goto(`${bare.origin}/pods/nobody-here/connections/1`);
-  await page.locator("h1", { hasText: /^Not found$/ }).waitFor();
-  await page.close();
-});
+  assert.equal(opened.status, 200);
+  return made.pod;
+}
 
 /** The page's `POST /chat` answered with `chunks` as the AI SDK's UI message stream, as the app's server answers; the model is still named by the app. */
 const answering = (page: Page, chunks: object[]) =>
@@ -517,135 +315,26 @@ const saying = (text: string) => [
   { type: "finish-step" },
 ];
 
+/** Puts an "Ask about this" button for `context`, labelled `label`, on the page, as a card of the app carries one; gives its locator. */
+const askAbout = async (
+  page: Page,
+  context: object,
+  label: string,
+): Promise<Locator> => {
+  await page.evaluate(
+    ([data, text]) => {
+      document.body.insertAdjacentHTML(
+        "beforeend",
+        `<button id="asker" data-ask='${data}' data-ask-label="${text}">Ask about this</button>`,
+      );
+    },
+    [JSON.stringify(context), label] as const,
+  );
+  return page.locator("#asker");
+};
+
 const isPost = (request: { url(): string; method(): string }) =>
   request.url().endsWith("/chat") && request.method() === "POST";
-
-test("a finding the model's tool found is drawn as a card with the app's sentence, its numbers and row links, and Open the trend goes to the trend", async () => {
-  const view = "/pods/ines-calloway/trend?test=18262-6&medication=617310";
-  const finding = {
-    key: "start:617310:18262-6",
-    kind: "after start",
-    direction: "down",
-    said: "LDL was lower after atorvastatin started.",
-    unit: "mg/dL",
-    test: { code: "18262-6", notation: "18262-6", name: "LDL" },
-    medication: {
-      name: "atorvastatin",
-      date: "2024-03-01",
-      dateIs: "start of use",
-    },
-    before: { count: 2, mean: 160, min: 150, max: 170 },
-    after: { count: 1, mean: 95, min: 95, max: 95 },
-    view,
-    rows: [
-      {
-        entry: "lab-1",
-        performed: "2024-01-10T00:00:00Z",
-        value: "150",
-        unit: "mg/dL",
-        side: "before",
-      },
-      {
-        entry: "lab-2",
-        performed: "2024-06-10T00:00:00Z",
-        value: "95",
-        unit: "mg/dL",
-        side: "after",
-      },
-    ],
-  };
-  const page = await browser.newPage();
-  await answering(page, [
-    { type: "start-step" },
-    {
-      type: "tool-input-available",
-      toolCallId: "c1",
-      toolName: "find_changes",
-      input: { pod: "ines-calloway" },
-    },
-    { type: "tool-output-available", toolCallId: "c1", output: [finding] },
-    { type: "finish-step" },
-    ...saying("Here it is."),
-  ]);
-  await page.goto(`${modelled.origin}/pods/ines-calloway/`);
-  await ask(page, "find anything interesting");
-  const card = page.locator(".chat-log .card");
-  await card.waitFor();
-  const said = (await card.textContent()) ?? "";
-  assert.match(said, /LDL was lower after atorvastatin started\./);
-  assert.match(said, /mean 160 mg\/dL over 2 results/);
-  assert.match(said, /mean 95 mg\/dL over 1 result\b/);
-  assert.deepEqual(
-    await card
-      .locator("li a")
-      .evaluateAll((links) => links.map((link) => link.getAttribute("href"))),
-    ["/pods/ines-calloway/entries/lab-1", "/pods/ines-calloway/entries/lab-2"],
-  );
-  await inPlace(page, async () => {
-    await card.getByRole("button", { name: "Open the trend" }).click();
-    await page.waitForURL(`${modelled.origin}${view}`);
-  });
-
-  await page.goto(`${modelled.origin}/pods/ines-calloway/`);
-  await page.getByLabel("Ask a question").waitFor();
-  await page.evaluate(() => {
-    document.body.insertAdjacentHTML(
-      "beforeend",
-      `<button id="asker" data-ask='{"kind":"entry","id":"x"}' data-ask-label="Lisinopril">Ask about this</button>`,
-    );
-  });
-  const sent = page.waitForRequest(isPost);
-  await page.locator("#asker").click();
-  const body = (await sent).postDataJSON();
-  assert.deepEqual(body.context, { kind: "entry", id: "x" });
-  assert.deepEqual(
-    body.messages.map(({ role, parts }: { role: string; parts: unknown }) => ({
-      role,
-      parts,
-    })),
-    [
-      {
-        role: "user",
-        parts: [
-          { type: "text", text: "What is this, and where did it come from?" },
-        ],
-      },
-    ],
-  );
-  assert.equal(
-    await page.locator(".chat-about").textContent(),
-    "About: Lisinopril",
-  );
-  assert.equal(await page.locator(".chat-chips").isHidden(), true);
-  assert.equal(
-    await page.locator(".chat-log .you").textContent(),
-    "What is this, and where did it come from?",
-  );
-  await page.locator(".chat-log .model").waitFor();
-  assert.match(
-    (await page.locator(".chat-log .model").textContent()) ?? "",
-    /^Here it is\./,
-  );
-
-  await page.goto(`${modelled.origin}/pods/ines-calloway/`);
-  await page.getByLabel("Ask a question").waitFor();
-  await page.evaluate(() => {
-    document.body.insertAdjacentHTML(
-      "beforeend",
-      `<button id="asker" data-ask='{"kind":"entry","id":"y"}' data-ask-label="Aspirin">Ask about this</button>`,
-    );
-  });
-  let requests = 0;
-  page.on("request", (request) => {
-    if (isPost(request)) requests += 1;
-  });
-  await page.locator("#asker").dblclick();
-  await page.locator(".chat-about", { hasText: "Aspirin" }).waitFor();
-  await page.locator(".chat-log .model").waitFor();
-  await page.locator(".chat-send:not([hidden])").waitFor();
-  assert.equal(requests, 1);
-  await page.close();
-});
 
 /** A page with the chat window open on a long answer about a long label, in a window of this size. */
 const openOnLongAnswer = async (width: number, height: number) => {
@@ -654,116 +343,13 @@ const openOnLongAnswer = async (width: number, height: number) => {
   await page.goto(`${modelled.origin}/pods/ines-calloway/`);
   const label = "A long label about one finding of the pod. ".repeat(6);
   await page.getByLabel("Ask a question").waitFor();
-  await page.evaluate((text) => {
-    document.body.insertAdjacentHTML(
-      "beforeend",
-      `<button id="asker" data-ask='{"kind":"finding","key":"x"}' data-ask-label="${text}">Ask about this</button>`,
-    );
-  }, label);
-  await page.locator("#asker").click();
+  await (await askAbout(page, { kind: "finding", key: "x" }, label)).click();
   await page
     .locator(".chat-log .model", { hasText: "A long answer" })
     .waitFor();
   await page.locator(".chat-send:not([hidden])").waitFor();
   return { page, label };
 };
-
-test("the question box stays in view with the page at its top, in a short window and a phone-sized one", async () => {
-  for (const [width, height] of [
-    [375, 667],
-    [844, 390],
-  ] as const) {
-    const { page } = await openOnLongAnswer(width, height);
-    await page.evaluate(() => window.scrollTo(0, 0));
-    const input = (await page.locator(".chat-form input").boundingBox())!;
-    assert.ok(
-      input.y >= 0 && input.y + input.height <= height,
-      `at ${width}x${height} the question box is ${input.y}+${input.height}`,
-    );
-    await page.close();
-  }
-});
-
-test("on a phone the About line is clamped to one line, the page scrolls its end above the open window, and a long answer opens at its question", async () => {
-  const { page, label } = await openOnLongAnswer(390, 600);
-
-  const box = async (selector: string) =>
-    (await page.locator(selector).boundingBox())!;
-  const log = await box(".chat-log");
-  const lines = await page
-    .locator(".chat-about")
-    .evaluate(
-      (element) =>
-        element.getBoundingClientRect().height /
-        parseFloat(getComputedStyle(element).lineHeight),
-    );
-  assert.ok(lines <= 1.05, `the About line is ${lines} lines`);
-  assert.equal(
-    await page.locator(".chat-about").getAttribute("title"),
-    `About: ${label}`,
-  );
-  const question = await box(".chat-log .you");
-  assert.ok(
-    question.y >= log.y - 1 &&
-      question.y + question.height <= log.y + log.height,
-    `question ${question.y}+${question.height}, log ${log.y}+${log.height}`,
-  );
-
-  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-  const strip = await box(".chat");
-  const last = await page.evaluate(
-    () => document.querySelector("main")!.getBoundingClientRect().bottom,
-  );
-  assert.ok(
-    last <= strip.y + 1,
-    `the page ends at ${last}, the strip starts at ${strip.y}`,
-  );
-
-  await page.reload();
-  const reopened = await box(".chat-log .you");
-  const room = await box(".chat-log");
-  assert.ok(
-    reopened.y >= room.y - 1 &&
-      reopened.y + reopened.height <= room.y + room.height,
-    `after a reload the question is ${reopened.y}+${reopened.height}, the log ${room.y}+${room.height}`,
-  );
-  await page.close();
-});
-
-test("an open chat leaves the page's own content in view, and the window folds to its bar and stays folded in the tab", async () => {
-  const page = await browser.newPage({
-    viewport: { width: 1100, height: 850 },
-  });
-  await answering(page, saying("A long answer. ".repeat(400)));
-  await page.goto(`${modelled.origin}/pods/ines-calloway/`);
-  await ask(page, "say a lot");
-  await page
-    .locator(".chat-log .model", { hasText: "A long answer" })
-    .waitFor();
-  const strip = page.locator(".chat");
-  const height = async () => (await strip.boundingBox())!.height;
-  assert.ok((await height()) < 850 / 2, `the strip is ${await height()} px`);
-  assert.ok(
-    await page
-      .locator(".chat-log")
-      .evaluate((log) => log.scrollHeight > log.clientHeight),
-    "the log scrolls inside the strip",
-  );
-
-  await page.getByRole("button", { name: "Hide chat" }).click();
-  assert.equal(await page.locator(".chat-form").isVisible(), false);
-  const bar = await height();
-  assert.ok(bar < 100, `the bar is ${bar} px`);
-  await page.reload();
-  assert.equal(await page.locator(".chat-form").isVisible(), false);
-  await page.getByRole("button", { name: "Show chat" }).click();
-  assert.equal(await page.locator(".chat-form").isVisible(), true);
-  await page.getByRole("button", { name: "Hide chat" }).click();
-  await page.locator(".chat-recent summary").click();
-  await page.locator(".chat-recent li button").first().click();
-  assert.equal(await page.locator(".chat-form").isVisible(), true);
-  await page.close();
-});
 
 /** Every file under `folder`, by path relative to it. */
 async function filesUnder(folder: string): Promise<string[]> {
@@ -777,192 +363,988 @@ async function filesUnder(folder: string): Promise<string[]> {
   return found;
 }
 
-test("an encrypted pod's chat is kept in neither localStorage nor sessionStorage", async () => {
-  const made = (await (
-    await post(modelled.origin, "/api/makePod", {
-      person: "Grace Hopper",
-      encrypt: true,
-    })
-  ).json()) as { pod: string };
-  const { words } = (await (
-    await post(modelled.origin, "/api/waitingWords", { pod: made.pod })
-  ).json()) as { words: string };
-  const six = words.split(" ");
-  const opened = await post(modelled.origin, "/api/confirmWords", {
-    pod: made.pod,
-    word2: six[1],
-    word5: six[4],
-    password: words,
-    username: made.pod,
+/**
+ * The chat add-on puts a chat window on every page of the app; a question goes to the model the app was set up with
+ * (`npm run model`), and the model reads the pod with the app's tools. These leaves are what only a browser shows:
+ * what the window keeps, where it follows, and what never leaves the server.
+ */
+describe("Chatting with a model about a pod · add-ons/chat", () => {
+  test("when a model answers a question with a request to open another pod", async (t) => {
+    const page = await browser.newPage();
+    await page.goto(`${modelled.origin}/pods/ada-lovelace/`);
+    await inPlace(page, async () => {
+      await ask(page, ASKS);
+      await page.waitForURL(`${modelled.origin}/pods/ines-calloway/`);
+      await page.locator(".chat-log .model", { hasText: "Done." }).waitFor();
+    });
+    await page
+      .locator("h1", { hasText: /^Ines Calloway$/ })
+      .first()
+      .waitFor();
+    await t.test(
+      "moves the app to the other pod without loading a page",
+      async () => {
+        assert.equal(new URL(page.url()).pathname, "/pods/ines-calloway/");
+        assert.ok(
+          (await page.locator("h1", { hasText: /^Ines Calloway$/ }).count()) >
+            0,
+        );
+      },
+    );
+    await t.test(
+      "keeps the question and the answer in the open chat",
+      async () => {
+        assert.equal(await page.locator(".chat-log .you").textContent(), ASKS);
+        assert.equal(
+          await page.locator(".chat-log .model").textContent(),
+          "Done.",
+        );
+      },
+    );
+    await t.test(
+      "lists the chat under Recent chats by its question",
+      async () => {
+        assert.equal(
+          await page.locator(".chat-recent li button").textContent(),
+          ASKS,
+        );
+      },
+    );
+    await page.waitForFunction(
+      (title) =>
+        (
+          JSON.parse(localStorage.getItem("cascade.chats") ?? "[]") as {
+            title: string;
+            pod: string;
+          }[]
+        ).some((each) => each.title === title && each.pod === "ines-calloway"),
+      ASKS,
+    );
+    await t.test(
+      "stores the chat under the pod it moved to, as the tab's open chat",
+      async () => {
+        const { chats, open } = await storage(page);
+        assert.deepEqual(
+          chats
+            .filter(({ title }) => title === ASKS)
+            .map(({ id, pod }) => [id, pod]),
+          [[open, "ines-calloway"]],
+        );
+      },
+    );
+    await page.close();
   });
-  assert.equal(opened.status, 200);
-  const page = await browser.newPage();
-  await page.goto(`${modelled.origin}/pods/${made.pod}/`);
-  await ask(page, "tell me a long story about Grace");
-  await page.locator(".chat-log .model", { hasText: "Once upon" }).waitFor();
-  await page.getByRole("button", { name: "Stop" }).click();
-  await page.locator(".chat-log .stopped").waitFor();
-  const { all } = await storage(page);
-  assert.equal(all.includes("long story about Grace"), false, all);
 
-  // A question sent before the app has said the pod is encrypted, whose answer moves the chat to another pod: the
-  // lookup is held until the chat has moved, so the follow happens with the encryption unknown.
-  let release = () => {};
-  const held = new Promise<void>((done) => (release = done));
-  await page.route("**/api/pod", async (route) => {
-    if (route.request().postData()?.includes(made.pod) === true) await held;
-    await route.continue();
+  test("when a person clicks to another pod after a chat about the pod shown", async (t) => {
+    const page = await browser.newPage();
+    await page.goto(`${modelled.origin}/pods/ines-calloway/`);
+    await ask(page, ASKS);
+    await page.locator(".chat-log .model", { hasText: "Done." }).waitFor();
+    await page.locator("aside nav a", { hasText: "Ada Lovelace" }).click();
+    await page
+      .locator("h1", { hasText: /^Ada Lovelace$/ })
+      .first()
+      .waitFor();
+    await t.test(
+      "leaves the chat with its own pod, so the other pod's window holds no message",
+      async () => {
+        assert.equal(await page.locator(".chat-log .you").count(), 0);
+      },
+    );
+    await t.test("lists no recent chat for the other pod", async () => {
+      assert.equal(await page.locator(".chat-recent li button").count(), 0);
+    });
+    await page.close();
   });
-  await page.goto(`${modelled.origin}/pods/${made.pod}/`);
-  await page.getByLabel("Ask a question").waitFor();
-  await ask(page, ASKS);
-  await page.waitForURL(`${modelled.origin}/pods/ines-calloway/`);
-  await page.locator(".chat-log .model", { hasText: "Done." }).waitFor();
-  release();
-  await page.locator(".chat-recent li button", { hasText: ASKS }).waitFor({
-    state: "attached",
+
+  test("when Stop is pressed while the model is answering", async (t) => {
+    const page = await browser.newPage();
+    await page.goto(`${modelled.origin}/pods/ada-lovelace/`);
+    await ask(page, "tell me a long story");
+    await page.locator(".chat-log .model", { hasText: "Once upon" }).waitFor();
+    await page.getByRole("button", { name: "Stop" }).click();
+    await page.locator(".chat-log .stopped").waitFor();
+    await t.test("marks the answer as stopped", async () => {
+      assert.equal(await page.locator(".chat-log .stopped").count(), 1);
+    });
+    for (let waited = 0; stub.stopped() === 0 && waited < 5000; waited += 50)
+      await new Promise((done) => setTimeout(done, 50));
+    await t.test("ends the server's call to the model", async () => {
+      assert.equal(stub.stopped(), 1);
+    });
+    await page.close();
   });
-  const followed = await storage(page);
-  assert.equal(followed.all.includes(ASKS), false, followed.all);
-  await page.close();
+
+  test("with no model set", async (t) => {
+    const page = await browser.newPage();
+    await page.goto(`${bare.origin}/`);
+    await page.locator(".chat-off").waitFor();
+    await t.test("says to run `npm run model`", async () => {
+      assert.match(
+        (await page.locator(".chat").textContent()) ?? "",
+        /npm run model/,
+      );
+    });
+    await t.test("shows no question form", async () => {
+      assert.equal(await page.locator(".chat-form").count(), 0);
+    });
+    await page.close();
+  });
+
+  test("with a model set", async (t) => {
+    const seen: Promise<string>[] = [];
+    const seeing = await browser.newPage();
+    seeing.on("request", (request) =>
+      seen.push(
+        Promise.resolve(`${request.url()} ${request.postData() ?? ""}`),
+      ),
+    );
+    seeing.on("response", (response) =>
+      seen.push(response.text().catch(() => "")),
+    );
+    await seeing.goto(`${modelled.origin}/pods/ada-lovelace/`);
+    await t.test(
+      "names the model and where it runs in the window's bar",
+      async () => {
+        assert.equal(
+          await seeing.locator(".chat-bar .muted").textContent(),
+          "stub-1, on this computer",
+        );
+      },
+    );
+    await ask(seeing, ASKS);
+    await seeing.locator(".chat-log .model", { hasText: "Done." }).waitFor();
+    seen.push(storage(seeing).then(({ all }) => all));
+    seen.push(seeing.content());
+    const shown = (await Promise.all(seen)).join("\n");
+    await seeing.close();
+    assert.match(shown, /"type":"tool-input-available"/);
+    await t.test("names the model to the page by its name", async () => {
+      assert.match(shown, /"name":"stub-1"/);
+    });
+    await t.test(
+      "never sends the model's key or address to the page, a request, a stream or the browser's storage",
+      async () => {
+        assert.equal(shown.includes(KEY), false);
+        assert.equal(shown.includes(stub.url), false);
+      },
+    );
+  });
+
+  test("when a tool the model asked for returns a finding", async (t) => {
+    const view = "/pods/ines-calloway/trend?test=18262-6&medication=617310";
+    const finding = {
+      key: "start:617310:18262-6",
+      kind: "after start",
+      direction: "down",
+      said: "LDL was lower after atorvastatin started.",
+      unit: "mg/dL",
+      test: { code: "18262-6", notation: "18262-6", name: "LDL" },
+      medication: {
+        name: "atorvastatin",
+        date: "2024-03-01",
+        dateIs: "start of use",
+      },
+      before: { count: 2, mean: 160, min: 150, max: 170 },
+      after: { count: 1, mean: 95, min: 95, max: 95 },
+      view,
+      rows: [
+        {
+          entry: "lab-1",
+          performed: "2024-01-10T00:00:00Z",
+          value: "150",
+          unit: "mg/dL",
+          side: "before",
+        },
+        {
+          entry: "lab-2",
+          performed: "2024-06-10T00:00:00Z",
+          value: "95",
+          unit: "mg/dL",
+          side: "after",
+        },
+      ],
+    };
+    const page = await browser.newPage();
+    await answering(page, [
+      { type: "start-step" },
+      {
+        type: "tool-input-available",
+        toolCallId: "c1",
+        toolName: "find_changes",
+        input: { pod: "ines-calloway" },
+      },
+      { type: "tool-output-available", toolCallId: "c1", output: [finding] },
+      { type: "finish-step" },
+      ...saying("Here it is."),
+    ]);
+    await page.goto(`${modelled.origin}/pods/ines-calloway/`);
+    await ask(page, "find anything interesting");
+    const card = page.locator(".chat-log .card");
+    await card.waitFor();
+    await t.test(
+      "draws the finding as a card with the app's sentence",
+      async () => {
+        assert.match(
+          (await card.textContent()) ?? "",
+          /LDL was lower after atorvastatin started\./,
+        );
+      },
+    );
+    await t.test(
+      "says each side's mean, unit and count of results",
+      async () => {
+        const said = (await card.textContent()) ?? "";
+        assert.match(said, /mean 160 mg\/dL over 2 results/);
+        assert.match(said, /mean 95 mg\/dL over 1 result\b/);
+      },
+    );
+    await t.test("links each result of the finding to its entry", async () => {
+      assert.deepEqual(
+        await card
+          .locator("li a")
+          .evaluateAll((links) =>
+            links.map((link) => link.getAttribute("href")),
+          ),
+        [
+          "/pods/ines-calloway/entries/lab-1",
+          "/pods/ines-calloway/entries/lab-2",
+        ],
+      );
+    });
+    await inPlace(page, async () => {
+      await card.getByRole("button", { name: "Open the trend" }).click();
+      await page.waitForURL(`${modelled.origin}${view}`);
+    });
+    await t.test(
+      "opens the trend at the finding's address, without loading a page, from Open the trend",
+      async () => {
+        assert.equal(page.url(), modelled.origin + view);
+      },
+    );
+    await page.close();
+  });
+
+  test("when a person clicks Ask about this on an entry", async (t) => {
+    const page = await browser.newPage();
+    await answering(page, saying("Here it is."));
+    await page.goto(`${modelled.origin}/pods/ines-calloway/`);
+    await page.getByLabel("Ask a question").waitFor();
+    const lisinopril = await askAbout(
+      page,
+      { kind: "entry", id: "x" },
+      "Lisinopril",
+    );
+    const sent = page.waitForRequest(isPost);
+    await lisinopril.click();
+    const body = (await sent).postDataJSON();
+    await t.test("sends the entry as the chat's context", async () => {
+      assert.deepEqual(body.context, { kind: "entry", id: "x" });
+    });
+    await t.test(
+      'asks "What is this, and where did it come from?" as the person\'s question',
+      async () => {
+        assert.deepEqual(
+          body.messages.map(
+            ({ role, parts }: { role: string; parts: unknown }) => ({
+              role,
+              parts,
+            }),
+          ),
+          [
+            {
+              role: "user",
+              parts: [
+                {
+                  type: "text",
+                  text: "What is this, and where did it come from?",
+                },
+              ],
+            },
+          ],
+        );
+      },
+    );
+    await t.test(
+      'shows "About:" and the entry\'s name above the chat',
+      async () => {
+        assert.equal(
+          await page.locator(".chat-about").textContent(),
+          "About: Lisinopril",
+        );
+      },
+    );
+    await t.test("hides the suggested questions", async () => {
+      assert.equal(await page.locator(".chat-chips").isHidden(), true);
+    });
+    await page.locator(".chat-log .model").waitFor();
+    await t.test("draws the model's answer under the question", async () => {
+      assert.equal(
+        await page.locator(".chat-log .you").textContent(),
+        "What is this, and where did it come from?",
+      );
+      assert.match(
+        (await page.locator(".chat-log .model").textContent()) ?? "",
+        /^Here it is\./,
+      );
+    });
+    await page.close();
+  });
+
+  test("when Ask about this is double-clicked", async (t) => {
+    const page = await browser.newPage();
+    await answering(page, saying("Here it is."));
+    await page.goto(`${modelled.origin}/pods/ines-calloway/`);
+    await page.getByLabel("Ask a question").waitFor();
+    const aspirin = await askAbout(page, { kind: "entry", id: "y" }, "Aspirin");
+    let requests = 0;
+    page.on("request", (request) => {
+      if (isPost(request)) requests += 1;
+    });
+    await aspirin.dblclick();
+    await page.locator(".chat-about", { hasText: "Aspirin" }).waitFor();
+    await page.locator(".chat-log .model").waitFor();
+    await page.locator(".chat-send:not([hidden])").waitFor();
+    await t.test("sends one request to the model", async () => {
+      assert.equal(requests, 1);
+    });
+    await page.close();
+  });
 });
 
-test("an encrypted pod: six words checked, nothing plaintext on disk, and after a restart only the words open it", async () => {
-  let sealed = await startStarter({
-    CASCADE_MODEL_PROVIDER: "other",
-    CASCADE_MODEL_URL: stub.url,
-    CASCADE_MODEL_NAME: "stub-1",
-    CASCADE_MODEL_KEY: KEY,
-  });
-  const folder = sealed.folder;
-  try {
+/**
+ * A tool of the tier `ask` changes the app, so the page asks the person before it runs. `make_pod` is the one the
+ * tests use: nothing is made until the person presses Allow.
+ */
+describe("Confirming a write a model asks for · make_pod", () => {
+  test("when the model asks to make a pod and the person presses Cancel", async (t) => {
     const page = await browser.newPage();
-    await page.goto(`${sealed.origin}/#new-pod`);
-    await page.getByLabel("Encrypt this pod with six words").check();
-    await page.getByLabel("A person's name").fill("Grace Hopper");
-    await page.getByRole("button", { name: "Make the pod" }).click();
-    await page.locator(".words li").nth(5).waitFor();
-    const words = await page.locator(".words li").allTextContents();
-    assert.equal(words.length, 6);
-
-    const confirm = page.locator("form", {
-      has: page.locator('input[name="word2"]'),
-    });
-    const signUp = await confirm.evaluate((form) => {
-      const named = (field: string) =>
-        form.querySelector<HTMLInputElement>(`input[name="${field}"]`)!;
-      return ["username", "password"].map((field) => {
-        const input = named(field);
-        return {
-          type: input.type,
-          autocomplete: input.autocomplete,
-          value: input.value,
-          hidden:
-            input.readOnly ||
-            input.closest("[aria-hidden]") !== null ||
-            input.offsetParent === null,
-        };
-      });
-    });
-    assert.deepEqual(signUp, [
-      {
-        type: "text",
-        autocomplete: "username",
-        value: "grace-hopper",
-        hidden: false,
+    await page.goto(`${modelled.origin}/pods/ada-lovelace/`);
+    const asking = page.getByRole("alertdialog");
+    await ask(page, "make a pod for Cora Diaz");
+    await asking.waitFor();
+    await t.test(
+      "names the write and the person in the confirm box",
+      async () => {
+        assert.match(
+          (await asking.textContent()) ?? "",
+          /Make a pod.*Cora Diaz/,
+        );
       },
-      {
-        type: "password",
-        autocomplete: "new-password",
-        value: words.join(" "),
-        hidden: false,
-      },
-    ]);
-    assert.equal(
-      page.url().includes(words[0]!),
-      false,
-      "the words are never in the address",
     );
-
-    assert.equal(
-      await page
-        .getByRole("button", { name: "Copy words" })
-        .getAttribute("type"),
-      "button",
-    );
-
-    await page.getByLabel("Password").fill("a suggested password");
-    await page.getByLabel("Word 2").fill(words[1]!);
-    await page.getByLabel("Word 5").fill(words[4]!);
-    await page.getByRole("button", { name: "Make the encrypted pod" }).click();
-    await page
-      .locator("main", { hasText: /must hold the six words above/ })
-      .waitFor();
-    assert.match(
-      (await page.locator("main").textContent()) ?? "",
-      /must hold the six words above/,
-    );
-    assert.equal(
-      await page.getByLabel("Password").inputValue(),
-      words.join(" "),
-      "the field is reset to the words",
-    );
-    assert.equal(
-      (await readdir(join(folder, "pods"))).includes("grace-hopper"),
-      false,
-      "a changed password field makes nothing",
-    );
-    await page.getByLabel("Pod", { exact: true }).fill("someone-else");
-    await page.getByLabel("Word 2").fill(words[1]!);
-    await page.getByLabel("Word 5").fill(words[4]!);
-    await page.getByRole("button", { name: "Make the encrypted pod" }).click();
-    await page
-      .locator("main", { hasText: /Pod field must keep the pod's name/ })
-      .waitFor();
-    assert.match(
-      (await page.locator("main").textContent()) ?? "",
-      /Pod field must keep the pod's name/,
-    );
-    assert.equal(
-      (await readdir(join(folder, "pods"))).includes("grace-hopper"),
-      false,
-      "a changed name makes nothing",
-    );
-
-    await page.getByLabel("Word 2").fill("not-a-word");
-    await page.getByLabel("Word 5").fill(words[4]!);
-    await page.getByRole("button", { name: "Make the encrypted pod" }).click();
-    await page
-      .locator("main", { hasText: /Those aren't words 2 and 5/ })
-      .waitFor();
-    assert.match(
-      (await page.locator("main").textContent()) ?? "",
-      /Those aren't words 2 and 5/,
-    );
-    assert.equal(
-      (await readdir(join(folder, "pods"))).includes("grace-hopper"),
-      false,
-      "a wrong check makes nothing",
-    );
-
-    await page.getByLabel("Word 2").fill(` ${words[1]!.toUpperCase()} `);
-    await page.getByLabel("Word 5").fill(words[4]!);
-    await page.getByRole("button", { name: "Make the encrypted pod" }).click();
-    await page.waitForURL(`${sealed.origin}/pods/grace-hopper/`);
+    await asking.getByRole("button", { name: "Cancel" }).click();
+    await page.locator(".chat-log .model", { hasText: "Done." }).waitFor();
+    await t.test('tells the model "The person said no"', async () => {
+      assert.ok(stub.told().includes("The person said no"), stub.told().join());
+    });
+    await t.test("makes no pod", async () => {
+      assert.equal((await podNames()).includes("cora-diaz"), false);
+    });
     await page.close();
+  });
 
+  test("when the model asks to make a pod and the person presses Allow", async (t) => {
+    const page = await browser.newPage();
+    await page.goto(`${modelled.origin}/pods/ada-lovelace/`);
+    await ask(page, "make a pod for Cora Diaz");
+    await page
+      .getByRole("alertdialog")
+      .getByRole("button", { name: "Allow" })
+      .click();
+    await page.locator("aside nav a", { hasText: "Cora Diaz" }).waitFor();
+    await t.test("makes the pod", async () => {
+      assert.equal((await podNames()).includes("cora-diaz"), true);
+    });
+    await t.test("lists the new pod among the app's pods", async () => {
+      assert.equal(
+        await page.locator("aside nav a", { hasText: "Cora Diaz" }).count(),
+        1,
+      );
+    });
+    await page.close();
+  });
+
+  test("when the chat is closed while a write waits for its answer", async (t) => {
+    const page = await browser.newPage();
+    await page.goto(`${modelled.origin}/pods/ada-lovelace/`);
+    const posts: string[] = [];
+    page.on("request", (request) => {
+      if (isPost(request)) posts.push(request.url());
+    });
+    await ask(page, "make a pod for Dora Xu");
+    const asking = page.getByRole("alertdialog");
+    await asking.waitFor();
+    const asked = posts.length;
+    await page.getByRole("button", { name: "New chat" }).dispatchEvent("click");
+    await asking.waitFor({ state: "detached" });
+    await t.test("closes the confirm box", async () => {
+      assert.equal(await asking.count(), 0);
+    });
+    await page.waitForTimeout(500);
+    await t.test("makes no pod", async () => {
+      assert.equal((await podNames()).includes("dora-xu"), false);
+    });
+    await t.test("sends the model nothing more", async () => {
+      assert.equal(posts.length, asked);
+    });
+    await page.close();
+  });
+});
+
+/**
+ * The window is a strip at the foot of the page. On a phone it must not cover the page's own content or push its
+ * question box out of view.
+ */
+describe("Fitting the chat window on a small screen · add-ons/chat", () => {
+  test("with a long answer open in a 375 by 667 window and in an 844 by 390 one", async (t) => {
+    const fits: { width: number; height: number; y: number; box: number }[] =
+      [];
+    for (const [width, height] of [
+      [375, 667],
+      [844, 390],
+    ] as const) {
+      const { page } = await openOnLongAnswer(width, height);
+      await page.evaluate(() => window.scrollTo(0, 0));
+      const input = (await page.locator(".chat-form input").boundingBox())!;
+      fits.push({ width, height, y: input.y, box: input.height });
+      await page.close();
+    }
+    await t.test(
+      "keeps the question box in view with the page scrolled to its top",
+      async () => {
+        for (const { width, height, y, box } of fits)
+          assert.ok(
+            y >= 0 && y + box <= height,
+            `at ${width}x${height} the question box is ${y}+${box}`,
+          );
+      },
+    );
+  });
+
+  test("with a long answer about a long name open on a phone", async (t) => {
+    const { page, label } = await openOnLongAnswer(390, 600);
+    const box = async (selector: string) =>
+      (await page.locator(selector).boundingBox())!;
+    await t.test("clamps the About line to one line", async () => {
+      const lines = await page
+        .locator(".chat-about")
+        .evaluate(
+          (element) =>
+            element.getBoundingClientRect().height /
+            parseFloat(getComputedStyle(element).lineHeight),
+        );
+      assert.ok(lines <= 1.05, `the About line is ${lines} lines`);
+    });
+    await t.test("keeps the whole name as the About line's title", async () => {
+      assert.equal(
+        await page.locator(".chat-about").getAttribute("title"),
+        `About: ${label}`,
+      );
+    });
+    await t.test("opens the answer at its question", async () => {
+      const log = await box(".chat-log");
+      const question = await box(".chat-log .you");
+      assert.ok(
+        question.y >= log.y - 1 &&
+          question.y + question.height <= log.y + log.height,
+        `question ${question.y}+${question.height}, log ${log.y}+${log.height}`,
+      );
+    });
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    await t.test(
+      "ends the page's own content above the window when the page is scrolled to its end",
+      async () => {
+        const strip = await box(".chat");
+        const last = await page.evaluate(
+          () => document.querySelector("main")!.getBoundingClientRect().bottom,
+        );
+        assert.ok(
+          last <= strip.y + 1,
+          `the page ends at ${last}, the strip starts at ${strip.y}`,
+        );
+      },
+    );
+    await page.reload();
+    await t.test(
+      "opens the answer at its question again after a reload",
+      async () => {
+        const reopened = await box(".chat-log .you");
+        const room = await box(".chat-log");
+        assert.ok(
+          reopened.y >= room.y - 1 &&
+            reopened.y + reopened.height <= room.y + room.height,
+          `after a reload the question is ${reopened.y}+${reopened.height}, the log ${room.y}+${room.height}`,
+        );
+      },
+    );
+    await page.close();
+  });
+
+  test("with a long answer open in a desktop window", async (t) => {
+    const page = await browser.newPage({
+      viewport: { width: 1100, height: 850 },
+    });
+    await answering(page, saying("A long answer. ".repeat(400)));
+    await page.goto(`${modelled.origin}/pods/ines-calloway/`);
+    await ask(page, "say a lot");
+    await page
+      .locator(".chat-log .model", { hasText: "A long answer" })
+      .waitFor();
+    const strip = page.locator(".chat");
+    const height = async () => (await strip.boundingBox())!.height;
+    await t.test("keeps the window under half the page's height", async () => {
+      assert.ok(
+        (await height()) < 850 / 2,
+        `the strip is ${await height()} px`,
+      );
+    });
+    await t.test("scrolls the answer inside the window", async () => {
+      assert.ok(
+        await page
+          .locator(".chat-log")
+          .evaluate((log) => log.scrollHeight > log.clientHeight),
+        "the log scrolls inside the strip",
+      );
+    });
+    await page.getByRole("button", { name: "Hide chat" }).click();
+    await t.test("folds to its bar from Hide chat", async () => {
+      assert.equal(await page.locator(".chat-form").isVisible(), false);
+      const bar = await height();
+      assert.ok(bar < 100, `the bar is ${bar} px`);
+    });
+    await page.reload();
+    await t.test("stays folded after a reload", async () => {
+      assert.equal(await page.locator(".chat-form").isVisible(), false);
+    });
+    await page.getByRole("button", { name: "Show chat" }).click();
+    await t.test("unfolds from Show chat", async () => {
+      assert.equal(await page.locator(".chat-form").isVisible(), true);
+    });
+    await page.getByRole("button", { name: "Hide chat" }).click();
+    await page.locator(".chat-recent summary").click();
+    await page.locator(".chat-recent li button").first().click();
+    await t.test("unfolds when a recent chat is opened", async () => {
+      assert.equal(await page.locator(".chat-form").isVisible(), true);
+    });
+    await page.close();
+  });
+});
+
+describe("Offering the app's tools to a browser's agent · document.modelContext", () => {
+  test("with the app served by Node", async (t) => {
+    const context = await browser.newContext();
+    await context.addInitScript(recordTools);
+    try {
+      const page = await context.newPage();
+      await page.goto(`${modelled.origin}/pods/ines-calloway/`);
+      const { names } = await listed();
+      await page.waitForFunction(
+        (count) =>
+          (globalThis as unknown as Registered).registered.length >= count,
+        names.length,
+      );
+      await t.test("offers every tool of the app's tool list", async () => {
+        assert.deepEqual(await offered(page), names);
+      });
+      await t.test(
+        "leaves the pod out of a tool's input on a pod's page",
+        async () => {
+          assert.deepEqual(await inputOf(page, "open_trend", false), {
+            properties: ["test", "medication"],
+            required: ["test"],
+          });
+        },
+      );
+      await t.test("answers `list_pods` with the app's pods", async () => {
+        const pods = await called(page, "list_pods");
+        assert.ok("result" in pods, JSON.stringify(pods));
+        assert.ok((pods.result as string[]).includes("ines-calloway"));
+      });
+      await t.test("runs `ask` over the server", async () => {
+        const rows = await called(
+          page,
+          "ask",
+          { question: "pod/My lab results" },
+          false,
+        );
+        assert.ok("result" in rows, JSON.stringify(rows));
+      });
+    } finally {
+      await context.close();
+    }
+  });
+});
+
+describe("Connecting to a demo hospital · Sign in at", () => {
+  test("with the app served by Node, when a person allows the sign-in", async (t) => {
+    const made = await post(bare.origin, "/api/makePod", {
+      person: "Ines Calloway",
+    });
+    assert.equal(made.status, 200);
+    const page = await browser.newPage();
+    await page.goto(`${bare.origin}/pods/ines-calloway/`);
+    const signIn = page.getByRole("button", { name: /^Sign in at / }).first();
+    await signIn.click();
+    const allow = page.getByRole("button", { name: "Allow" });
+    await allow.waitFor();
+    await page.goBack();
+    await page.waitForSelector('body[data-state="ready"]');
+    await t.test(
+      "brings back a ready page, its buttons on, after Back from the hospital's sign-in page",
+      async () => {
+        assert.ok(
+          await signIn.isEnabled(),
+          "Back after the sign-in's full page left its buttons off",
+        );
+      },
+    );
+    await signIn.click();
+    await allow.click();
+    const bring = page.getByRole("button", { name: /^Bring it into / });
+    await bring.waitFor({ timeout: 30_000 });
+    await t.test(
+      "moves on by itself to Bring it in, on the app's own address",
+      async () => {
+        assert.equal(await bring.isVisible(), true);
+        assert.equal(new URL(page.url()).origin, bare.origin);
+      },
+    );
+    await bring.click();
+    await page
+      .locator("main .note", { hasText: /^Brought in the record from / })
+      .waitFor({ timeout: 60_000 });
+    await t.test(
+      'says "Brought in the record from" the hospital on the pod\'s page',
+      async () => {
+        assert.match(
+          (await page.locator("main .note").textContent()) ?? "",
+          /^Brought in the record from /,
+        );
+      },
+    );
+    await page.close();
+  });
+
+  test("with an address of a connection the app does not hold", async (t) => {
+    const made = await post(bare.origin, "/api/makePod", {
+      person: "Ada Lovelace",
+    });
+    assert.equal(made.status, 200);
+    const page = await browser.newPage();
+    await page.goto(`${bare.origin}/pods/ada-lovelace/connections/999`);
+    await page.locator("h1", { hasText: /^Ada Lovelace$/ }).waitFor();
+    await t.test("opens no box for a connection the pod lacks", async () => {
+      assert.equal(await page.locator("#connection").count(), 0);
+    });
+    await page.goto(`${bare.origin}/pods/nobody-here/connections/1`);
+    await page.locator("h1", { hasText: /^Not found$/ }).waitFor();
+    await t.test("draws Not found for a pod the app lacks", async () => {
+      assert.equal((await page.textContent("h1"))?.trim(), "Not found");
+    });
+    await page.close();
+  });
+});
+
+describe("Encrypting a pod with six words · Encrypt this pod with six words", () => {
+  test("with an encrypted pod's chat", async (t) => {
+    const pod = await encryptedPod("Grace Hopper");
+    const page = await browser.newPage();
+    await page.goto(`${modelled.origin}/pods/${pod}/`);
+    await ask(page, "tell me a long story about Grace");
+    await page.locator(".chat-log .model", { hasText: "Once upon" }).waitFor();
+    await page.getByRole("button", { name: "Stop" }).click();
+    await page.locator(".chat-log .stopped").waitFor();
+    await t.test(
+      "never stores the chat in localStorage or sessionStorage",
+      async () => {
+        const { all } = await storage(page);
+        assert.equal(all.includes("long story about Grace"), false, all);
+      },
+    );
+    await page.close();
+  });
+
+  /**
+   * A question sent before the app has said the pod is encrypted, whose answer moves the chat to another pod: the
+   * lookup is held until the chat has moved, so the follow happens with the encryption unknown.
+   */
+  test("when an answer moves the chat to another pod before the app knows the pod is encrypted", async (t) => {
+    const pod = await encryptedPod("Katherine Johnson");
+    const page = await browser.newPage();
+    let release = () => {};
+    const held = new Promise<void>((done) => (release = done));
+    await page.route("**/api/pod", async (route) => {
+      if (route.request().postData()?.includes(pod) === true) await held;
+      await route.continue();
+    });
+    await page.goto(`${modelled.origin}/pods/${pod}/`);
+    await page.getByLabel("Ask a question").waitFor();
+    await ask(page, ASKS);
+    await page.waitForURL(`${modelled.origin}/pods/ines-calloway/`);
+    await page.locator(".chat-log .model", { hasText: "Done." }).waitFor();
+    release();
+    await page.locator(".chat-recent li button", { hasText: ASKS }).waitFor({
+      state: "attached",
+    });
+    await t.test("never stores the chat that moved", async () => {
+      const followed = await storage(page);
+      assert.equal(followed.all.includes(ASKS), false, followed.all);
+    });
+    await page.close();
+  });
+
+  test("with an encrypted pod made in the app served by Node", async (t) => {
+    let sealed = await startStarter({
+      CASCADE_MODEL_PROVIDER: "other",
+      CASCADE_MODEL_URL: stub.url,
+      CASCADE_MODEL_NAME: "stub-1",
+      CASCADE_MODEL_KEY: KEY,
+    });
+    const folder = sealed.folder;
+    const made = async (): Promise<string[]> =>
+      await readdir(join(folder, "pods"));
+    try {
+      const page = await browser.newPage();
+      await page.goto(`${sealed.origin}/#new-pod`);
+      await page.getByLabel("Encrypt this pod with six words").check();
+      await page.getByLabel("A person's name").fill("Grace Hopper");
+      await page.getByRole("button", { name: "Make the pod" }).click();
+      await page.locator(".words li").nth(5).waitFor();
+      const words = await page.locator(".words li").allTextContents();
+      await t.test("shows six words", async () => {
+        assert.equal(words.length, 6);
+      });
+
+      const confirm = page.locator("form", {
+        has: page.locator('input[name="word2"]'),
+      });
+      await t.test(
+        "offers the pod's name and the six words to a password manager as a new sign-up",
+        async () => {
+          const signUp = await confirm.evaluate((form) => {
+            const named = (field: string) =>
+              form.querySelector<HTMLInputElement>(`input[name="${field}"]`)!;
+            return ["username", "password"].map((field) => {
+              const input = named(field);
+              return {
+                type: input.type,
+                autocomplete: input.autocomplete,
+                value: input.value,
+                hidden:
+                  input.readOnly ||
+                  input.closest("[aria-hidden]") !== null ||
+                  input.offsetParent === null,
+              };
+            });
+          });
+          assert.deepEqual(signUp, [
+            {
+              type: "text",
+              autocomplete: "username",
+              value: "grace-hopper",
+              hidden: false,
+            },
+            {
+              type: "password",
+              autocomplete: "new-password",
+              value: words.join(" "),
+              hidden: false,
+            },
+          ]);
+        },
+      );
+      await t.test("never puts a word in the address", async () => {
+        for (const word of words)
+          assert.equal(
+            new RegExp(String.raw`\b${word}\b`, "i").test(page.url()),
+            false,
+            `the word ${word} is in the address`,
+          );
+      });
+      await t.test(
+        "makes Copy words a plain button, so it submits nothing",
+        async () => {
+          assert.equal(
+            await page
+              .getByRole("button", { name: "Copy words" })
+              .getAttribute("type"),
+            "button",
+          );
+        },
+      );
+
+      await page.getByLabel("Password").fill("a suggested password");
+      await page.getByLabel("Word 2").fill(words[1]!);
+      await page.getByLabel("Word 5").fill(words[4]!);
+      await page
+        .getByRole("button", { name: "Make the encrypted pod" })
+        .click();
+      await page
+        .locator("main", { hasText: /must hold the six words above/ })
+        .waitFor();
+      await t.test(
+        "refuses a changed password field, resets it to the words and makes nothing",
+        async () => {
+          assert.match(
+            (await page.locator("main").textContent()) ?? "",
+            /must hold the six words above/,
+          );
+          assert.equal(
+            await page.getByLabel("Password").inputValue(),
+            words.join(" "),
+            "the field is reset to the words",
+          );
+          assert.equal(
+            (await made()).includes("grace-hopper"),
+            false,
+            "a changed password field makes nothing",
+          );
+        },
+      );
+      await page.getByLabel("Pod", { exact: true }).fill("someone-else");
+      await page.getByLabel("Word 2").fill(words[1]!);
+      await page.getByLabel("Word 5").fill(words[4]!);
+      await page
+        .getByRole("button", { name: "Make the encrypted pod" })
+        .click();
+      await page
+        .locator("main", { hasText: /Pod field must keep the pod's name/ })
+        .waitFor();
+      await t.test(
+        "refuses a changed pod field and makes nothing",
+        async () => {
+          assert.match(
+            (await page.locator("main").textContent()) ?? "",
+            /Pod field must keep the pod's name/,
+          );
+          assert.equal(
+            (await made()).includes("grace-hopper"),
+            false,
+            "a changed name makes nothing",
+          );
+        },
+      );
+
+      await page.getByLabel("Word 2").fill("not-a-word");
+      await page.getByLabel("Word 5").fill(words[4]!);
+      await page
+        .getByRole("button", { name: "Make the encrypted pod" })
+        .click();
+      await page
+        .locator("main", { hasText: /Those aren't words 2 and 5/ })
+        .waitFor();
+      await t.test(
+        "refuses wrong words 2 and 5 and makes nothing",
+        async () => {
+          assert.match(
+            (await page.locator("main").textContent()) ?? "",
+            /Those aren't words 2 and 5/,
+          );
+          assert.equal(
+            (await made()).includes("grace-hopper"),
+            false,
+            "a wrong check makes nothing",
+          );
+        },
+      );
+
+      await page.getByLabel("Word 2").fill(` ${words[1]!.toUpperCase()} `);
+      await page.getByLabel("Word 5").fill(words[4]!);
+      await page
+        .getByRole("button", { name: "Make the encrypted pod" })
+        .click();
+      await page.waitForURL(`${sealed.origin}/pods/grace-hopper/`);
+      await t.test(
+        "makes the pod once words 2 and 5 are typed, whatever their case and the spaces round them",
+        async () => {
+          assert.equal(page.url(), `${sealed.origin}/pods/grace-hopper/`);
+          assert.ok((await made()).includes("grace-hopper"));
+        },
+      );
+      await page.close();
+
+      await sealed.stop(true);
+      await t.test(
+        "leaves no readable Turtle, name, title or kept answer in the pod's files once the app is stopped",
+        async () => {
+          const answersFolder = join(
+            folder,
+            "pods",
+            ".answers",
+            "grace-hopper",
+          );
+          const sealedFolders = [join(folder, "pods", "grace-hopper")];
+          if (existsSync(answersFolder)) sealedFolders.push(answersFolder);
+          for (const sealedFolder of sealedFolders) {
+            const files = await filesUnder(sealedFolder);
+            assert.ok(files.length > 0, `${sealedFolder} holds files`);
+            for (const file of files) {
+              if (file.replaceAll("\\", "/") === "settings/encryption.json")
+                continue;
+              const text = await readFile(join(sealedFolder, file), "latin1");
+              assert.ok(text.length > 0, file);
+              for (const readable of ["@prefix", "Grace", '"title"', '"rows"'])
+                assert.equal(
+                  text.includes(readable),
+                  false,
+                  `${file}: ${readable}`,
+                );
+              assert.throws(() => JSON.parse(text), `${file} parses as JSON`);
+            }
+          }
+        },
+      );
+
+      sealed = await startStarter({}, folder);
+      const again = await browser.newPage();
+      await again.goto(`${sealed.origin}/pods/grace-hopper/`);
+      await again
+        .getByLabel("Your six words")
+        .fill("one two three four five six");
+      await again.getByRole("button", { name: "Open this pod" }).click();
+      await again.locator("main", { hasText: /don't open this pod/ }).waitFor();
+      await t.test(
+        "refuses six words that are not the pod's after a restart",
+        async () => {
+          assert.match(
+            (await again.locator("main").textContent()) ?? "",
+            /don't open this pod/,
+          );
+        },
+      );
+      await again.getByLabel("Your six words").fill(words.join(" "));
+      await again.getByRole("button", { name: "Open this pod" }).click();
+      await again.getByLabel("Your six words").waitFor({ state: "detached" });
+      await again.locator("main", { hasText: /Grace Hopper/ }).waitFor();
+      await t.test(
+        "opens the pod with its six words after a restart",
+        async () => {
+          assert.equal(await again.getByLabel("Your six words").count(), 0);
+          assert.match(
+            (await again.locator("main").textContent()) ?? "",
+            /Grace Hopper/,
+          );
+        },
+      );
+      await again.close();
+    } finally {
+      await sealed.stop();
+    }
+  });
+
+  test("when a plain pod takes the name while an encrypted one waits for its words", async (t) => {
     const racing = await browser.newPage();
-    await racing.goto(`${sealed.origin}/#new-pod`);
+    await racing.goto(`${modelled.origin}/#new-pod`);
     await racing.getByLabel("Encrypt this pod with six words").check();
     await racing.getByLabel("A person's name").fill("Alan Turing");
     await racing.getByRole("button", { name: "Make the pod" }).click();
     await racing.locator(".words li").nth(5).waitFor();
     const racingWords = await racing.locator(".words li").allTextContents();
     const plain = await browser.newPage();
-    await plain.goto(`${sealed.origin}/#new-pod`);
+    await plain.goto(`${modelled.origin}/#new-pod`);
     await plain.getByLabel("A person's name").fill("Alan Turing");
     await plain.getByRole("button", { name: "Make the pod" }).click();
-    await plain.waitForURL(`${sealed.origin}/pods/alan-turing/`);
+    await plain.waitForURL(`${modelled.origin}/pods/alan-turing/`);
     await racing.getByLabel("Word 2").fill(racingWords[1]!);
     await racing.getByLabel("Word 5").fill(racingWords[4]!);
     await racing
@@ -971,60 +1353,25 @@ test("an encrypted pod: six words checked, nothing plaintext on disk, and after 
     await racing
       .locator("main", { hasText: /A pod named alan-turing exists already/ })
       .waitFor();
-    assert.match(
-      (await racing.locator("main").textContent()) ?? "",
-      /A pod named alan-turing exists already/,
+    await t.test(
+      "refuses the encrypted pod, saying a pod of that name exists already",
+      async () => {
+        assert.match(
+          (await racing.locator("main").textContent()) ?? "",
+          /A pod named alan-turing exists already/,
+        );
+      },
     );
-    assert.equal(
-      (await racing.locator("h1").allTextContents()).some(
-        (text) => text.trim() === "Alan Turing",
-      ),
-      false,
-      "the refused encrypted pod goes to the plain one",
-    );
+    await t.test("stays off the plain pod's page", async () => {
+      assert.equal(
+        (await racing.locator("h1").allTextContents()).some(
+          (text) => text.trim() === "Alan Turing",
+        ),
+        false,
+        "the refused encrypted pod goes to the plain one",
+      );
+    });
     await racing.close();
     await plain.close();
-
-    await sealed.stop(true);
-    const answersFolder = join(folder, "pods", ".answers", "grace-hopper");
-    const sealedFolders = [join(folder, "pods", "grace-hopper")];
-    if (existsSync(answersFolder)) sealedFolders.push(answersFolder);
-    for (const sealedFolder of sealedFolders) {
-      const files = await filesUnder(sealedFolder);
-      assert.ok(files.length > 0, `${sealedFolder} holds files`);
-      for (const file of files) {
-        if (file.replaceAll("\\", "/") === "settings/encryption.json") continue;
-        const text = await readFile(join(sealedFolder, file), "latin1");
-        assert.ok(text.length > 0, file);
-        for (const readable of ["@prefix", "Grace", '"title"', '"rows"'])
-          assert.equal(text.includes(readable), false, `${file}: ${readable}`);
-        assert.throws(() => JSON.parse(text), `${file} parses as JSON`);
-      }
-    }
-
-    sealed = await startStarter({}, folder);
-    const again = await browser.newPage();
-    await again.goto(`${sealed.origin}/pods/grace-hopper/`);
-    await again
-      .getByLabel("Your six words")
-      .fill("one two three four five six");
-    await again.getByRole("button", { name: "Open this pod" }).click();
-    await again.locator("main", { hasText: /don't open this pod/ }).waitFor();
-    assert.match(
-      (await again.locator("main").textContent()) ?? "",
-      /don't open this pod/,
-    );
-    await again.getByLabel("Your six words").fill(words.join(" "));
-    await again.getByRole("button", { name: "Open this pod" }).click();
-    await again.getByLabel("Your six words").waitFor({ state: "detached" });
-    await again.locator("main", { hasText: /Grace Hopper/ }).waitFor();
-    assert.equal(await again.getByLabel("Your six words").count(), 0);
-    assert.match(
-      (await again.locator("main").textContent()) ?? "",
-      /Grace Hopper/,
-    );
-    await again.close();
-  } finally {
-    await sealed.stop();
-  }
+  });
 });

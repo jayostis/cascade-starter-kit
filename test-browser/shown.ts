@@ -83,6 +83,56 @@ export async function newPod(page: Page, label: string): Promise<void> {
     );
 }
 
+/** Clicks "Sign in at <hospital>" on the pod's page; gives the hospital's sign-in popup once its Allow button is there. */
+export async function signInAt(
+  page: Page,
+  hospital: string,
+  again = false,
+): Promise<Page> {
+  const [popup] = await Promise.all([
+    page.waitForEvent("popup"),
+    page.click(
+      `button:has-text("Sign in ${again ? "again " : ""}at ${hospital}")`,
+    ),
+  ]);
+  await popup.waitForSelector('button[value="allow"]');
+  return popup;
+}
+
+/** Ticks `patient` in the popup and presses Allow; waits for the connection's box over the pod's page. */
+export async function allowAs(
+  page: Page,
+  popup: Page,
+  patient: string,
+): Promise<void> {
+  await popup.check(`input[name="patient"][value="${patient}"]`);
+  await popup.click('button[value="allow"]');
+  await settled(page);
+}
+
+/** Presses "Bring it into …" in the connection's box and waits, 300 s at most, for the pod's page. */
+export async function bringIn(page: Page): Promise<void> {
+  await page.click("#connection button:has-text('Bring it into')");
+  await settled(page, 300_000);
+}
+
+/** Opens the world's date form on the pod's page and sets the date to `day` (`YYYY-MM-DD`), or with none presses Today. */
+export async function setWorldDate(
+  page: Page,
+  day: string | undefined,
+): Promise<void> {
+  const form = page.locator(".world-date");
+  await form.locator("details").evaluate((details: HTMLDetailsElement) => {
+    details.open = true;
+  });
+  if (day === undefined)
+    await form.getByRole("button", { name: "Today", exact: true }).click();
+  else {
+    await form.locator('input[type="date"]').fill(day);
+    await form.getByRole("button", { name: "Set", exact: true }).click();
+  }
+}
+
 /**
  * Waits for the page showing to be drawn, `timeout` ms at most: its `main` is there, nothing in it is pending, and the
  * body is not busy and says `ready` (`opening` and any other state wait); it cannot tell a screen from before a click

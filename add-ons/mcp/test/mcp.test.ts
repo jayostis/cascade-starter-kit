@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { replayKit } from "cascade-runtime/fixtures";
-import { afterAll, beforeAll, expect, test } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { podServer } from "../mcp-server.ts";
 import { nodeHost } from "../node-host.ts";
 import { podApi } from "../pod-api.ts";
@@ -33,17 +33,32 @@ afterAll(async () => {
   await rm(folder, { recursive: true, force: true, maxRetries: 5 });
 });
 
-test("the server offers the free reads of the tool list, and nothing that moves the app or writes", async () => {
-  const names = (await client.listTools()).tools.map(({ name }) => name);
-  expect(names).toContain("list_pods");
-  expect(names).toContain("find_changes");
-  for (const { name, tier, opens } of TOOLS)
-    if (tier === "ask" || opens) expect(names).not.toContain(name);
-});
+/**
+ * `npm run mcp` serves the pods to an MCP client such as Claude Desktop. The server offers only the tools that read and stay
+ * where they are: none of the tier `ask`, none that opens a screen of the app.
+ */
+describe("Serving the pods to an MCP client · podServer()", () => {
+  describe("with a client connected in memory", () => {
+    it("offers `list_pods` and `find_changes`", async () => {
+      const names = (await client.listTools()).tools.map(({ name }) => name);
+      expect(names).toContain("list_pods");
+      expect(names).toContain("find_changes");
+    });
 
-test("list_pods answers with the app's pods", async () => {
-  const result = await client.callTool({ name: "list_pods", arguments: {} });
-  const [first] = result.content as { type: string; text: string }[];
-  expect(result.isError).not.toBe(true);
-  expect(first?.text).toContain("alex-rivera");
+    it("never offers a tool of the tier ask or one that opens a screen", async () => {
+      const names = (await client.listTools()).tools.map(({ name }) => name);
+      for (const { name, tier, opens } of TOOLS)
+        if (tier === "ask" || opens) expect(names).not.toContain(name);
+    });
+
+    it("answers `list_pods` with the app's pods", async () => {
+      const result = await client.callTool({
+        name: "list_pods",
+        arguments: {},
+      });
+      const [first] = result.content as { type: string; text: string }[];
+      expect(result.isError).not.toBe(true);
+      expect(first?.text).toContain("alex-rivera");
+    });
+  });
 });
