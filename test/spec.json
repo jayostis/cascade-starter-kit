@@ -40,7 +40,7 @@
     "Checking that a model can call tools · checkCallsTools()",
     "Setting up the chat's model from a terminal · npm run model, setUpModel(), save(), remove(), secret()",
     "Answering a person's question with a model · POST /chat, GET /chat, chatRoutes()",
-    "Letting a model call the app's tools from the chat · chatTools(), MAX_ROUNDS",
+    "Letting a model use the app's tools from the chat · chatTools(), MAX_ROUNDS",
     "Checking a chat request before the model is called · POST /chat",
     "Sending the chat's earlier messages with a question · sent()",
     "Serving the pods to an MCP client · npm run mcp, podServer()"
@@ -541,6 +541,7 @@
   "shaped": [
     "built.test.ts",
     "bundle.test.ts",
+    "chat.test.ts",
     "create.test.ts",
     "failure-annotations.test.ts",
     "guide.test.ts",
