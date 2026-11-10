@@ -4,7 +4,7 @@ import { after, test } from "node:test";
 import {
   codeStems,
   type FailureKind,
-  type Finding,
+  type LabChange,
   labSeriesIn,
   type Row,
   type Terms,
@@ -2089,7 +2089,7 @@ test("no sentence CHANGED gives, and none said of any of the five stories' findi
 
   for (const [patient, story] of await storyPods()) {
     for (const finding of story.changes.filter(
-      ({ direction }: Finding) => direction !== "not enough results",
+      ({ direction }: LabChange) => direction !== "not enough results",
     ))
       assert.doesNotMatch(
         said.sentenceOf(finding, said.changeNames(finding, new Map())),

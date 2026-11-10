@@ -1,7 +1,7 @@
 // The one list of tools a model reaches the app by, over PodApi alone: the browser target's WebMCP, and the chat
 // (`server/chat.ts`) and the MCP server (`mcp-server.ts`) when they are added, each offer those their door may. A tool's `tier` is the person's consent: `free`
 // reads or moves the app, `ask` writes once the person has said yes. What no tool ever calls is `NEVER`.
-import { type Finding, type InputSchema, Refusal } from "cascade-runtime";
+import { type InputSchema, type LabChange, Refusal } from "cascade-runtime";
 import {
   type CompactAnswer,
   type PodReads,
@@ -33,7 +33,7 @@ export interface Tool {
     api: PodApi,
     input: ToolInput,
     door?: Door,
-  ): Promise<{ value: unknown[]; found: Finding[] }>;
+  ): Promise<{ value: unknown[]; found: LabChange[] }>;
 }
 
 /**

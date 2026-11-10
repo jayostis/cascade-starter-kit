@@ -33,7 +33,7 @@ import {
   type Tables,
 } from "cascade-runtime";
 import {
-  citedFinding,
+  citedLabChange,
   type CompactAnswer,
   type CompactInput,
   type PodReads,
@@ -741,7 +741,7 @@ export function podApi(host: PodHost) {
     if (called !== "find_changes") return { value: await run.execute(input) };
     checkInput(run.inputSchema, input);
     const found = await findChanges(pod, input);
-    return { value: found.map(citedFinding), found };
+    return { value: found.map(citedLabChange), found };
   }
 
   /** What `reference_table_checks` asks of the tables and of the pod against them, as `cascade-runtime/tools` reads it. */
