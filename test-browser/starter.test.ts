@@ -18,7 +18,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { type Browser, chromium, type Page } from "playwright";
+import { type Browser, chromium, type Locator, type Page } from "playwright";
 import {
   called,
   inPlace,
@@ -517,6 +517,24 @@ const saying = (text: string) => [
   { type: "finish-step" },
 ];
 
+/** Puts an "Ask about this" button for `context`, labelled `label`, on the page, as a card of the app carries one; gives its locator. */
+const askAbout = async (
+  page: Page,
+  context: object,
+  label: string,
+): Promise<Locator> => {
+  await page.evaluate(
+    ([data, text]) => {
+      document.body.insertAdjacentHTML(
+        "beforeend",
+        `<button id="asker" data-ask='${data}' data-ask-label="${text}">Ask about this</button>`,
+      );
+    },
+    [JSON.stringify(context), label] as const,
+  );
+  return page.locator("#asker");
+};
+
 const isPost = (request: { url(): string; method(): string }) =>
   request.url().endsWith("/chat") && request.method() === "POST";
 
@@ -588,14 +606,13 @@ test("a finding the model's tool found is drawn as a card with the app's sentenc
 
   await page.goto(`${modelled.origin}/pods/ines-calloway/`);
   await page.getByLabel("Ask a question").waitFor();
-  await page.evaluate(() => {
-    document.body.insertAdjacentHTML(
-      "beforeend",
-      `<button id="asker" data-ask='{"kind":"entry","id":"x"}' data-ask-label="Lisinopril">Ask about this</button>`,
-    );
-  });
+  const lisinopril = await askAbout(
+    page,
+    { kind: "entry", id: "x" },
+    "Lisinopril",
+  );
   const sent = page.waitForRequest(isPost);
-  await page.locator("#asker").click();
+  await lisinopril.click();
   const body = (await sent).postDataJSON();
   assert.deepEqual(body.context, { kind: "entry", id: "x" });
   assert.deepEqual(
@@ -629,17 +646,12 @@ test("a finding the model's tool found is drawn as a card with the app's sentenc
 
   await page.goto(`${modelled.origin}/pods/ines-calloway/`);
   await page.getByLabel("Ask a question").waitFor();
-  await page.evaluate(() => {
-    document.body.insertAdjacentHTML(
-      "beforeend",
-      `<button id="asker" data-ask='{"kind":"entry","id":"y"}' data-ask-label="Aspirin">Ask about this</button>`,
-    );
-  });
+  const aspirin = await askAbout(page, { kind: "entry", id: "y" }, "Aspirin");
   let requests = 0;
   page.on("request", (request) => {
     if (isPost(request)) requests += 1;
   });
-  await page.locator("#asker").dblclick();
+  await aspirin.dblclick();
   await page.locator(".chat-about", { hasText: "Aspirin" }).waitFor();
   await page.locator(".chat-log .model").waitFor();
   await page.locator(".chat-send:not([hidden])").waitFor();
@@ -654,13 +666,7 @@ const openOnLongAnswer = async (width: number, height: number) => {
   await page.goto(`${modelled.origin}/pods/ines-calloway/`);
   const label = "A long label about one finding of the pod. ".repeat(6);
   await page.getByLabel("Ask a question").waitFor();
-  await page.evaluate((text) => {
-    document.body.insertAdjacentHTML(
-      "beforeend",
-      `<button id="asker" data-ask='{"kind":"finding","key":"x"}' data-ask-label="${text}">Ask about this</button>`,
-    );
-  }, label);
-  await page.locator("#asker").click();
+  await (await askAbout(page, { kind: "finding", key: "x" }, label)).click();
   await page
     .locator(".chat-log .model", { hasText: "A long answer" })
     .waitFor();
