@@ -49,6 +49,7 @@ import {
   offered,
   recordTools,
   type Registered,
+  setWorldDate,
   settled,
   signInAt,
   tiles,
@@ -236,6 +237,34 @@ const hasLines = (
     (source) =>
       `What ${view.hospitalName(hospital)} has: ${view.counted(source.records) || "nothing"}.`,
   );
+
+/** The demo person with this name, the hospital that holds them (alone, unless `alone` is false), and their patient id there. */
+async function demoPatient(
+  name: string,
+  alone = true,
+): Promise<{
+  person: Person;
+  hospital: Person["at"][number];
+  patient: string;
+}> {
+  const demo = await loadHospitals();
+  const person = view.demoPeople(demo).find((each) => each.name === name);
+  assert.ok(person, `no demo person is ${name}`);
+  const [hospital] = person.at;
+  assert.ok(hospital, `${name} is at no hospital`);
+  assert.ok(
+    !alone || person.at.length === 1,
+    `${name} is not at one hospital alone`,
+  );
+  const loaded = demo.find(
+    (each) => each.hospital.fhirBase === hospital.fhirBase,
+  );
+  const patient = Object.entries(loaded?.patients ?? {}).find(
+    ([, bundle]) => view.patientName(bundle) === person.name,
+  )?.[0];
+  assert.ok(patient, `${hospital.name} holds no patient ${name}`);
+  return { person, hospital, patient };
+}
 
 /** A Node pod in memory, opened by the installed package over the starter tables it carries, which the page ships. */
 async function pageTablesPod(): Promise<Pod> {
@@ -2017,152 +2046,156 @@ describe("Importing files a person picks · pod.look(), pod.import()", () => {
   });
 });
 
-test("in the browser, a check keeps the test feed's planted newer version in the app's own database, and a pod opened after it adopts it: the version is recorded, the Same it newly joins is filed and nothing is filed again for one the replaced version joined that it joins too", async () => {
-  const [feedUrl] = (await servedConfig()).tables.feeds;
-  assert.ok(feedUrl);
-  const valid = join(
-    ROOT,
-    "node_modules",
-    "cascade-reference-tables",
-    "fixtures",
-    "feeds",
-    "valid",
-  );
-  const catalog = turtle(await readFile(join(valid, "feed.ttl")), feedUrl);
-  const of = (subject: string, predicate: string): string | undefined =>
-    catalog.find(([s, p]) => s.value === subject && p.value === predicate)?.[2]
-      .value;
-  const series =
-    catalog.find(([, , o]) => o.value.endsWith("#VaccineGroups"))?.[0].value ??
-    "";
-  const second = of(series, `${DCAT}hasCurrentVersion`) ?? "";
-  const first = of(second, `${PROV}wasRevisionOf`) ?? "";
-  assert.ok(first);
-  const bodies = new Map<string, Buffer>();
-  for (const [, predicate, url] of catalog)
-    if (predicate.value === `${DCAT}downloadURL`)
-      bodies.set(
-        url.value,
-        await readFile(
-          join(valid, ...new URL(url.value).pathname.split("/").slice(-2)),
+/**
+ * try/ ships starter copies of the reference tables and checks the feeds its `cascade-runtime.json` names; a newer version is kept in a database of the app's own and adopted by the next pod opened. A pod opened after a check adopts it by `runtime/opening.feature`.
+ */
+describe("Keeping the reference tables current in a browser · cascade-runtime.json", () => {
+  test("when a check finds a newer version in a feed", async (t) => {
+    const [feedUrl] = (await servedConfig()).tables.feeds;
+    assert.ok(feedUrl);
+    const valid = join(
+      ROOT,
+      "node_modules",
+      "cascade-reference-tables",
+      "fixtures",
+      "feeds",
+      "valid",
+    );
+    const catalog = turtle(await readFile(join(valid, "feed.ttl")), feedUrl);
+    const of = (subject: string, predicate: string): string | undefined =>
+      catalog.find(
+        ([s, p]) => s.value === subject && p.value === predicate,
+      )?.[2].value;
+    const series =
+      catalog.find(([, , o]) => o.value.endsWith("#VaccineGroups"))?.[0]
+        .value ?? "";
+    const second = of(series, `${DCAT}hasCurrentVersion`) ?? "";
+    const first = of(second, `${PROV}wasRevisionOf`) ?? "";
+    assert.ok(first);
+    const bodies = new Map<string, Buffer>();
+    for (const [, predicate, url] of catalog)
+      if (predicate.value === `${DCAT}downloadURL`)
+        bodies.set(
+          url.value,
+          await readFile(
+            join(valid, ...new URL(url.value).pathname.split("/").slice(-2)),
+          ),
+        );
+    const feedOf = (current: (version: string) => string): string =>
+      ntriples(
+        catalog.map(([s, p, o]) =>
+          p.value === `${DCAT}hasCurrentVersion`
+            ? [s, p, oxigraph.namedNode(current(o.value))]
+            : [s, p, o],
         ),
       );
-  const feedOf = (current: (version: string) => string): string =>
-    ntriples(
-      catalog.map(([s, p, o]) =>
-        p.value === `${DCAT}hasCurrentVersion`
-          ? [s, p, oxigraph.namedNode(current(o.value))]
-          : [s, p, o],
-      ),
+    let feed = feedOf(
+      (version) => of(version, `${PROV}wasRevisionOf`) ?? version,
     );
-  let feed = feedOf(
-    (version) => of(version, `${PROV}wasRevisionOf`) ?? version,
-  );
-  const context = await browser.newContext();
-  try {
-    await context.route(
-      (url) => url.href === feedUrl || bodies.has(url.href),
-      (route) => {
-        const url = route.request().url();
-        return route.fulfill(
-          url === feedUrl
-            ? { body: feed, contentType: "text/turtle" }
-            : { body: bodies.get(url) ?? "" },
-        );
-      },
-    );
-    await context.route(new URL("checked.json", feedUrl).href, (route) =>
-      route.fulfill({ status: 404 }),
-    );
-    const page = watched(await context.newPage());
-    await page.goto(`${served.url}${AT.home}`);
-    await settled(page);
-    interface Runtime {
-      checkTables(): Promise<{ kept: string[]; refused: unknown[] }[]>;
-      openPod(name: string): Promise<{
-        subject: string;
-        owner: string;
-        opened?: { refused?: string; unheld: string[] };
-        enter(turtle: string): Promise<{ refused?: string }>;
-        ask(
-          question: string | { query: string },
-        ): Promise<Record<string, string>[]>;
-        close(): Promise<void>;
-      }>;
-    }
-    const entered = await page.evaluate(
-      async ({ terms, cvx }) => {
-        const runtime = (await import("cascade-runtime" as string)) as Runtime;
-        await runtime.checkTables();
-        const pod = await runtime.openPod("tables-proof");
-        const shots = [
-          ["141", "2025-10-01"],
-          ["150", "2025-10-01"],
-          ["140", "2024-10-01"],
-          ["141", "2024-10-01"],
-        ].map(
-          (
-            [code, date],
-            index,
-          ) => `<urn:cascade:output-${index}> a <${terms.Vaccination}> .
+    const context = await browser.newContext();
+    try {
+      await context.route(
+        (url) => url.href === feedUrl || bodies.has(url.href),
+        (route) => {
+          const url = route.request().url();
+          return route.fulfill(
+            url === feedUrl
+              ? { body: feed, contentType: "text/turtle" }
+              : { body: bodies.get(url) ?? "" },
+          );
+        },
+      );
+      await context.route(new URL("checked.json", feedUrl).href, (route) =>
+        route.fulfill({ status: 404 }),
+      );
+      const page = watched(await context.newPage());
+      await page.goto(`${served.url}${AT.home}`);
+      await settled(page);
+      interface Runtime {
+        checkTables(): Promise<{ kept: string[]; refused: unknown[] }[]>;
+        openPod(name: string): Promise<{
+          subject: string;
+          owner: string;
+          opened?: { refused?: string; unheld: string[] };
+          enter(turtle: string): Promise<{ refused?: string }>;
+          ask(
+            question: string | { query: string },
+          ): Promise<Record<string, string>[]>;
+          close(): Promise<void>;
+        }>;
+      }
+      const entered = await page.evaluate(
+        async ({ terms, cvx }) => {
+          const runtime = (await import(
+            "cascade-runtime" as string
+          )) as Runtime;
+          await runtime.checkTables();
+          const pod = await runtime.openPod("tables-proof");
+          const shots = [
+            ["141", "2025-10-01"],
+            ["150", "2025-10-01"],
+            ["140", "2024-10-01"],
+            ["141", "2024-10-01"],
+          ].map(
+            (
+              [code, date],
+              index,
+            ) => `<urn:cascade:output-${index}> a <${terms.Vaccination}> .
 <urn:cascade:output-${index}-version> <http://www.w3.org/ns/prov#specializationOf> <urn:cascade:output-${index}> ;
   <${terms.vaccineCode}> <${cvx}${code}> ;
   <${terms.vaccinationOccurrenceTime}> "${date}"^^<http://www.w3.org/2001/XMLSchema#date> ;
   <${terms.patient}> <${pod.subject}> .`,
-        );
-        const session = `urn:uuid:${crypto.randomUUID()}`;
-        const done =
-          await pod.enter(`<${session}> a <http://www.w3.org/ns/prov#Activity> ;
+          );
+          const session = `urn:uuid:${crypto.randomUUID()}`;
+          const done =
+            await pod.enter(`<${session}> a <http://www.w3.org/ns/prov#Activity> ;
   <http://www.w3.org/ns/prov#qualifiedAssociation> [ <http://www.w3.org/ns/prov#agent> <${pod.owner}> ;
     <http://www.w3.org/ns/prov#hadRole> <${terms.PatientRole}> ] .
 ${shots.join("\n")}`);
-        await pod.close();
-        return done;
-      },
-      { terms, cvx: codeStems.CVX },
-    );
-    assert.equal(entered.refused, undefined);
+          await pod.close();
+          return done;
+        },
+        { terms, cvx: codeStems.CVX },
+      );
+      assert.equal(entered.refused, undefined);
 
-    feed = feedOf((version) => version);
-    const after = await page.evaluate(
-      async ({ series, first, second, terms }) => {
-        const runtime = (await import("cascade-runtime" as string)) as Runtime;
-        const checked = await runtime.checkTables();
-        const pod = await runtime.openPod("tables-proof");
-        try {
-          const current = await pod.ask({
-            query: `SELECT ?version WHERE { <${series}> <http://purl.org/pav/hasCurrentVersion> ?version }`,
-          });
-          const sames = await pod.ask({
-            query: `SELECT ?used ?counts (GROUP_CONCAT(STR(?code); separator=" ") AS ?codes) WHERE {
+      feed = feedOf((version) => version);
+      const after = await page.evaluate(
+        async ({ series, first, second, terms }) => {
+          const runtime = (await import(
+            "cascade-runtime" as string
+          )) as Runtime;
+          const checked = await runtime.checkTables();
+          const pod = await runtime.openPod("tables-proof");
+          try {
+            const current = await pod.ask({
+              query: `SELECT ?version WHERE { <${series}> <http://purl.org/pav/hasCurrentVersion> ?version }`,
+            });
+            const sames = await pod.ask({
+              query: `SELECT ?used ?counts (GROUP_CONCAT(STR(?code); separator=" ") AS ?codes) WHERE {
               ?judgment <${terms.justification}> <${terms.SameMappedCodeAndDate}> ;
                 <http://www.w3.org/ns/prov#wasDerivedFrom> ?used ; <http://www.w3.org/ns/prov#hadMember> ?record .
               VALUES ?used { <${first}> <${second}> }
               ?record <http://purl.org/pav/hasCurrentVersion>/<${terms.vaccineCode}> ?code
               BIND (EXISTS { ?judgment <https://ns.cascadeprotocol.org/cascade#countsUnderLens> true } AS ?counts)
             } GROUP BY ?judgment ?used ?counts`,
-          });
-          return {
-            kept: checked.flatMap(({ kept }) => kept),
-            opened: pod.opened,
-            current,
-            sames,
-            databases: (await indexedDB.databases()).map(
-              ({ name }) => name ?? "",
-            ),
-          };
-        } finally {
-          await pod.close();
-        }
-      },
-      { series, first, second, terms },
-    );
-    assert.ok(after.kept.includes(second));
-    assert.equal(after.opened?.refused, undefined);
-    assert.deepEqual(after.opened?.unheld, []);
-    assert.deepEqual(after.current, [{ version: second }]);
-    assert.deepEqual(
-      after.sames
+            });
+            return {
+              kept: checked.flatMap(({ kept }) => kept),
+              opened: pod.opened,
+              current,
+              sames,
+              databases: (await indexedDB.databases()).map(
+                ({ name }) => name ?? "",
+              ),
+            };
+          } finally {
+            await pod.close();
+          }
+        },
+        { series, first, second, terms },
+      );
+      const filed = after.sames
         .map(
           ({ used = "", codes = "" }) =>
             `${used === first ? "first" : "second"}: ${codes
@@ -2171,1226 +2204,1741 @@ ${shots.join("\n")}`);
               .sort()
               .join(" ")}`,
         )
-        .sort(),
-      ["first: 141 150", "second: 140 141"],
-    );
-    assert.deepEqual(
-      after.sames
-        .filter(({ used }) => used === first)
-        .map(({ counts }) => counts),
-      ["true"],
-      "the Same by the first version does not count on though the second joins it too",
-    );
-    assert.ok(
-      after.databases.some((name) => name.endsWith(":cascade-tables")),
-      `no tables database among ${after.databases.join(", ")}`,
-    );
+        .sort();
+      await t.test(
+        "keeps the newer version in the app's own database",
+        async () => {
+          assert.ok(after.kept.includes(second));
+          assert.ok(
+            after.databases.some((name) => name.endsWith(":cascade-tables")),
+            `no tables database among ${after.databases.join(", ")}`,
+          );
+        },
+      );
+      await t.test(
+        "records the version in a pod opened after the check",
+        async () => {
+          assert.equal(after.opened?.refused, undefined);
+          assert.deepEqual(after.opened?.unheld, []);
+          assert.deepEqual(after.current, [{ version: second }]);
+        },
+      );
+      await t.test(
+        "files the Same judgment the newer version newly joins",
+        async () => {
+          assert.ok(filed.includes("second: 140 141"), filed.join("; "));
+        },
+      );
+      await t.test(
+        "files nothing again for a pair the replaced version joined already",
+        async () => {
+          assert.deepEqual(filed, ["first: 141 150", "second: 140 141"]);
+        },
+      );
+      await t.test(
+        "still counts the Same judgment the replaced version filed",
+        async () => {
+          assert.deepEqual(
+            after.sames
+              .filter(({ used }) => used === first)
+              .map(({ counts }) => counts),
+            ["true"],
+          );
+        },
+      );
 
-    await page.goto(
-      `${served.url}${AT.table(series.replace(/^urn:uuid:/, ""), "141")}`,
-    );
-    await settled(page);
-    const label = of(series, "http://www.w3.org/2000/01/rdf-schema#label");
-    assert.ok(label);
-    assert.equal(await page.locator("main h1").innerText(), label);
-    assert.equal(
-      await page.locator("aside section.tables a[aria-current]").count(),
-      1,
-      "the table's source is not marked in the sidebar",
-    );
-    const shown = await page.locator("main").innerText();
-    assert.ok(
-      shown.includes(
-        `Using version ${of(second, "http://purl.org/pav/version") ?? ""}`,
-      ),
-      shown,
-    );
-    assert.deepEqual(
-      await page.locator("table.codes tbody td:first-child").allInnerTexts(),
-      ["141"],
-    );
-    assert.ok(shown.includes("Tables Proof"), shown);
-    await inPlace(page, () => page.click("section.tables button"));
-    assert.match(
-      await page.locator("p.note").innerText(),
-      /^Checked the feeds: nothing new\.$/,
-    );
+      await page.goto(
+        `${served.url}${AT.table(series.replace(/^urn:uuid:/, ""), "141")}`,
+      );
+      await settled(page);
+      const label = of(series, "http://www.w3.org/2000/01/rdf-schema#label");
+      assert.ok(label);
+      await t.test("names the table's page by its series' label", async () => {
+        assert.equal(await page.locator("main h1").innerText(), label);
+      });
+      await t.test("marks the table's source in the sidebar", async () => {
+        assert.equal(
+          await page.locator("aside section.tables a[aria-current]").count(),
+          1,
+        );
+      });
+      const shown = await page.locator("main").innerText();
+      await t.test(
+        'says "Using version" and the version on the table\'s page',
+        async () => {
+          assert.ok(
+            shown.includes(
+              `Using version ${of(second, "http://purl.org/pav/version") ?? ""}`,
+            ),
+            shown,
+          );
+        },
+      );
+      await t.test(
+        "lists only the code searched for on the table's page",
+        async () => {
+          assert.deepEqual(
+            await page
+              .locator("table.codes tbody td:first-child")
+              .allInnerTexts(),
+            ["141"],
+          );
+        },
+      );
+      await t.test(
+        "names on the table's page the pod that holds the code",
+        async () => {
+          assert.ok(shown.includes("Tables Proof"), shown);
+        },
+      );
+      await inPlace(page, () => page.click("section.tables button"));
+      await t.test(
+        'says "Checked the feeds: nothing new." after a check from the sidebar',
+        async () => {
+          assert.match(
+            await page.locator("p.note").innerText(),
+            /^Checked the feeds: nothing new\.$/,
+          );
+        },
+      );
 
-    const said = await page.evaluate(
-      async ({ terms, cvx }) => {
-        const runtime = (await import(
-          "cascade-runtime" as string
-        )) as Runtime & {
-          appTables(): Promise<{
-            about(codes: string[]): Promise<
-              Map<
-                string,
-                {
-                  name?: { label: string };
-                  status?: { deprecated: boolean; replacedBy: string[] };
-                }
-              >
-            >;
-          }>;
-        };
-        const pod = await runtime.openPod("tables-proof");
-        try {
-          const shots = ["57", "03"].map(
-            (code) => `<urn:cascade:output-${code}> a <${terms.Vaccination}> .
+      const said = await page.evaluate(
+        async ({ terms, cvx }) => {
+          const runtime = (await import(
+            "cascade-runtime" as string
+          )) as Runtime & {
+            appTables(): Promise<{
+              about(codes: string[]): Promise<
+                Map<
+                  string,
+                  {
+                    name?: { label: string };
+                    status?: { deprecated: boolean; replacedBy: string[] };
+                  }
+                >
+              >;
+            }>;
+          };
+          const pod = await runtime.openPod("tables-proof");
+          try {
+            const shots = ["57", "03"].map(
+              (code) => `<urn:cascade:output-${code}> a <${terms.Vaccination}> .
 <urn:cascade:output-${code}-version> <http://www.w3.org/ns/prov#specializationOf> <urn:cascade:output-${code}> ;
   <${terms.vaccineCode}> <${cvx}${code}> ;
   <${terms.vaccinationOccurrenceTime}> "2020-01-01"^^<http://www.w3.org/2001/XMLSchema#date> ;
   <${terms.patient}> <${pod.subject}> .`,
-          );
-          const session = `urn:uuid:${crypto.randomUUID()}`;
-          await pod.enter(`<${session}> a <http://www.w3.org/ns/prov#Activity> ;
+            );
+            const session = `urn:uuid:${crypto.randomUUID()}`;
+            await pod.enter(`<${session}> a <http://www.w3.org/ns/prov#Activity> ;
   <http://www.w3.org/ns/prov#qualifiedAssociation> [ <http://www.w3.org/ns/prov#agent> <${pod.owner}> ;
     <http://www.w3.org/ns/prov#hadRole> <${terms.PatientRole}> ] .
 ${shots.join("\n")}`);
-          const given = await pod.ask("pod/My immunizations");
-          const reviewed = new Set(
-            (await pod.ask("entry/What needs review")).map(
-              ({ entry }) => entry,
-            ),
+            const given = await pod.ask("pod/My immunizations");
+            const reviewed = new Set(
+              (await pod.ask("entry/What needs review")).map(
+                ({ entry }) => entry,
+              ),
+            );
+            const about = await (
+              await runtime.appTables()
+            ).about(given.map(({ code = "" }) => code));
+            return given.map(({ code = "", entry = "" }) => ({
+              label: about.get(code)?.name?.label ?? "",
+              retired: about.get(code)?.status?.deprecated === true,
+              review: reviewed.has(entry),
+            }));
+          } finally {
+            await pod.close();
+          }
+        },
+        { terms, cvx: codeStems.CVX },
+      );
+      assert.ok(
+        said.some(({ label }) => label !== ""),
+        "the names series names no shot",
+      );
+      assert.ok(
+        said.some(({ retired }) => retired),
+        "the status series retires no shot",
+      );
+      await page.goto(
+        `${served.url}${AT.pod("tables-proof")}#see-immunizations`,
+      );
+      await settled(page);
+      await page.waitForSelector('body[data-tables="ready"]');
+      await t.test(
+        "labels each code with Needs review and Retired code as the series say",
+        async () => {
+          assert.deepEqual(
+            (
+              await page
+                .locator("#see-immunizations tbody td:first-child")
+                .allTextContents()
+            ).sort(),
+            said
+              .map(
+                ({ label, retired, review }) =>
+                  `${label}${review ? " Needs review" : ""}${retired ? " Retired code" : ""}`,
+              )
+              .sort(),
           );
-          const about = await (
-            await runtime.appTables()
-          ).about(given.map(({ code = "" }) => code));
-          return given.map(({ code = "", entry = "" }) => ({
-            label: about.get(code)?.name?.label ?? "",
-            retired: about.get(code)?.status?.deprecated === true,
-            review: reviewed.has(entry),
-          }));
-        } finally {
-          await pod.close();
-        }
-      },
-      { terms, cvx: codeStems.CVX },
-    );
-    assert.ok(
-      said.some(({ label }) => label !== ""),
-      "the names series names no shot",
-    );
-    assert.ok(
-      said.some(({ retired }) => retired),
-      "the status series retires no shot",
-    );
-    await page.goto(`${served.url}${AT.pod("tables-proof")}#see-immunizations`);
-    await settled(page);
-    await page.waitForSelector('body[data-tables="ready"]');
-    assert.deepEqual(
-      (
-        await page
-          .locator("#see-immunizations tbody td:first-child")
-          .allTextContents()
-      ).sort(),
-      said
-        .map(
-          ({ label, retired, review }) =>
-            `${label}${review ? " Needs review" : ""}${retired ? " Retired code" : ""}`,
-        )
-        .sort(),
-    );
+        },
+      );
 
-    const retired = said.find((each) => each.retired);
-    assert.ok(retired);
-    const opened = (title: string): Promise<boolean> =>
-      page
-        .waitForFunction(
-          (expected) =>
-            document
-              .querySelector("main h1")
-              ?.textContent?.startsWith(expected),
-          title,
-        )
-        .then(() => true);
-    await inPlace(page, async () => {
-      await page
-        .locator("#see-immunizations tbody tr")
-        .filter({ hasText: retired.label })
-        .locator("td:first-child a")
-        .click();
-      await opened(retired.label);
-    });
-    assert.ok(AT.entryOf(page.url()) !== null);
-    assert.ok(
-      (await page.locator("main h1 .tag").allInnerTexts()).includes(
-        "Retired code",
-      ),
-      "the entry's heading does not tag the retired code",
-    );
-    const code = page.locator('main a[href*="code="]').first();
-    const notation = (await code.innerText()).trim();
-    await inPlace(page, async () => {
-      await code.click();
-      await opened(notation);
-    });
-    assert.ok(AT.tableOf(page.url()) !== null);
-    assert.equal(AT.codeOf(page.url()), notation);
-    for (const expected of [retired.label, "Tables Proof"])
+      const retired = said.find((each) => each.retired);
+      assert.ok(retired);
+      const opened = (title: string): Promise<boolean> =>
+        page
+          .waitForFunction(
+            (expected) =>
+              document
+                .querySelector("main h1")
+                ?.textContent?.startsWith(expected),
+            title,
+          )
+          .then(() => true);
       await inPlace(page, async () => {
-        await page.goBack();
-        await opened(expected);
+        await page
+          .locator("#see-immunizations tbody tr")
+          .filter({ hasText: retired.label })
+          .locator("td:first-child a")
+          .click();
+        await opened(retired.label);
       });
-    assert.equal(new URL(page.url()).hash, "#see-immunizations");
-    assert.ok(
-      await page.locator("#see-immunizations").isVisible(),
-      "Back does not open the box the row was in",
-    );
-  } finally {
-    await context.close();
-  }
+      await t.test("tags a retired code in its entry's heading", async () => {
+        assert.ok(AT.entryOf(page.url()) !== null);
+        assert.ok(
+          (await page.locator("main h1 .tag").allInnerTexts()).includes(
+            "Retired code",
+          ),
+          "the entry's heading does not tag the retired code",
+        );
+      });
+      const code = page.locator('main a[href*="code="]').first();
+      const notation = (await code.innerText()).trim();
+      await inPlace(page, async () => {
+        await code.click();
+        await opened(notation);
+      });
+      await t.test(
+        "opens the code's table from the entry, at that code",
+        async () => {
+          assert.ok(AT.tableOf(page.url()) !== null);
+          assert.equal(AT.codeOf(page.url()), notation);
+        },
+      );
+      for (const expected of [retired.label, "Tables Proof"])
+        await inPlace(page, async () => {
+          await page.goBack();
+          await opened(expected);
+        });
+      await t.test("reopens the box a row was in on Back", async () => {
+        assert.equal(new URL(page.url()).hash, "#see-immunizations");
+        assert.ok(
+          await page.locator("#see-immunizations").isVisible(),
+          "Back does not open the box the row was in",
+        );
+      });
+    } finally {
+      await context.close();
+    }
+  });
 });
 
-test("in try/, Martin's pod, copied on a first visit, has a Genetic variants tile whose rows open each variant's entry once the engine is ready: the MLH1 variant's two reports with their labs and what ClinVar says today, a gene the series does not cover, and a variant it holds no row for, then the counsellor sentence and ClinVar's disclaimer; a row opens its entry with no request, each address shape the pod's page and the entry link opens a page, and the pages reach their table-dependent line within twice their budgets", async () => {
-  const context = await browser.newContext();
-  await context.addInitScript(recordDraws);
-  try {
-    const page = watched(await context.newPage());
-    let tablesWorkers = 0;
-    const counted = (worker: PageWorker): void => {
-      if (worker.url().endsWith("/tables-worker.js")) tablesWorkers += 1;
-    };
-    page.on("worker", counted);
-    await page.goto(`${served.url}${AT.home}`);
-    await settled(page);
-    await page.waitForSelector('body[data-tables="ready"]', {
-      timeout: 60_000,
-    });
-    page.off("worker", counted);
-    assert.equal(tablesWorkers, 1, "the starter is copied in one worker");
-    await page.goto(
-      `${served.url}${AT.pod("martin-okafor")}#see-genetic-variants`,
-    );
-    await settled(page);
-    assert.equal(await page.textContent("main h1"), "Martin Okafor");
-    await page.waitForSelector('body[data-tables="ready"]', {
-      timeout: 120_000,
-    });
-    const rows = page.locator("#see-genetic-variants tbody tr");
-    assert.equal(
-      (await tiles(page)).get("Genetic variants"),
-      await rows.count(),
-      "the tile counts its rows",
-    );
-    assert.equal(
-      await page.locator("main .variants, main .variant").count(),
-      0,
-    );
-    const mlh1 = rows.filter({ hasText: "p.Ala681Val" });
-    assert.match(
-      await mlh1.innerText(),
-      /NM_000249\.4\(MLH1\):c\.2042C>T \(p\.Ala681Val\)/,
-      "the MLH1 row is not named by ClinVar",
-    );
-    assert.match(
-      await mlh1.innerText(),
-      /Differs/,
-      "the MLH1 row is not tagged",
-    );
-    const mlh1Href = await mlh1
-      .locator("td:first-child a")
-      .getAttribute("href");
-    const worth = page
-      .locator(".worth li")
-      .filter({ hasText: "your 2022 report from Harbourline Genetics" });
-    assert.equal(await worth.count(), 1, "Worth a look has no line for MLH1");
-    assert.equal(
-      await worth.locator("a").getAttribute("href"),
-      mlh1Href,
-      "the line does not link to the entry the MLH1 row opens",
-    );
-    assert.match(
-      await worth.innerText(),
-      /differs from ClinVar today\.\s*Differs$/,
-    );
-    const body = async (): Promise<string> =>
-      ((await page.locator("main").innerText()) ?? "").replace(/\s+/g, " ");
-    const clicks: number[] = [];
-    const requested: string[] = [];
-    const feedHome = new URL(".", (await servedConfig()).tables.feeds[0]).href;
-    page.on("request", (request) => {
-      const url = request.url();
-      if (/^https?:/.test(url) && !url.startsWith(feedHome))
-        requested.push(url);
-    });
-    const opens = async (row: Locator): Promise<void> => {
-      requested.length = 0;
-      await inPlace(page, () => row.locator("td:first-child a").click());
-      assert.ok(AT.entryOf(page.url()) !== null, page.url());
-      assert.deepEqual(
-        requested,
-        [],
-        "a click from a row to its entry asked for something",
+describe("Naming records by the reference tables · try/tables/", () => {
+  test("with Martin Okafor's sample pod, once the engine is ready", async (t) => {
+    const context = await browser.newContext();
+    await context.addInitScript(recordDraws);
+    try {
+      const page = watched(await context.newPage());
+      let tablesWorkers = 0;
+      const counted = (worker: PageWorker): void => {
+        if (worker.url().endsWith("/tables-worker.js")) tablesWorkers += 1;
+      };
+      page.on("worker", counted);
+      await page.goto(`${served.url}${AT.home}`);
+      await settled(page);
+      await page.waitForSelector('body[data-tables="ready"]', {
+        timeout: 60_000,
+      });
+      page.off("worker", counted);
+      await t.test("copies the starter tables in one worker", async () => {
+        assert.equal(tablesWorkers, 1, "the starter is copied in one worker");
+      });
+      await page.goto(
+        `${served.url}${AT.pod("martin-okafor")}#see-genetic-variants`,
       );
-      clicks.push(await drawnAt(page, "clinvar"));
-    };
-    const back = async (): Promise<void> => {
-      await inPlace(page, () => page.goBack());
-      assert.equal(new URL(page.url()).hash, "#see-genetic-variants");
-      assert.ok(
-        await page.locator("#see-genetic-variants").isVisible(),
-        "Back does not open the box the row was in",
-      );
-    };
-
-    await opens(mlh1);
-    const entryUrl = page.url();
-    const entry = await body();
-    for (const sentence of [
-      "Your 2022 report from Harbourline Genetics said uncertain significance.",
-      "Your 2024 report from St Columba's Hospital said likely pathogenic.",
-      "ClinVar today says pathogenic/likely pathogenic: criteria provided, multiple submitters, no conflicts, five contributing submitters.",
-      "Your clinician or a genetic counsellor can explain what this means for you.",
-    ])
-      assert.ok(entry.includes(sentence), `${sentence} is not in ${entry}`);
-    assert.match(
-      await page
-        .locator("main li")
-        .filter({ hasText: "Your 2022 report" })
-        .innerText(),
-      /Differs/,
-    );
-    assert.match(
-      entry,
-      /not intended for direct diagnostic use or medical decision-making without review by a genetics professional/i,
-    );
-    await back();
-
-    await opens(rows.filter({ hasText: "BRCA2" }));
-    assert.match(
-      await body(),
-      /ClinVar, as this app holds it, covers .*, not BRCA2\./,
-    );
-    await back();
-
-    await opens(rows.filter({ hasText: "NM_001258271" }));
-    assert.ok(
-      (await body()).includes(
-        "ClinVar, as this app holds it, has no row for this variant.",
-      ),
-    );
-
-    const podUrl = `${served.url}${AT.pod("martin-okafor")}`;
-    const opened = async (fresh: Page, address: string): Promise<void> => {
-      await fresh.goto(address);
-      await settled(fresh);
-      await fresh.waitForSelector('body[data-tables="ready"]', {
+      await settled(page);
+      assert.equal(await page.textContent("main h1"), "Martin Okafor");
+      await page.waitForSelector('body[data-tables="ready"]', {
         timeout: 120_000,
       });
-    };
-    const times: Record<keyof typeof BUDGET_MS, number[]> = {
-      "Martin's pod page, a new load, until the MLH1 Differs line": [],
-      "Martin's pod page, a reload, until the MLH1 Differs line": [],
-      "the MLH1 entry, a new load, until the ClinVar sentence": [],
-      "the MLH1 entry, a reload, until the ClinVar sentence": [],
-      "a click on a Genetic variants row, until the ClinVar sentence": clicks,
-    };
-    for (const [loads, reloads, address, what] of [
-      [
-        "Martin's pod page, a new load, until the MLH1 Differs line",
-        "Martin's pod page, a reload, until the MLH1 Differs line",
-        podUrl,
-        "differs",
-      ],
-      [
-        "the MLH1 entry, a new load, until the ClinVar sentence",
-        "the MLH1 entry, a reload, until the ClinVar sentence",
-        entryUrl,
-        "clinvar",
-      ],
-    ] as const) {
-      for (let at = 0; at < SAMPLES; at += 1) {
+      const rows = page.locator("#see-genetic-variants tbody tr");
+      await t.test("counts its rows on the Genetic variants tile", async () => {
+        assert.equal(
+          (await tiles(page)).get("Genetic variants"),
+          await rows.count(),
+          "the tile counts its rows",
+        );
+      });
+      await t.test(
+        "draws the variants nowhere on the pod's page but the tile's box",
+        async () => {
+          assert.equal(
+            await page.locator("main .variants, main .variant").count(),
+            0,
+          );
+        },
+      );
+      const mlh1 = rows.filter({ hasText: "p.Ala681Val" });
+      await t.test("names the MLH1 row by ClinVar", async () => {
+        assert.match(
+          await mlh1.innerText(),
+          /NM_000249\.4\(MLH1\):c\.2042C>T \(p\.Ala681Val\)/,
+          "the MLH1 row is not named by ClinVar",
+        );
+      });
+      await t.test("tags the MLH1 row Differs", async () => {
+        assert.match(
+          await mlh1.innerText(),
+          /Differs/,
+          "the MLH1 row is not tagged",
+        );
+      });
+      const mlh1Href = await mlh1
+        .locator("td:first-child a")
+        .getAttribute("href");
+      const worth = page
+        .locator(".worth li")
+        .filter({ hasText: "your 2022 report from Harbourline Genetics" });
+      await t.test(
+        "lists one line worth a look for MLH1, linked to the entry the row opens",
+        async () => {
+          assert.equal(
+            await worth.count(),
+            1,
+            "Worth a look has no line for MLH1",
+          );
+          assert.equal(
+            await worth.locator("a").getAttribute("href"),
+            mlh1Href,
+            "the line does not link to the entry the MLH1 row opens",
+          );
+        },
+      );
+      await t.test(
+        "says in that line that the report differs from ClinVar today",
+        async () => {
+          assert.match(
+            await worth.innerText(),
+            /differs from ClinVar today\.\s*Differs$/,
+          );
+        },
+      );
+      const body = async (): Promise<string> =>
+        ((await page.locator("main").innerText()) ?? "").replace(/\s+/g, " ");
+      const clicks: number[] = [];
+      /** What each click from a row to its entry did, and what each Back left. */
+      const opening: { url: string; requested: string[] }[] = [];
+      const returns: { hash: string; visible: boolean }[] = [];
+      const requested: string[] = [];
+      const feedHome = new URL(".", (await servedConfig()).tables.feeds[0])
+        .href;
+      page.on("request", (request) => {
+        const url = request.url();
+        if (/^https?:/.test(url) && !url.startsWith(feedHome))
+          requested.push(url);
+      });
+      const opens = async (row: Locator): Promise<void> => {
+        requested.length = 0;
+        await inPlace(page, () => row.locator("td:first-child a").click());
+        opening.push({ url: page.url(), requested: [...requested] });
+        clicks.push(await drawnAt(page, "clinvar"));
+      };
+      const back = async (): Promise<void> => {
+        await inPlace(page, () => page.goBack());
+        returns.push({
+          hash: new URL(page.url()).hash,
+          visible: await page.locator("#see-genetic-variants").isVisible(),
+        });
+      };
+
+      await opens(mlh1);
+      const entryUrl = page.url();
+      const entry = await body();
+      await t.test(
+        "says each report's year, lab and classification, then what ClinVar says today",
+        async () => {
+          for (const sentence of [
+            "Your 2022 report from Harbourline Genetics said uncertain significance.",
+            "Your 2024 report from St Columba's Hospital said likely pathogenic.",
+            "ClinVar today says pathogenic/likely pathogenic: criteria provided, multiple submitters, no conflicts, five contributing submitters.",
+          ])
+            assert.ok(
+              entry.includes(sentence),
+              `${sentence} is not in ${entry}`,
+            );
+        },
+      );
+      await t.test(
+        "tags the report that differs from ClinVar today",
+        async () => {
+          assert.match(
+            await page
+              .locator("main li")
+              .filter({ hasText: "Your 2022 report" })
+              .innerText(),
+            /Differs/,
+          );
+        },
+      );
+      await t.test(
+        "says the counsellor sentence and ClinVar's disclaimer",
+        async () => {
+          const counsellor =
+            "Your clinician or a genetic counsellor can explain what this means for you.";
+          assert.ok(
+            entry.includes(counsellor),
+            `${counsellor} is not in ${entry}`,
+          );
+          assert.match(
+            entry,
+            /not intended for direct diagnostic use or medical decision-making without review by a genetics professional/i,
+          );
+        },
+      );
+      await back();
+
+      await opens(rows.filter({ hasText: "BRCA2" }));
+      await t.test("says the series does not cover a gene", async () => {
+        assert.match(
+          await body(),
+          /ClinVar, as this app holds it, covers .*, not BRCA2\./,
+        );
+      });
+      await back();
+
+      await opens(rows.filter({ hasText: "NM_001258271" }));
+      await t.test(
+        "says ClinVar, as the app holds it, has no row for a variant",
+        async () => {
+          assert.ok(
+            (await body()).includes(
+              "ClinVar, as this app holds it, has no row for this variant.",
+            ),
+          );
+        },
+      );
+      await t.test("opens a row's entry with no request", async () => {
+        assert.equal(opening.length, 3);
+        for (const { url, requested: asked } of opening) {
+          assert.ok(AT.entryOf(url) !== null, url);
+          assert.deepEqual(
+            asked,
+            [],
+            "a click from a row to its entry asked for something",
+          );
+        }
+      });
+      await t.test("reopens the box the row was in on Back", async () => {
+        assert.equal(returns.length, 2);
+        for (const { hash, visible } of returns) {
+          assert.equal(hash, "#see-genetic-variants");
+          assert.ok(visible, "Back does not open the box the row was in");
+        }
+      });
+
+      const podUrl = `${served.url}${AT.pod("martin-okafor")}`;
+      const opened = async (fresh: Page, address: string): Promise<void> => {
+        await fresh.goto(address);
+        await settled(fresh);
+        await fresh.waitForSelector('body[data-tables="ready"]', {
+          timeout: 120_000,
+        });
+      };
+      const times: Record<keyof typeof BUDGET_MS, number[]> = {
+        "Martin's pod page, a new load, until the MLH1 Differs line": [],
+        "Martin's pod page, a reload, until the MLH1 Differs line": [],
+        "the MLH1 entry, a new load, until the ClinVar sentence": [],
+        "the MLH1 entry, a reload, until the ClinVar sentence": [],
+        "a click on a Genetic variants row, until the ClinVar sentence": clicks,
+      };
+      for (const [loads, reloads, address, what] of [
+        [
+          "Martin's pod page, a new load, until the MLH1 Differs line",
+          "Martin's pod page, a reload, until the MLH1 Differs line",
+          podUrl,
+          "differs",
+        ],
+        [
+          "the MLH1 entry, a new load, until the ClinVar sentence",
+          "the MLH1 entry, a reload, until the ClinVar sentence",
+          entryUrl,
+          "clinvar",
+        ],
+      ] as const) {
+        for (let at = 0; at < SAMPLES; at += 1) {
+          const fresh = watched(await context.newPage());
+          await opened(fresh, address);
+          times[loads].push(await drawnAt(fresh, what));
+          await fresh.close();
+        }
         const fresh = watched(await context.newPage());
         await opened(fresh, address);
-        times[loads].push(await drawnAt(fresh, what));
+        for (let at = 0; at < SAMPLES; at += 1) {
+          await fresh.reload();
+          await settled(fresh);
+          times[reloads].push(await drawnAt(fresh, what));
+        }
         await fresh.close();
       }
-      const fresh = watched(await context.newPage());
-      await opened(fresh, address);
-      for (let at = 0; at < SAMPLES; at += 1) {
-        await fresh.reload();
-        await settled(fresh);
-        times[reloads].push(await drawnAt(fresh, what));
-      }
-      await fresh.close();
-    }
-    for (const [what, budget] of Object.entries(BUDGET_MS))
-      withinBudget(what, times[what as keyof typeof BUDGET_MS], budget);
-
-    const shapes = async (
-      fresh: Page,
-    ): Promise<{ shape: string; href: string }[]> => {
-      const found = new Map<string, string>();
-      for (const href of await fresh.$$eval(AT.links, (links) =>
-        links.map((link) => link.getAttribute("href") ?? ""),
-      ))
-        if (!found.has(AT.shapeOf(href))) found.set(AT.shapeOf(href), href);
-      return [...found].map(([shape, href]) => ({ shape, href }));
-    };
-    for (const address of [podUrl, entryUrl]) {
-      const fresh = watched(await context.newPage());
-      await opened(fresh, address);
-      const found = await shapes(fresh);
-      assert.ok(found.length > 1, `${address} links one shape of address`);
-      for (const { shape, href } of found) {
-        await opened(fresh, address);
-        await inPlace(fresh, () =>
-          fresh
-            .locator(`a[href="${href}"]`)
-            .first()
-            .evaluate((link) => (link as HTMLElement).click()),
-        );
-        assert.ok(
-          !["Not found", "Something went wrong", "Not ported yet"].includes(
-            (await fresh.textContent("main h1")) ?? "",
-          ),
-          `${address} links ${href} (${shape}), which draws a page that is not found`,
-        );
-      }
-      await fresh.close();
-    }
-  } finally {
-    await context.close();
-  }
-});
-
-test("in try/, Priya's pod, copied on a first visit, names her potassium result by LOINC once the tables are ready, her potassium result opens the electrolytes panel with her tests in LOINC's order and the required ones she has no result for, and its class page puts her amlodipine in its ingredient's class and says FDA classes a different form of her lisinopril, so it has none", async () => {
-  const context = await browser.newContext();
-  await context.addInitScript(recordDraws);
-  try {
-    const page = watched(await context.newPage());
-    await page.goto(`${served.url}${AT.home}`);
-    await settled(page);
-    await page.waitForSelector('body[data-tables="ready"]', {
-      timeout: 60_000,
-    });
-    await page.goto(
-      `${served.url}${AT.pod("priya-natarajan")}#see-lab-results`,
-    );
-    await settled(page);
-    await page.waitForSelector('body[data-tables="ready"]', {
-      timeout: 120_000,
-    });
-    const tests = (
-      await page
-        .locator("#see-lab-results tbody td:first-child")
-        .allInnerTexts()
-    ).map((text) => text.trim());
-    assert.ok(
-      tests.includes("Potassium [Moles/volume] in Serum or Plasma"),
-      `no potassium result is named by LOINC among ${tests.join("; ")}`,
-    );
-    assert.ok(
-      !tests.includes("Potassium"),
-      "a result keeps the record's own name",
-    );
-    await inPlace(page, () =>
-      page
-        .locator("#see-lab-results tbody td:first-child a", {
-          hasText: "Potassium",
-        })
-        .first()
-        .click(),
-    );
-    await page.waitForSelector("text=In LOINC panels", { timeout: 60_000 });
-    await inPlace(page, () => page.locator('main a[href$="24326-1"]').click());
-    await page.waitForFunction(
-      () =>
-        document
-          .querySelector("main h1")
-          ?.textContent?.startsWith("Your results in"),
-      undefined,
-      { timeout: 120_000 },
-    );
-    const panel = ((await page.locator("main").innerText()) ?? "").replace(
-      /\s+/g,
-      " ",
-    );
-    const at = (word: string): number => panel.lastIndexOf(word);
-    assert.ok(
-      at("Sodium") > -1 &&
-        at("Sodium") < at("Potassium") &&
-        at("Potassium") < at("Chloride"),
-      `her tests are not in LOINC's order in ${panel}`,
-    );
-    for (const said of ["required", "No result", "missing: "])
-      assert.ok(panel.includes(said), `${said} is not in ${panel}`);
-    assert.ok(
-      !((await page.textContent("aside section.tables")) ?? "").includes(
-        "Loading",
-      ),
-      "the sidebar still says the tables are loading",
-    );
-    await page.goto(`${served.url}${AT.pod("priya-natarajan")}`);
-    await settled(page);
-    await inPlace(page, () =>
-      page.click(".tiles .tile-box:has(.kind:text-is('Medications')) a.by"),
-    );
-    await page.waitForFunction(
-      () =>
-        document.querySelector("main h1")?.textContent === "Medicines by class",
-      undefined,
-      { timeout: 120_000 },
-    );
-    await page.waitForSelector("main .card h2", { timeout: 120_000 });
-    const body = ((await page.locator("main").innerText()) ?? "").replace(
-      /\s+/g,
-      " ",
-    );
-    for (const said of [
-      "Calcium Channel Blocker [EPC]",
-      "amlodipine 5 MG Oral Tablet through amlodipine",
-      "lisinopril 10 MG Oral Tablet: FDA classes a different form of lisinopril; RxNorm does not tie this product to it.",
-    ])
-      assert.ok(body.includes(said), `${said} is not in ${body}`);
-    assert.ok(
-      !body.includes("Angiotensin Converting Enzyme Inhibitor [EPC]"),
-      "lisinopril is given the class FDA gives lisinopril anhydrous",
-    );
-  } finally {
-    await context.close();
-  }
-});
-
-test("in try/, every tool of the one list is offered to the model context, never one the never list holds, a change card opens the trend at its address, and going to another pod takes every tool of the pod left away when the page shows the other, never after the next paint", async () => {
-  const context = await browser.newContext();
-  await context.addInitScript(recordTools);
-  await context.addInitScript(watchLeaving);
-  try {
-    const page = watched(await context.newPage());
-    const live = (): Promise<string[]> => offered(page);
-    await page.goto(`${served.url}${AT.home}`);
-    await settled(page);
-    await page.goto(`${served.url}${AT.pod("tamsin-vale")}`);
-    await settled(page);
-    await page.locator(".change").first().waitFor({ timeout: 60_000 });
-    await page.waitForFunction(() =>
-      (globalThis as unknown as Registered).registered.some(
-        ({ name, signal }) => name === "open_trend" && !signal.aborted,
-      ),
-    );
-    assert.deepEqual(await live(), TOOLS.names);
-    assert.deepEqual(
-      (await live()).filter((name) => TOOLS.never.includes(name)),
-      [],
-    );
-    const total = (): Promise<number> =>
-      page.evaluate(
-        () => (globalThis as unknown as Registered).registered.length,
+      await t.test(
+        "reaches each table-dependent line within twice its budget",
+        async () => {
+          for (const [what, budget] of Object.entries(BUDGET_MS))
+            withinBudget(what, times[what as keyof typeof BUDGET_MS], budget);
+        },
       );
-    const before = await total();
 
-    await inPlace(page, () =>
-      page.click('.change a:has-text("Open the trend")'),
-    );
-    assert.deepEqual(AT.trendOf(page.url()), {
-      pod: "tamsin-vale",
-      test: "4548-4",
-      medication: "861007",
-    });
-    const chart = page.locator("svg.chart.large");
-    assert.equal(await chart.locator("circle.marker").count(), 6);
-    assert.equal(
-      await chart.locator("title").first().textContent(),
-      await page.textContent("main h1"),
-    );
-    assert.deepEqual(await live(), TOOLS.names);
-    assert.equal(
-      await total(),
-      before,
-      "a move between the pod's screens offered the tools again",
-    );
-
-    await page.evaluate(
-      ([from, count]) => {
-        Object.assign(globalThis, { leaving: { from, count } });
-      },
-      [await page.textContent("aside nav a[aria-current]"), await total()],
-    );
-    await inPlace(page, () => page.click('nav a:has-text("Alex Rivera")'));
-    assert.equal(await page.textContent("main h1"), "Alex Rivera");
-    assert.equal(
-      await page.evaluate(
-        () => (globalThis as unknown as Leaving).leaving?.still,
-      ),
-      0,
-      "a tool of the pod left was still on when the page showed another pod",
-    );
-    assert.deepEqual(await live(), TOOLS.names);
-
-    await page.goto(`${served.url}${AT.trend("tamsin-vale", "0000-0")}`);
-    await settled(page);
-    assert.equal(await page.textContent("main h1"), "Not found");
-    assert.match(
-      (await page.textContent("main p")) ?? "",
-      /no test 0000-0 in the pod/,
-    );
-  } finally {
-    await context.close();
-  }
+      const shapes = async (
+        fresh: Page,
+      ): Promise<{ shape: string; href: string }[]> => {
+        const found = new Map<string, string>();
+        for (const href of await fresh.$$eval(AT.links, (links) =>
+          links.map((link) => link.getAttribute("href") ?? ""),
+        ))
+          if (!found.has(AT.shapeOf(href))) found.set(AT.shapeOf(href), href);
+        return [...found].map(([shape, href]) => ({ shape, href }));
+      };
+      const drawnFor: {
+        address: string;
+        href: string;
+        shape: string;
+        title: string;
+      }[] = [];
+      for (const address of [podUrl, entryUrl]) {
+        const fresh = watched(await context.newPage());
+        await opened(fresh, address);
+        const found = await shapes(fresh);
+        assert.ok(found.length > 1, `${address} links one shape of address`);
+        for (const { shape, href } of found) {
+          await opened(fresh, address);
+          await inPlace(fresh, () =>
+            fresh
+              .locator(`a[href="${href}"]`)
+              .first()
+              .evaluate((link) => (link as HTMLElement).click()),
+          );
+          drawnFor.push({
+            address,
+            href,
+            shape,
+            title: (await fresh.textContent("main h1")) ?? "",
+          });
+        }
+        await fresh.close();
+      }
+      await t.test(
+        "opens a page from each shape of address the pod's page and the entry link",
+        async () => {
+          for (const { address, href, shape, title } of drawnFor)
+            assert.ok(
+              !["Not found", "Something went wrong", "Not ported yet"].includes(
+                title,
+              ),
+              `${address} links ${href} (${shape}), which draws a page that is not found`,
+            );
+        },
+      );
+    } finally {
+      await context.close();
+    }
+  });
 });
 
-test("in try/, the model context is offered the one list on the entry, classes, panel and table screens, with the pod filled in only where a pod is shown, and open_classes, open_entry, open_panel, open_table and open_pod move the app in place", async () => {
-  const context = await browser.newContext();
-  await context.addInitScript(recordTools);
-  try {
-    const page = watched(await context.newPage());
-    await page.goto(`${served.url}${AT.pod("alex-rivera")}`);
-    await settled(page);
-    const podFilled = {
-      properties: ["test", "medication"],
-      required: ["test"],
-    };
-    const named = {
-      properties: ["pod", "test", "medication"],
-      required: ["pod", "test"],
-    };
-    const opens = async (
-      name: string,
-      input: object,
-      path: string,
-      takesPod?: boolean,
-    ) => {
+describe("Naming records by the reference tables · try/tables/", () => {
+  test("with Priya Natarajan's sample pod, once the tables are ready", async (t) => {
+    const context = await browser.newContext();
+    await context.addInitScript(recordDraws);
+    try {
+      const page = watched(await context.newPage());
+      await page.goto(`${served.url}${AT.home}`);
+      await settled(page);
+      await page.waitForSelector('body[data-tables="ready"]', {
+        timeout: 60_000,
+      });
+      await page.goto(
+        `${served.url}${AT.pod("priya-natarajan")}#see-lab-results`,
+      );
+      await settled(page);
+      await page.waitForSelector('body[data-tables="ready"]', {
+        timeout: 120_000,
+      });
+      const tests = (
+        await page
+          .locator("#see-lab-results tbody td:first-child")
+          .allInnerTexts()
+      ).map((text) => text.trim());
+      await t.test(
+        "names her potassium result by LOINC, not by the record's own name",
+        async () => {
+          assert.ok(
+            tests.includes("Potassium [Moles/volume] in Serum or Plasma"),
+            `no potassium result is named by LOINC among ${tests.join("; ")}`,
+          );
+          assert.ok(
+            !tests.includes("Potassium"),
+            "a result keeps the record's own name",
+          );
+        },
+      );
+      await inPlace(page, () =>
+        page
+          .locator("#see-lab-results tbody td:first-child a", {
+            hasText: "Potassium",
+          })
+          .first()
+          .click(),
+      );
+      await page.waitForSelector("text=In LOINC panels", { timeout: 60_000 });
+      await inPlace(page, () =>
+        page.locator('main a[href$="24326-1"]').click(),
+      );
+      await page.waitForFunction(
+        () =>
+          document
+            .querySelector("main h1")
+            ?.textContent?.startsWith("Your results in"),
+        undefined,
+        { timeout: 120_000 },
+      );
+      await t.test(
+        "opens the electrolytes panel from her potassium result",
+        async () => {
+          const { pathname, search } = new URL(page.url());
+          assert.equal(
+            pathname + search,
+            "/try/pods/priya-natarajan/panel?panel=24326-1",
+          );
+          assert.match(
+            (await page.textContent("main h1")) ?? "",
+            /^Your results in/,
+          );
+        },
+      );
+      const panel = ((await page.locator("main").innerText()) ?? "").replace(
+        /\s+/g,
+        " ",
+      );
+      const at = (word: string): number => panel.lastIndexOf(word);
+      await t.test("lists her tests in LOINC's order", async () => {
+        assert.ok(
+          at("Sodium") > -1 &&
+            at("Sodium") < at("Potassium") &&
+            at("Potassium") < at("Chloride"),
+          `her tests are not in LOINC's order in ${panel}`,
+        );
+      });
+      await t.test(
+        "lists the panel's required tests she has no result for",
+        async () => {
+          for (const said of ["required", "No result", "missing: "])
+            assert.ok(panel.includes(said), `${said} is not in ${panel}`);
+        },
+      );
+      await t.test(
+        "stops saying in the sidebar that the tables are loading",
+        async () => {
+          assert.ok(
+            !((await page.textContent("aside section.tables")) ?? "").includes(
+              "Loading",
+            ),
+            "the sidebar still says the tables are loading",
+          );
+        },
+      );
+      await page.goto(`${served.url}${AT.pod("priya-natarajan")}`);
+      await settled(page);
+      await inPlace(page, () =>
+        page.click(".tiles .tile-box:has(.kind:text-is('Medications')) a.by"),
+      );
+      await page.waitForFunction(
+        () =>
+          document.querySelector("main h1")?.textContent ===
+          "Medicines by class",
+        undefined,
+        { timeout: 120_000 },
+      );
+      await page.waitForSelector("main .card h2", { timeout: 120_000 });
+      await t.test(
+        "opens Medicines by class from the Medications tile, without loading a page",
+        async () => {
+          assert.equal(await page.textContent("main h1"), "Medicines by class");
+        },
+      );
+      const body = ((await page.locator("main").innerText()) ?? "").replace(
+        /\s+/g,
+        " ",
+      );
+      await t.test(
+        "puts her amlodipine in its ingredient's class",
+        async () => {
+          for (const said of [
+            "Calcium Channel Blocker [EPC]",
+            "amlodipine 5 MG Oral Tablet through amlodipine",
+          ])
+            assert.ok(body.includes(said), `${said} is not in ${body}`);
+        },
+      );
+      await t.test(
+        "says FDA classes a different form of her lisinopril",
+        async () => {
+          const said =
+            "lisinopril 10 MG Oral Tablet: FDA classes a different form of lisinopril; RxNorm does not tie this product to it.";
+          assert.ok(body.includes(said), `${said} is not in ${body}`);
+        },
+      );
+      await t.test("gives her lisinopril no class", async () => {
+        assert.ok(
+          !body.includes("Angiotensin Converting Enzyme Inhibitor [EPC]"),
+          "lisinopril is given the class FDA gives lisinopril anhydrous",
+        );
+      });
+    } finally {
+      await context.close();
+    }
+  });
+});
+
+/**
+ * A page registers tools with `document.modelContext` (WebMCP) so a browser's agent can call them. The app offers its one tool list on every screen, the pod filled in where a pod is shown, and never a tool that calls an operation the list `NEVER` holds.
+ */
+describe("Offering the app's tools to a browser's agent · document.modelContext", () => {
+  test("with a pod shown in try/", async (t) => {
+    const context = await browser.newContext();
+    await context.addInitScript(recordTools);
+    await context.addInitScript(watchLeaving);
+    try {
+      const page = watched(await context.newPage());
+      const live = (): Promise<string[]> => offered(page);
+      await page.goto(`${served.url}${AT.home}`);
+      await settled(page);
+      await page.goto(`${served.url}${AT.pod("tamsin-vale")}`);
+      await settled(page);
+      await page.locator(".change").first().waitFor({ timeout: 60_000 });
+      await page.waitForFunction(() =>
+        (globalThis as unknown as Registered).registered.some(
+          ({ name, signal }) => name === "open_trend" && !signal.aborted,
+        ),
+      );
+      await t.test("offers every tool of the app's tool list", async () => {
+        assert.deepEqual(await live(), TOOLS.names);
+      });
+      await t.test(
+        "never offers a tool that calls an operation `NEVER` holds",
+        async () => {
+          assert.deepEqual(
+            (await live()).filter((name) => TOOLS.never.includes(name)),
+            [],
+          );
+        },
+      );
+      const total = (): Promise<number> =>
+        page.evaluate(
+          () => (globalThis as unknown as Registered).registered.length,
+        );
+      const before = await total();
+
+      await inPlace(page, () =>
+        page.click('.change a:has-text("Open the trend")'),
+      );
+      await t.test(
+        "registers no tool again on a move between the pod's screens",
+        async () => {
+          assert.deepEqual(await live(), TOOLS.names);
+          assert.equal(
+            await total(),
+            before,
+            "a move between the pod's screens offered the tools again",
+          );
+        },
+      );
+
+      await page.evaluate(
+        ([from, count]) => {
+          Object.assign(globalThis, { leaving: { from, count } });
+        },
+        [await page.textContent("aside nav a[aria-current]"), await total()],
+      );
+      await inPlace(page, () => page.click('nav a:has-text("Alex Rivera")'));
+      await t.test(
+        "takes every tool of the pod left away as the page shows another pod, never a paint later",
+        async () => {
+          assert.equal(await page.textContent("main h1"), "Alex Rivera");
+          assert.equal(
+            await page.evaluate(
+              () => (globalThis as unknown as Leaving).leaving?.still,
+            ),
+            0,
+            "a tool of the pod left was still on when the page showed another pod",
+          );
+        },
+      );
+      await t.test(
+        "offers the tool list again for the pod moved to",
+        async () => {
+          assert.deepEqual(await live(), TOOLS.names);
+        },
+      );
+    } finally {
+      await context.close();
+    }
+  });
+});
+
+describe("Offering the app's tools to a browser's agent · document.modelContext", () => {
+  test("with the entry, classes, panel and table screens of try/", async (t) => {
+    const context = await browser.newContext();
+    await context.addInitScript(recordTools);
+    try {
+      const page = watched(await context.newPage());
+      await page.goto(`${served.url}${AT.pod("alex-rivera")}`);
+      await settled(page);
+      const podFilled = {
+        properties: ["test", "medication"],
+        required: ["test"],
+      };
+      const named = {
+        properties: ["pod", "test", "medication"],
+        required: ["pod", "test"],
+      };
+      /** What each tool call did: its answer, where the app is after it, where it should be, and the tools then offered. */
+      const calls: {
+        name: string;
+        answered: string;
+        ok: boolean;
+        at: string;
+        path: string;
+        offered: string[];
+      }[] = [];
+      /** The input each tool takes, and what it should take, where a pod is shown or not. */
+      const inputs: { name: string; got: unknown; want: unknown }[] = [];
+      const opens = async (
+        name: string,
+        input: object,
+        path: string,
+        takesPod?: boolean,
+      ) => {
+        let answer: object = {};
+        await inPlace(page, async () => {
+          answer = await called(page, name, input, takesPod);
+        });
+        const { pathname, search } = new URL(page.url());
+        calls.push({
+          name,
+          answered: JSON.stringify(answer),
+          ok: "result" in answer,
+          at: pathname + search,
+          path,
+          offered: await offered(page),
+        });
+      };
+
+      await opens("open_classes", {}, "/try/pods/alex-rivera/classes", false);
+      inputs.push({
+        name: "open_trend on the classes screen",
+        got: await inputOf(page, "open_trend", false),
+        want: podFilled,
+      });
+
+      await opens(
+        "open_pod",
+        { pod: "priya-natarajan" },
+        "/try/pods/priya-natarajan/",
+      );
+      await opens(
+        "open_panel",
+        { panel: "24326-1" },
+        "/try/pods/priya-natarajan/panel?panel=24326-1",
+        false,
+      );
+      const panelHeading = (await page.textContent("main h1")) ?? "";
+
+      await opens("open_table", {}, "/try/tables/");
+      inputs.push(
+        {
+          name: "open_trend on the tables screen",
+          got: await inputOf(page, "open_trend", true),
+          want: named,
+        },
+        {
+          name: "open_pod on the tables screen",
+          got: await inputOf(page, "open_pod", true),
+          want: { properties: ["pod"], required: ["pod"] },
+        },
+      );
+
+      await opens(
+        "open_pod",
+        { pod: "priya-natarajan" },
+        "/try/pods/priya-natarajan/",
+      );
+      const labs = await called(
+        page,
+        "ask",
+        { question: "pod/My lab results", limit: 1 },
+        false,
+      );
+      assert.ok("result" in labs, JSON.stringify(labs));
+      const [lab] = (labs.result as { rows: { entry: string }[] }).rows;
       await inPlace(page, async () => {
-        const answer = await called(page, name, input, takesPod);
-        assert.ok("result" in answer, JSON.stringify(answer));
+        await called(page, "open_entry", { entry: lab!.entry }, false);
+      });
+      const entryOpened = AT.entryOf(page.url());
+      const entryOffered = await offered(page);
+      inputs.push({
+        name: "open_entry on the entry screen",
+        got: await inputOf(page, "open_entry", false),
+        want: { properties: ["entry"], required: ["entry"] },
+      });
+      await t.test("offers the tool list on each screen", async () => {
+        for (const { name, offered: names } of calls)
+          assert.deepEqual(names, TOOLS.names, name);
+        assert.deepEqual(entryOffered, TOOLS.names);
+      });
+      await t.test("fills the pod in only where a pod is shown", async () => {
+        for (const { name, got, want } of inputs)
+          assert.deepEqual(got, want, name);
+      });
+      await t.test(
+        "moves the app, without loading a page, from `open_classes`, `open_entry`, `open_panel`, `open_table` and `open_pod`",
+        async () => {
+          assert.equal(calls.length, 5);
+          for (const { name, answered, ok, at, path } of calls) {
+            assert.ok(ok, answered);
+            assert.equal(at, path, name);
+          }
+          assert.match(panelHeading, /^Your results in/);
+          assert.equal(entryOpened, view.entryId(lab!.entry));
+        },
+      );
+    } finally {
+      await context.close();
+    }
+  });
+});
+
+describe("Confirming a write a model asks for · make_pod", () => {
+  test("when a browser's agent asks to make a pod in try/", async (t) => {
+    const context = await browser.newContext();
+    await context.addInitScript(recordTools);
+    try {
+      const page = watched(await context.newPage());
+      await page.goto(`${served.url}${AT.pod("alex-rivera")}`);
+      await settled(page);
+      const asking = page.getByRole("alertdialog");
+      const pods = async (): Promise<string[]> => {
+        const listed = await called(page, "list_pods");
+        assert.ok("result" in listed, JSON.stringify(listed));
+        return listed.result as string[];
+      };
+
+      const refused = called(page, "make_pod", { person: "Wren Tolliver" });
+      await asking.waitFor();
+      await t.test(
+        "names the write and the person in the confirm box",
+        async () => {
+          assert.match(
+            (await asking.textContent()) ?? "",
+            /Make a pod.*Wren Tolliver/,
+          );
+        },
+      );
+      await t.test("makes no pod while the confirm box waits", async () => {
+        assert.equal((await pods()).includes("wren-tolliver"), false);
+      });
+      await asking.getByRole("button", { name: "Cancel" }).click();
+      const said = await refused;
+      await t.test(
+        'tells the browser\'s agent "The person said no" on Cancel',
+        async () => {
+          assert.deepEqual(said, {
+            result: { refused: "The person said no" },
+          });
+        },
+      );
+      await t.test("makes no pod on Cancel", async () => {
+        assert.equal((await pods()).includes("wren-tolliver"), false);
+      });
+
+      const allowed = called(page, "make_pod", { person: "Wren Tolliver" });
+      await asking.waitFor();
+      await asking.getByRole("button", { name: "Allow" }).click();
+      const made = await allowed;
+      assert.ok("result" in made, JSON.stringify(made));
+      await settled(page);
+      await t.test("makes the pod on Allow", async () => {
+        assert.equal((made.result as { pod: string }).pod, "wren-tolliver");
+        assert.equal((await pods()).includes("wren-tolliver"), true);
+      });
+
+      const encrypted = await called(page, "make_pod", {
+        person: "Cora Diaz",
+        encrypt: true,
+      });
+      assert.ok("result" in encrypted, JSON.stringify(encrypted));
+      await t.test("refuses an encrypted pod without asking", async () => {
+        assert.ok(
+          typeof (encrypted.result as { refused?: unknown }).refused ===
+            "string",
+          JSON.stringify(encrypted),
+        );
+        assert.equal(await asking.count(), 0);
+        assert.equal((await pods()).includes("cora-diaz"), false);
+      });
+    } finally {
+      await context.close();
+    }
+  });
+});
+
+describe("Offering the app's tools to a browser's agent · document.modelContext", () => {
+  test("when two open tools are called back to back", async (t) => {
+    const context = await browser.newContext();
+    await context.addInitScript(recordTools);
+    try {
+      const page = watched(await context.newPage());
+      await page.goto(`${served.url}${AT.pod("priya-natarajan")}`);
+      await settled(page);
+      await inputOf(page, "open_panel", false);
+      const [first, second] = await page.evaluate(async () => {
+        const run = (name: string, input: object) => {
+          const { tool } = (
+            globalThis as unknown as {
+              registered: {
+                name: string;
+                signal: AbortSignal;
+                tool: { execute(input: object): Promise<unknown> };
+              }[];
+            }
+          ).registered
+            .filter(({ signal }) => !signal.aborted)
+            .find((each) => each.name === name)!;
+          return tool.execute(input);
+        };
+        const first = await run("open_classes", {});
+        const at = location.pathname;
+        const second = await run("open_panel", { panel: "24326-1" });
+        return [{ first, at }, second] as const;
       });
       const { pathname, search } = new URL(page.url());
-      assert.equal(pathname + search, path);
-      assert.deepEqual(await offered(page), TOOLS.names, name);
-    };
-
-    await opens("open_classes", {}, "/try/pods/alex-rivera/classes", false);
-    assert.deepEqual(await inputOf(page, "open_trend", false), podFilled);
-
-    await opens(
-      "open_pod",
-      { pod: "priya-natarajan" },
-      "/try/pods/priya-natarajan/",
-    );
-    await opens(
-      "open_panel",
-      { panel: "24326-1" },
-      "/try/pods/priya-natarajan/panel?panel=24326-1",
-      false,
-    );
-    assert.match((await page.textContent("main h1")) ?? "", /^Your results in/);
-
-    await opens("open_table", {}, "/try/tables/");
-    assert.deepEqual(await inputOf(page, "open_trend", true), named);
-    assert.deepEqual(await inputOf(page, "open_pod", true), {
-      properties: ["pod"],
-      required: ["pod"],
-    });
-
-    await opens(
-      "open_pod",
-      { pod: "priya-natarajan" },
-      "/try/pods/priya-natarajan/",
-    );
-    const labs = await called(
-      page,
-      "ask",
-      { question: "pod/My lab results", limit: 1 },
-      false,
-    );
-    assert.ok("result" in labs, JSON.stringify(labs));
-    const [lab] = (labs.result as { rows: { entry: string }[] }).rows;
-    await inPlace(page, async () => {
-      await called(page, "open_entry", { entry: lab!.entry }, false);
-    });
-    assert.equal(AT.entryOf(page.url()), view.entryId(lab!.entry));
-    assert.deepEqual(await offered(page), TOOLS.names);
-    assert.deepEqual(await inputOf(page, "open_entry", false), {
-      properties: ["entry"],
-      required: ["entry"],
-    });
-  } finally {
-    await context.close();
-  }
-});
-
-test("in try/, a write the model context asks for waits on the page's ask: Cancel refuses it and makes no pod, Allow makes the pod, and an encrypted pod is refused with no ask", async () => {
-  const context = await browser.newContext();
-  await context.addInitScript(recordTools);
-  try {
-    const page = watched(await context.newPage());
-    await page.goto(`${served.url}${AT.pod("alex-rivera")}`);
-    await settled(page);
-    const asking = page.getByRole("alertdialog");
-    const pods = async (): Promise<string[]> => {
-      const listed = await called(page, "list_pods");
-      assert.ok("result" in listed, JSON.stringify(listed));
-      return listed.result as string[];
-    };
-
-    const refused = called(page, "make_pod", { person: "Wren Tolliver" });
-    await asking.waitFor();
-    assert.match(
-      (await asking.textContent()) ?? "",
-      /Make a pod.*Wren Tolliver/,
-    );
-    assert.equal((await pods()).includes("wren-tolliver"), false);
-    await asking.getByRole("button", { name: "Cancel" }).click();
-    assert.deepEqual(await refused, {
-      result: { refused: "The person said no" },
-    });
-    assert.equal((await pods()).includes("wren-tolliver"), false);
-
-    const allowed = called(page, "make_pod", { person: "Wren Tolliver" });
-    await asking.waitFor();
-    await asking.getByRole("button", { name: "Allow" }).click();
-    const made = await allowed;
-    assert.ok("result" in made, JSON.stringify(made));
-    assert.equal((made.result as { pod: string }).pod, "wren-tolliver");
-    await settled(page);
-    assert.equal((await pods()).includes("wren-tolliver"), true);
-
-    const encrypted = await called(page, "make_pod", {
-      person: "Cora Diaz",
-      encrypt: true,
-    });
-    assert.ok("result" in encrypted, JSON.stringify(encrypted));
-    assert.ok(
-      typeof (encrypted.result as { refused?: unknown }).refused === "string",
-      JSON.stringify(encrypted),
-    );
-    assert.equal(await asking.count(), 0);
-    assert.equal((await pods()).includes("cora-diaz"), false);
-  } finally {
-    await context.close();
-  }
-});
-
-test("in try/, two open tools called back to back, with no wait between, each resolve once their screen is drawn, so the second is not refused as busy", async () => {
-  const context = await browser.newContext();
-  await context.addInitScript(recordTools);
-  try {
-    const page = watched(await context.newPage());
-    await page.goto(`${served.url}${AT.pod("priya-natarajan")}`);
-    await settled(page);
-    await inputOf(page, "open_panel", false);
-    const [first, second] = await page.evaluate(async () => {
-      const run = (name: string, input: object) => {
-        const { tool } = (
-          globalThis as unknown as {
-            registered: {
-              name: string;
-              signal: AbortSignal;
-              tool: { execute(input: object): Promise<unknown> };
-            }[];
-          }
-        ).registered
-          .filter(({ signal }) => !signal.aborted)
-          .find((each) => each.name === name)!;
-        return tool.execute(input);
-      };
-      const first = await run("open_classes", {});
-      const at = location.pathname;
-      const second = await run("open_panel", { panel: "24326-1" });
-      return [{ first, at }, second] as const;
-    });
-    assert.ok(!("refused" in (first.first as object)), JSON.stringify(first));
-    assert.match(first.at, /\/classes$/);
-    assert.ok(!("refused" in (second as object)), JSON.stringify(second));
-    const { pathname, search } = new URL(page.url());
-    assert.equal(
-      pathname + search,
-      "/try/pods/priya-natarajan/panel?panel=24326-1",
-    );
-  } finally {
-    await context.close();
-  }
-});
-
-test("in try/, Ines Calloway's new pod signed in at North says what changed after atorvastatin was prescribed, opens the trend at its address, and its class page puts her estradiol in estrogen", async () => {
-  const demo = await loadHospitals();
-  const ines = view
-    .demoPeople(demo)
-    .find(({ name }) => name === "Ines Calloway");
-  assert.ok(ines, "no demo person is Ines Calloway");
-  const [north] = ines.at;
-  assert.ok(north && ines.at.length === 1, "Ines is not at North alone");
-  const loaded = demo.find((each) => each.hospital.fhirBase === north.fhirBase);
-  const patient = Object.entries(loaded?.patients ?? {}).find(
-    ([, bundle]) => view.patientName(bundle) === ines.name,
-  )?.[0];
-  assert.ok(patient, "North holds no patient Ines Calloway");
-
-  const context = await browser.newContext();
-  try {
-    const page = watched(await context.newPage());
-    await page.goto(`${served.url}${AT.home}`);
-    await settled(page);
-    await newPod(page, view.familyFirst(ines));
-    await page.waitForFunction(
-      () => navigator.serviceWorker.controller !== null,
-    );
-    await allowAs(
-      page,
-      await signInAt(page, view.hospitalName(north.name)),
-      patient,
-    );
-    await bringIn(page);
-
-    const card = page.locator(".change");
-    await card.first().waitFor({ timeout: 60_000 });
-    assert.equal(await card.count(), 1);
-    const said = (await card.innerText()).replace(/\s+/g, " ");
-    assert.match(said, /was lower after .+ was prescribed\./);
-    assert.ok(
-      said.includes(
-        "162 → 98.3 mg/dL, the mean of 3 results before and 3 after",
-      ),
-      said,
-    );
-
-    await inPlace(page, () =>
-      page.click('.change a:has-text("Open the trend")'),
-    );
-    assert.deepEqual(AT.trendOf(page.url()), {
-      pod: "ines-calloway",
-      test: "18262-6",
-      medication: "617310",
-    });
-    const chart = page.locator("svg.chart.large");
-    assert.equal(await chart.locator("circle.marker").count(), 6);
-    assert.equal(
-      await chart.locator("title").first().textContent(),
-      await page.textContent("main h1"),
-    );
-
-    await page.goto(`${served.url}${AT.classes("ines-calloway")}`);
-    await settled(page);
-    await page.waitForFunction(
-      () =>
-        document.querySelector("main h1")?.textContent === "Medicines by class",
-      undefined,
-      { timeout: 120_000 },
-    );
-    await page.waitForSelector("main .card h2", { timeout: 120_000 });
-    const estrogen = (
-      await page
-        .locator("main .card", {
-          has: page.locator("h2", { hasText: "Estrogen [EPC]" }),
-        })
-        .innerText()
-    ).replace(/\s+/g, " ");
-    assert.match(
-      estrogen,
-      /stradiol 1 (mg tablet|MG Oral Tablet) through estradiol/i,
-    );
-  } finally {
-    await context.close();
-  }
-});
-
-test("in try/, the world's date set before a sign-in shows on the hospital's sign-in page and in the box as the date the pull was made under, survives the worker being stopped, and Today takes it away; a typed date that is no date and a pod named Con are each Not done, saying why; Today as the first step after a reload, at the address a Set left, takes the date away too", async () => {
-  const demo = await loadHospitals();
-  const ines = view
-    .demoPeople(demo)
-    .find(({ name }) => name === "Ines Calloway");
-  assert.ok(ines, "no demo person is Ines Calloway");
-  const [north] = ines.at;
-  assert.ok(north && ines.at.length === 1, "Ines is not at North alone");
-  const loaded = demo.find((each) => each.hospital.fhirBase === north.fhirBase);
-  const patient = Object.entries(loaded?.patients ?? {}).find(
-    ([, bundle]) => view.patientName(bundle) === ines.name,
-  )?.[0];
-  assert.ok(patient, "North holds no patient Ines Calloway");
-
-  const context = await browser.newContext();
-  try {
-    const page = watched(await context.newPage());
-    const box = page.locator("#connection");
-    /** The sign-in page in a popup, and the date its line says records stood on, if it has one. */
-    const signInPage = async (
-      allow: boolean,
-    ): Promise<string | null | undefined> => {
-      const popup = await signInAt(page, view.hospitalName(north.name));
-      const line = popup.locator("p.as-of time");
-      const stood =
-        (await line.count()) === 0
-          ? undefined
-          : await line.getAttribute("datetime");
-      if (allow) {
-        await popup.check(`input[name="patient"][value="${patient}"]`);
-        await popup.click('button[value="allow"]');
-      } else await popup.close();
-      return stood;
-    };
-    const world = page.locator(".world-date");
-    const worldSays = (what: string) =>
-      page.waitForFunction(
-        (text) =>
-          document.querySelector(".world-date")?.textContent?.includes(text) ??
-          false,
-        what,
-      );
-    const boxSays = async () => (await box.textContent()) ?? "";
-    /** Closes the connection's box, and sets the world's date to a day, or with undefined takes it away. */
-    const setDate = async (day: string | undefined) => {
-      if ((await box.count()) > 0) await box.locator("a.close").click();
-      await settled(page);
-      await world.locator("summary").click();
-      if (day === undefined)
-        await world.getByRole("button", { name: "Today", exact: true }).click();
-      else {
-        await world.locator('input[type="date"]').fill(day);
-        await world.getByRole("button", { name: "Set", exact: true }).click();
-      }
-    };
-
-    await page.goto(`${served.url}${AT.home}`);
-    await settled(page);
-    await newPod(page, view.familyFirst(ines));
-    await page.waitForFunction(
-      () => navigator.serviceWorker.controller !== null,
-    );
-    await worldSays("Hospitals answer with everything they hold.");
-    assert.equal(await signInPage(true), undefined);
-    await settled(page);
-    assert.ok(!(await boxSays()).includes("Pulled as of"));
-
-    await setDate("2024-02-01");
-    await worldSays("Hospitals answer as of 1 February 2024.");
-
-    const cdp = await context.newCDPSession(page);
-    await cdp.send("ServiceWorker.enable");
-    await cdp.send("ServiceWorker.stopAllWorkers");
-    await page.goto(`${served.url}${AT.pod("ines-calloway")}`);
-    await settled(page);
-    await page.waitForFunction(
-      () => navigator.serviceWorker.controller !== null,
-    );
-    await worldSays("Hospitals answer as of 1 February 2024.");
-    assert.equal(await signInPage(true), "2024-02-01T23:59:59Z");
-    await settled(page);
-    assert.ok((await boxSays()).includes("Pulled as of 1 February 2024."));
-
-    await setDate(undefined);
-    await worldSays("Hospitals answer with everything they hold.");
-    assert.equal(await signInPage(false), undefined);
-
-    /** Waits for try/ to say "Not done" and why, as a page it drew ready, not as something gone wrong. */
-    const notDone = async (why: RegExp) => {
-      await settled(page);
-      assert.equal(await page.textContent("main h1"), "Not done");
-      assert.match((await page.textContent("main")) ?? "", why);
-    };
-    await settled(page);
-    await inPlace(page, () => box.locator("a.close").click());
-    await world.locator("details").evaluate((details: HTMLDetailsElement) => {
-      details.open = true;
-    });
-    await world
-      .locator('input[type="date"]')
-      .evaluate((input: HTMLInputElement) => {
-        input.type = "text";
-        input.value = "soon";
+      await t.test("resolves each once its screen is drawn", async () => {
+        assert.match(first.at, /\/classes$/);
+        assert.equal(
+          pathname + search,
+          "/try/pods/priya-natarajan/panel?panel=24326-1",
+        );
       });
-    await world.getByRole("button", { name: "Set", exact: true }).click();
-    await notDone(/"soon" is not a date/);
-    await page.click('a[href="#new-pod"]');
-    await page.fill(
-      '#new-pod input[name="person"]:not([type="hidden"])',
-      "Con",
-    );
-    await page.click('#new-pod button:has-text("Make the pod")');
-    await notDone(/Windows keeps for itself/);
-
-    await page.goto(`${served.url}${AT.pod("ines-calloway")}`);
-    await settled(page);
-    await setDate("2024-02-01");
-    await worldSays("Hospitals answer as of 1 February 2024.");
-    await page.reload();
-    await settled(page);
-    await setDate(undefined);
-    await settled(page);
-    assert.match(
-      (await world.textContent()) ?? "",
-      /Hospitals answer with everything they hold\./,
-    );
-  } finally {
-    await context.close();
-  }
+      await t.test("never refuses the second as busy", async () => {
+        assert.ok(!("refused" in (second as object)), JSON.stringify(second));
+        assert.ok(
+          !("refused" in (first.first as object)),
+          JSON.stringify(first),
+        );
+      });
+    } finally {
+      await context.close();
+    }
+  });
 });
 
-test("in try/, where the demo hospitals' service worker cannot run, a sign-in at North draws the worker's own sentence in the box, neither blaming the hospital nor offering Sign in again", async () => {
-  const demo = await loadHospitals();
-  const ines = view
-    .demoPeople(demo)
-    .find(({ name }) => name === "Ines Calloway");
-  assert.ok(ines, "no demo person is Ines Calloway");
-  const [north] = ines.at;
-  assert.ok(north && ines.at.length === 1, "Ines is not at North alone");
+/**
+ * The app compares a lab test's results before and after a medication starts or stops, says the lab change in a sentence, and opens a trend: the results on a chart with the medication's date.
+ */
+describe("Seeing what changed after a medication · find_changes, trend", () => {
+  test("with Ines Calloway's record brought in from North", async (t) => {
+    const {
+      person: ines,
+      hospital: north,
+      patient,
+    } = await demoPatient("Ines Calloway");
 
-  const context = await browser.newContext({ serviceWorkers: "block" });
-  try {
-    const page = watched(await context.newPage());
-    await page.goto(`${served.url}${AT.home}`);
-    await settled(page);
-    await newPod(page, view.familyFirst(ines));
-    await page.click(
-      `button:has-text("Sign in at ${view.hospitalName(north.name)}")`,
-    );
-    const box = page.locator("#connection");
-    await box.waitFor();
-    await settled(page);
-    const said = (await box.textContent()) ?? "";
-    assert.ok(said.trim().length > 0, "the box says nothing");
-    assert.ok(!said.includes("refused the sign-in"), said);
-    assert.ok(!said.includes("Sign in again"), said);
-    assert.equal(await box.locator("button").count(), 0, said);
-  } finally {
-    await context.close();
-  }
+    const context = await browser.newContext();
+    try {
+      const page = watched(await context.newPage());
+      await page.goto(`${served.url}${AT.home}`);
+      await settled(page);
+      await newPod(page, view.familyFirst(ines));
+      await page.waitForFunction(
+        () => navigator.serviceWorker.controller !== null,
+      );
+      await allowAs(
+        page,
+        await signInAt(page, view.hospitalName(north.name)),
+        patient,
+      );
+      await bringIn(page);
+
+      const card = page.locator(".change");
+      await card.first().waitFor({ timeout: 60_000 });
+      await t.test("draws one change card", async () => {
+        assert.equal(await card.count(), 1);
+      });
+      const said = (await card.innerText()).replace(/\s+/g, " ");
+      await t.test(
+        "says a result was lower after a medication was prescribed",
+        async () => {
+          assert.match(said, /was lower after .+ was prescribed\./);
+        },
+      );
+      await t.test(
+        "says the two means and how many results each is of",
+        async () => {
+          assert.ok(
+            said.includes(
+              "162 → 98.3 mg/dL, the mean of 3 results before and 3 after",
+            ),
+            said,
+          );
+        },
+      );
+
+      await inPlace(page, () =>
+        page.click('.change a:has-text("Open the trend")'),
+      );
+      await t.test("opens the trend at its address", async () => {
+        assert.deepEqual(AT.trendOf(page.url()), {
+          pod: "ines-calloway",
+          test: "18262-6",
+          medication: "617310",
+        });
+      });
+      const chart = page.locator("svg.chart.large");
+      await t.test("marks each result on the trend's chart", async () => {
+        assert.equal(await chart.locator("circle.marker").count(), 6);
+      });
+      await t.test("titles the chart as the page's heading", async () => {
+        assert.equal(
+          await chart.locator("title").first().textContent(),
+          await page.textContent("main h1"),
+        );
+      });
+
+      await page.goto(`${served.url}${AT.classes("ines-calloway")}`);
+      await settled(page);
+      await page.waitForFunction(
+        () =>
+          document.querySelector("main h1")?.textContent ===
+          "Medicines by class",
+        undefined,
+        { timeout: 120_000 },
+      );
+      await page.waitForSelector("main .card h2", { timeout: 120_000 });
+      const estrogen = (
+        await page
+          .locator("main .card", {
+            has: page.locator("h2", { hasText: "Estrogen [EPC]" }),
+          })
+          .innerText()
+      ).replace(/\s+/g, " ");
+      await t.test(
+        "puts her estradiol in the class estrogen on the class page",
+        async () => {
+          assert.match(
+            estrogen,
+            /stradiol 1 (mg tablet|MG Oral Tablet) through estradiol/i,
+          );
+        },
+      );
+    } finally {
+      await context.close();
+    }
+  });
 });
 
-test("in try/, Tamsin Vale signed in at North with the world's date at her story's first pull has metformin among her medications; with the date back at today, brought in again, it has stopped and the pod says what changed after", async () => {
-  const story = (await loadStories()).find(({ pulls }) => pulls?.length);
-  assert.ok(story?.pulls, "no story names its pulls");
-  const [finding] = story.findings;
-  assert.ok(finding?.kind === "after stop", "the story's finding is no stop");
-  const [first] = story.pulls;
-  assert.ok(
-    first && Date.parse(first.asOf) < Date.parse(finding.date),
-    "the story's first pull is not before the stop",
-  );
-  const north = await loadHospital(story.hospital);
+/**
+ * The world's date makes the demo hospitals answer with their records as they stood at the end of that day, so a developer can pull the same patient at two points of a story. Today takes it away.
+ */
+describe("Setting the world's date · .world-date", () => {
+  test("when the world's date is set before a sign-in", async (t) => {
+    const {
+      person: ines,
+      hospital: north,
+      patient,
+    } = await demoPatient("Ines Calloway");
 
-  const context = await browser.newContext();
-  try {
-    const page = watched(await context.newPage());
-    /** Sets the date the demo hospitals answer as of to the day of `asOf`, or with none to today, by the pod's page's own form. */
-    const world = async (asOf: string | undefined) => {
-      const form = page.locator(".world-date");
-      await form.locator("details").evaluate((details: HTMLDetailsElement) => {
+    const context = await browser.newContext();
+    try {
+      const page = watched(await context.newPage());
+      const box = page.locator("#connection");
+      /** The sign-in page in a popup, and the date its line says records stood on, if it has one. */
+      const signInPage = async (
+        allow: boolean,
+      ): Promise<string | null | undefined> => {
+        const popup = await signInAt(page, view.hospitalName(north.name));
+        const line = popup.locator("p.as-of time");
+        const stood =
+          (await line.count()) === 0
+            ? undefined
+            : await line.getAttribute("datetime");
+        if (allow) {
+          await popup.check(`input[name="patient"][value="${patient}"]`);
+          await popup.click('button[value="allow"]');
+        } else await popup.close();
+        return stood;
+      };
+      const world = page.locator(".world-date");
+      const worldSays = (what: string) =>
+        page.waitForFunction(
+          (text) =>
+            document
+              .querySelector(".world-date")
+              ?.textContent?.includes(text) ?? false,
+          what,
+        );
+      const boxSays = async () => (await box.textContent()) ?? "";
+      /** Closes the connection's box, and sets the world's date to a day, or with undefined takes it away. */
+      const setDate = async (day: string | undefined) => {
+        if ((await box.count()) > 0) await box.locator("a.close").click();
+        await settled(page);
+        await setWorldDate(page, day);
+      };
+      const everything = /Hospitals answer with everything they hold\./;
+      const asOfFeb = /Hospitals answer as of 1 February 2024\./;
+
+      await page.goto(`${served.url}${AT.home}`);
+      await settled(page);
+      await newPod(page, view.familyFirst(ines));
+      await page.waitForFunction(
+        () => navigator.serviceWorker.controller !== null,
+      );
+      await worldSays("Hospitals answer with everything they hold.");
+      await t.test(
+        "says the hospitals answer with everything they hold, with no date set",
+        async () => {
+          assert.match((await world.textContent()) ?? "", everything);
+        },
+      );
+      const unset = await signInPage(true);
+      await t.test(
+        "shows no date on the hospital's sign-in page with none set",
+        async () => {
+          assert.equal(unset, undefined);
+        },
+      );
+      await settled(page);
+      await t.test(
+        "says no date in the connection's box with none set",
+        async () => {
+          assert.ok(!(await boxSays()).includes("Pulled as of"));
+        },
+      );
+
+      await setDate("2024-02-01");
+      await worldSays("Hospitals answer as of 1 February 2024.");
+      await t.test(
+        "says the date the hospitals answer as of, once one is set",
+        async () => {
+          assert.match((await world.textContent()) ?? "", asOfFeb);
+        },
+      );
+
+      const cdp = await context.newCDPSession(page);
+      await cdp.send("ServiceWorker.enable");
+      await cdp.send("ServiceWorker.stopAllWorkers");
+      await page.goto(`${served.url}${AT.pod("ines-calloway")}`);
+      await settled(page);
+      await page.waitForFunction(
+        () => navigator.serviceWorker.controller !== null,
+      );
+      await worldSays("Hospitals answer as of 1 February 2024.");
+      await t.test(
+        "keeps the date when the service worker is stopped",
+        async () => {
+          assert.match((await world.textContent()) ?? "", asOfFeb);
+        },
+      );
+      const dated = await signInPage(true);
+      await t.test(
+        "shows the date on the hospital's sign-in page",
+        async () => {
+          assert.equal(dated, "2024-02-01T23:59:59Z");
+        },
+      );
+      await settled(page);
+      await t.test(
+        "says in the connection's box the date the pull was made under",
+        async () => {
+          assert.ok(
+            (await boxSays()).includes("Pulled as of 1 February 2024."),
+          );
+        },
+      );
+
+      await setDate(undefined);
+      await worldSays("Hospitals answer with everything they hold.");
+      const cleared = await signInPage(false);
+      await t.test("clears the date from Today", async () => {
+        assert.match((await world.textContent()) ?? "", everything);
+        assert.equal(cleared, undefined);
+      });
+
+      /** What try/ says once it has drawn a page it called "Not done", as a page it drew ready, not as something gone wrong. */
+      const notDone = async () => {
+        await settled(page);
+        return {
+          heading: await page.textContent("main h1"),
+          text: (await page.textContent("main")) ?? "",
+        };
+      };
+      await settled(page);
+      await inPlace(page, () => box.locator("a.close").click());
+      await world.locator("details").evaluate((details: HTMLDetailsElement) => {
         details.open = true;
       });
-      if (asOf === undefined)
-        await form.getByRole("button", { name: "Today", exact: true }).click();
-      else {
-        await form.locator('input[type="date"]').fill(asOf.slice(0, 10));
-        await form.getByRole("button", { name: "Set", exact: true }).click();
-      }
-      await settled(page);
-    };
-    /** Signs the pod in at North as the story's patient, from Find a hospital, and brings the record in. */
-    const bringIn = async () => {
-      await page.click('a:has-text("Find a hospital")');
-      await settled(page);
-      const [popup] = await Promise.all([
-        page.waitForEvent("popup"),
-        page.click(
-          `.card:has(h2:text-is(${JSON.stringify(view.hospitalName(north.hospital.name))})) button`,
-        ),
-      ]);
-      await popup.waitForSelector('button[value="allow"]');
-      await allowAs(page, popup, story.patient);
-      await page.click("#connection button:has-text('Bring')");
-      await settled(page, 300_000);
-    };
-    const metformin = async () =>
-      (await texts(page, "#see-medications tbody tr")).filter((row) =>
-        /metformin/i.test(row),
+      await world
+        .locator('input[type="date"]')
+        .evaluate((input: HTMLInputElement) => {
+          input.type = "text";
+          input.value = "soon";
+        });
+      await world.getByRole("button", { name: "Set", exact: true }).click();
+      const soon = await notDone();
+      await t.test(
+        "draws Not done, saying why, for a typed date that is no date",
+        async () => {
+          assert.equal(soon.heading, "Not done");
+          assert.match(soon.text, /"soon" is not a date/);
+        },
       );
 
-    await page.goto(`${served.url}${AT.home}`);
-    await settled(page);
-    await page.click('a[href="#new-pod"]');
-    await page.fill(
-      '#new-pod input[name="person"]:not([type="hidden"])',
-      "Tamsin at North",
-    );
-    await page.click('#new-pod button:has-text("Make the pod")');
-    await settled(page);
-    await page.waitForFunction(
-      () => navigator.serviceWorker.controller !== null,
-    );
-
-    assert.equal(
-      await page.locator("h1").first().innerText(),
-      "Tamsin at North",
-    );
-
-    await world(first.asOf);
-    await bringIn();
-    const [taken, ...more] = await metformin();
-    assert.deepEqual(more, []);
-    assert.match(taken ?? "", /Active/, "metformin is not taken");
-    assert.equal(await page.locator(".change").count(), 0);
-
-    await world(undefined);
-    await bringIn();
-    const [stopped, ...others] = await metformin();
-    assert.deepEqual(others, []);
-    assert.match(stopped ?? "", /Stopped/, "metformin is still taken");
-    const card = page.locator(".change");
-    await card.first().waitFor({ timeout: 60_000 });
-    assert.equal(await card.count(), 1);
-    assert.match(
-      (await card.innerText()).replace(/\s+/g, " "),
-      /was higher after .+ stopped\./,
-    );
-  } finally {
-    await context.close();
-  }
-});
-
-test("in try/, the sample pod tamsin-vale draws What changed and, in its card, where it comes from: the story's pulls in order, each with its source and the date it answered as of, and the metformin's two versions", async () => {
-  const story = (await loadStories()).find(({ pulls }) => pulls?.length);
-  assert.ok(story?.pulls, "no story names its pulls");
-  const [finding] = story.findings;
-  assert.ok(finding?.kind === "after stop", "the story's finding is no stop");
-  const north = await loadHospital(story.hospital);
-
-  const context = await browser.newContext();
-  try {
-    const page = watched(await context.newPage());
-    await page.goto(`${served.url}${AT.home}`);
-    await settled(page);
-    await page.goto(`${served.url}${AT.pod("tamsin-vale")}`);
-    await page.locator(".changes .how").waitFor({ timeout: 60_000 });
-
-    const card = page.locator(".change");
-    assert.equal(await card.count(), 1);
-    const said = (await card.innerText()).replace(/\s+/g, " ");
-    assert.match(said, /was higher after .+ stopped\./);
-    assert.ok(
-      !said.includes("Metformin 500 mg tablet"),
-      "the card is drawn by the record's own name, not the tables'",
-    );
-
-    const pulls = await texts(page, ".how li");
-    assert.equal(pulls.length, story.pulls.length);
-    story.pulls.forEach(({ asOf }, at) => {
-      const said = pulls[at]!;
-      assert.ok(
-        said.includes(`From ${view.hospitalName(north.hospital.name)}`),
-        said,
+      await page.goto(`${served.url}${AT.pod("ines-calloway")}`);
+      await settled(page);
+      await setDate("2024-02-01");
+      await worldSays("Hospitals answer as of 1 February 2024.");
+      await page.reload();
+      await settled(page);
+      await setDate(undefined);
+      await settled(page);
+      await t.test(
+        "clears the date from Today as the first step after a reload at the address a Set left",
+        async () => {
+          assert.match((await world.textContent()) ?? "", everything);
+        },
       );
-      assert.ok(said.includes(`as of ${view.dayInWords(asOf)}`), said);
-    });
-    const how = (await page.locator(".how").innerText()).replace(/\s+/g, " ");
-    assert.ok(
-      how.includes(
-        `version 1 to version 2, in import 2, as of ${view.dayInWords(story.pulls[1]!.asOf)}`,
-      ),
-      how,
-    );
-    assert.match(
-      how,
-      new RegExp(
-        `Workflow status active → completed; medication use end date none → ${view.day(finding.date)}`,
-      ),
-    );
-    assert.doesNotMatch(how, /urn:|https?:/);
-  } finally {
-    await context.close();
-  }
+    } finally {
+      await context.close();
+    }
+  });
 });
 
-test("try/ ships the starter tables its published answers were computed with: after a check that finds nothing new, a visit draws a copied pod from its kept answers, the engine held back, and the browser keeps one set of tables for every address", async () => {
-  const [feedUrl] = (await servedConfig()).tables.feeds;
-  assert.ok(feedUrl);
-  const shipped = turtle(
-    await readFile(join(SERVED, "tables", "references.ttl")),
-    "urn:test:starter/",
-  ).filter(([, predicate]) => predicate.value === terms.defaultTableVersion);
-  assert.ok(shipped.length > 0, "try/ ships no starter tables");
-  const feed = ntriples(
-    shipped.flatMap(([series, , version]): Triple[] => [
-      [
-        series,
-        oxigraph.namedNode("http://www.w3.org/1999/02/22-rdf-syntax-ns#type"),
-        oxigraph.namedNode(terms.ReferenceSeries),
-      ],
-      [series, oxigraph.namedNode(`${DCAT}hasCurrentVersion`), version],
-    ]),
-  );
-  const context = await browser.newContext();
-  try {
-    await context.route(feedUrl, (route) =>
-      route.fulfill({ body: feed, contentType: "text/turtle" }),
+describe("Keeping pods in the browser · indexedDB", () => {
+  test("when a person names a pod Con", async (t) => {
+    const context = await browser.newContext();
+    try {
+      const page = watched(await context.newPage());
+      await page.goto(`${served.url}${AT.home}`);
+      await settled(page);
+      await page.click('a[href="#new-pod"]');
+      await page.fill(
+        '#new-pod input[name="person"]:not([type="hidden"])',
+        "Con",
+      );
+      await page.click('#new-pod button:has-text("Make the pod")');
+      await settled(page);
+      await t.test(
+        "draws Not done, saying Windows keeps that name for itself",
+        async () => {
+          assert.equal(await page.textContent("main h1"), "Not done");
+          assert.match(
+            (await page.textContent("main")) ?? "",
+            /Windows keeps for itself/,
+          );
+        },
+      );
+    } finally {
+      await context.close();
+    }
+  });
+});
+
+describe("Connecting to a demo hospital · Sign in at", () => {
+  test("with a browser where the demo hospitals' service worker cannot run", async (t) => {
+    const { person: ines, hospital: north } =
+      await demoPatient("Ines Calloway");
+
+    const context = await browser.newContext({ serviceWorkers: "block" });
+    try {
+      const page = watched(await context.newPage());
+      await page.goto(`${served.url}${AT.home}`);
+      await settled(page);
+      await newPod(page, view.familyFirst(ines));
+      await page.click(
+        `button:has-text("Sign in at ${view.hospitalName(north.name)}")`,
+      );
+      const box = page.locator("#connection");
+      await box.waitFor();
+      await settled(page);
+      const said = (await box.textContent()) ?? "";
+      await t.test("says why in the connection's box", async () => {
+        assert.ok(said.trim().length > 0, "the box says nothing");
+      });
+      await t.test("never blames the hospital", async () => {
+        assert.ok(!said.includes("refused the sign-in"), said);
+      });
+      await t.test("offers no Sign in again", async () => {
+        assert.ok(!said.includes("Sign in again"), said);
+        assert.equal(await box.locator("button").count(), 0, said);
+      });
+    } finally {
+      await context.close();
+    }
+  });
+});
+
+describe("Setting the world's date · .world-date", () => {
+  test("when Tamsin Vale's record is brought in at her story's first pull, then again today", async (t) => {
+    const story = (await loadStories()).find(({ pulls }) => pulls?.length);
+    assert.ok(story?.pulls, "no story names its pulls");
+    const [finding] = story.findings;
+    assert.ok(finding?.kind === "after stop", "the story's finding is no stop");
+    const [first] = story.pulls;
+    assert.ok(
+      first && Date.parse(first.asOf) < Date.parse(finding.date),
+      "the story's first pull is not before the stop",
     );
-    await context.route(new URL("checked.json", feedUrl).href, (route) =>
-      route.fulfill({ status: 404 }),
-    );
-    const page = watched(await context.newPage());
-    await page.goto(`${served.url}${AT.home}`);
-    await settled(page);
-    await page.waitForSelector('body[data-tables="ready"]', {
-      timeout: 60_000,
-    });
-    const checked = await page.evaluate(async () => {
-      const runtime = (await import("cascade-runtime" as string)) as {
-        checkTables(): Promise<
-          { kept: string[]; later?: string; refused: unknown[] }[]
-        >;
+    const north = await loadHospital(story.hospital);
+
+    const context = await browser.newContext();
+    try {
+      const page = watched(await context.newPage());
+      /** Sets the date the demo hospitals answer as of to the day of `asOf`, or with none to today, by the pod's page's own form. */
+      const world = async (asOf: string | undefined) => {
+        await setWorldDate(page, asOf?.slice(0, 10));
+        await settled(page);
       };
-      return runtime.checkTables();
-    });
-    assert.deepEqual(
-      checked.map(({ kept, later, refused }) => ({ kept, later, refused })),
-      [{ kept: [], later: undefined, refused: [] }],
-    );
+      /** Signs the pod in at North as the story's patient, from Find a hospital, and brings the record in. */
+      const bringIn = async () => {
+        await page.click('a:has-text("Find a hospital")');
+        await settled(page);
+        const [popup] = await Promise.all([
+          page.waitForEvent("popup"),
+          page.click(
+            `.card:has(h2:text-is(${JSON.stringify(view.hospitalName(north.hospital.name))})) button`,
+          ),
+        ]);
+        await popup.waitForSelector('button[value="allow"]');
+        await allowAs(page, popup, story.patient);
+        await page.click("#connection button:has-text('Bring')");
+        await settled(page, 300_000);
+      };
+      const metformin = async () =>
+        (await texts(page, "#see-medications tbody tr")).filter((row) =>
+          /metformin/i.test(row),
+        );
 
-    await page.route(ENGINE, (route) => route.abort());
-    await page.goto(`${served.url}${AT.pod(ALEX)}`);
-    await settled(page, 30_000);
-    assert.equal(await page.textContent("main h1"), "Alex Rivera");
-    assert.ok((await tiles(page)).size > 0);
-    assert.equal(await page.getAttribute("body", "data-engine"), null);
-    await page.waitForFunction(
-      () =>
-        document
-          .querySelector("aside section.tables")
-          ?.textContent?.includes("The reference tables could not be read."),
-      undefined,
-      { timeout: 30_000 },
-    );
-    const nav = (await page.textContent("aside section.tables")) ?? "";
-    assert.ok(!nav.includes("Loading") && !nav.includes("None yet"), nav);
-    const tablesKept = await page.evaluate(async () =>
-      (await indexedDB.databases())
-        .map(({ name }) => name ?? "")
-        .filter((name) => name.endsWith(":cascade-tables")),
-    );
-    assert.equal(tablesKept.length, 1, tablesKept.join(", "));
+      await page.goto(`${served.url}${AT.home}`);
+      await settled(page);
+      await page.click('a[href="#new-pod"]');
+      await page.fill(
+        '#new-pod input[name="person"]:not([type="hidden"])',
+        "Tamsin at North",
+      );
+      await page.click('#new-pod button:has-text("Make the pod")');
+      await settled(page);
+      await page.waitForFunction(
+        () => navigator.serviceWorker.controller !== null,
+      );
 
-    const sources = alex["entry/Where it came from"] ?? [];
-    const penicillin = sources.filter(
-      ({ entryLabel }) => entryLabel === "Allergy entry · Penicillin",
+      assert.equal(
+        await page.locator("h1").first().innerText(),
+        "Tamsin at North",
+      );
+
+      await world(first.asOf);
+      await bringIn();
+      const [taken, ...more] = await metformin();
+      await t.test(
+        "lists metformin as active at the first pull's date",
+        async () => {
+          assert.deepEqual(more, []);
+          assert.match(taken ?? "", /Active/, "metformin is not taken");
+        },
+      );
+      await t.test(
+        "draws no change card at the first pull's date",
+        async () => {
+          assert.equal(await page.locator(".change").count(), 0);
+        },
+      );
+
+      await world(undefined);
+      await bringIn();
+      const [stopped, ...others] = await metformin();
+      await t.test(
+        "lists metformin as stopped once brought in again today",
+        async () => {
+          assert.deepEqual(others, []);
+          assert.match(stopped ?? "", /Stopped/, "metformin is still taken");
+        },
+      );
+      const card = page.locator(".change");
+      await card.first().waitFor({ timeout: 60_000 });
+      await t.test("says what changed after it stopped", async () => {
+        assert.equal(await card.count(), 1);
+        assert.match(
+          (await card.innerText()).replace(/\s+/g, " "),
+          /was higher after .+ stopped\./,
+        );
+      });
+    } finally {
+      await context.close();
+    }
+  });
+});
+
+describe("Seeing what changed after a medication · find_changes, trend", () => {
+  test("with the sample pod tamsin-vale", async (t) => {
+    const story = (await loadStories()).find(({ pulls }) => pulls?.length);
+    assert.ok(story?.pulls, "no story names its pulls");
+    const [finding] = story.findings;
+    assert.ok(finding?.kind === "after stop", "the story's finding is no stop");
+    const north = await loadHospital(story.hospital);
+
+    const context = await browser.newContext();
+    try {
+      const page = watched(await context.newPage());
+      await page.goto(`${served.url}${AT.home}`);
+      await settled(page);
+      await page.goto(`${served.url}${AT.pod("tamsin-vale")}`);
+      await page.locator(".changes .how").waitFor({ timeout: 60_000 });
+
+      const card = page.locator(".change");
+      await t.test("draws one change card", async () => {
+        assert.equal(await card.count(), 1);
+      });
+      const said = (await card.innerText()).replace(/\s+/g, " ");
+      await t.test(
+        "says a result was higher after a medication stopped",
+        async () => {
+          assert.match(said, /was higher after .+ stopped\./);
+        },
+      );
+      await t.test(
+        "never names the medication on the card by the record's own name",
+        async () => {
+          assert.ok(
+            !said.includes("Metformin 500 mg tablet"),
+            "the card is drawn by the record's own name, not the tables'",
+          );
+        },
+      );
+
+      const pulls = await texts(page, ".how li");
+      await t.test(
+        "lists the story's pulls in order, each with its source and the date it answered as of",
+        async () => {
+          assert.equal(pulls.length, story.pulls!.length);
+          story.pulls!.forEach(({ asOf }, at) => {
+            const said = pulls[at]!;
+            assert.ok(
+              said.includes(`From ${view.hospitalName(north.hospital.name)}`),
+              said,
+            );
+            assert.ok(said.includes(`as of ${view.dayInWords(asOf)}`), said);
+          });
+        },
+      );
+      const how = (await page.locator(".how").innerText()).replace(/\s+/g, " ");
+      await t.test(
+        "says the metformin's two versions and the import that brought the second",
+        async () => {
+          assert.ok(
+            how.includes(
+              `version 1 to version 2, in import 2, as of ${view.dayInWords(story.pulls![1]!.asOf)}`,
+            ),
+            how,
+          );
+        },
+      );
+      await t.test("says what changed between the two versions", async () => {
+        assert.match(
+          how,
+          new RegExp(
+            `Workflow status active → completed; medication use end date none → ${view.day(finding.date)}`,
+          ),
+        );
+      });
+      await t.test(
+        "never shows an IRI in where the change comes from",
+        async () => {
+          assert.doesNotMatch(how, /urn:|https?:/);
+        },
+      );
+
+      await inPlace(page, () =>
+        page.click('.change a:has-text("Open the trend")'),
+      );
+      await t.test(
+        "opens the trend at its address from the change card",
+        async () => {
+          assert.deepEqual(AT.trendOf(page.url()), {
+            pod: "tamsin-vale",
+            test: "4548-4",
+            medication: "861007",
+          });
+        },
+      );
+      await page.goto(`${served.url}${AT.trend("tamsin-vale", "0000-0")}`);
+      await settled(page);
+      await t.test(
+        "draws Not found, naming the test, for a trend of a test the pod lacks",
+        async () => {
+          assert.equal(await page.textContent("main h1"), "Not found");
+          assert.match(
+            (await page.textContent("main p")) ?? "",
+            /no test 0000-0 in the pod/,
+          );
+        },
+      );
+    } finally {
+      await context.close();
+    }
+  });
+});
+
+describe("Keeping the reference tables current in a browser · cascade-runtime.json", () => {
+  test("with the starter tables try/ ships, after a check that finds nothing new", async (t) => {
+    const [feedUrl] = (await servedConfig()).tables.feeds;
+    assert.ok(feedUrl);
+    const shipped = turtle(
+      await readFile(join(SERVED, "tables", "references.ttl")),
+      "urn:test:starter/",
+    ).filter(([, predicate]) => predicate.value === terms.defaultTableVersion);
+    assert.ok(shipped.length > 0, "try/ ships no starter tables");
+    const feed = ntriples(
+      shipped.flatMap(([series, , version]): Triple[] => [
+        [
+          series,
+          oxigraph.namedNode("http://www.w3.org/1999/02/22-rdf-syntax-ns#type"),
+          oxigraph.namedNode(terms.ReferenceSeries),
+        ],
+        [series, oxigraph.namedNode(`${DCAT}hasCurrentVersion`), version],
+      ]),
     );
-    assert.ok(penicillin.length > 1, "Alex's penicillin is from one place");
-    const row = (alex["pod/My active allergies"] ?? []).find(
-      ({ entry }) => entry === penicillin[0]?.entry,
-    );
-    assert.ok(row);
-    await page.click('a.tile[href="#see-allergies"]');
-    await inPlace(page, async () => {
-      await page
-        .locator("#see-allergies tbody tr")
-        .filter({ hasText: String(row.allergen) })
-        .locator("td:first-child a")
-        .first()
-        .click();
-      await page.waitForURL((url) => AT.entryOf(url.href) !== null);
-    });
-    assert.equal(AT.entryOf(page.url()), view.entryId(String(row.entry)));
-    assert.equal(await page.textContent("main h1"), row.allergen);
-    const came = await page
-      .locator("main .card", { hasText: "Where it came from" })
-      .innerText();
-    for (const place of new Set(penicillin.map(view.placeOf)))
-      assert.ok(came.includes(place), `${place} is not in ${came}`);
-    assert.equal(await page.getAttribute("body", "data-engine"), null);
-    await page.close();
-  } finally {
-    await context.close();
-  }
+    const context = await browser.newContext();
+    try {
+      await context.route(feedUrl, (route) =>
+        route.fulfill({ body: feed, contentType: "text/turtle" }),
+      );
+      await context.route(new URL("checked.json", feedUrl).href, (route) =>
+        route.fulfill({ status: 404 }),
+      );
+      const page = watched(await context.newPage());
+      await page.goto(`${served.url}${AT.home}`);
+      await settled(page);
+      await page.waitForSelector('body[data-tables="ready"]', {
+        timeout: 60_000,
+      });
+      const checked = await page.evaluate(async () => {
+        const runtime = (await import("cascade-runtime" as string)) as {
+          checkTables(): Promise<
+            { kept: string[]; later?: string; refused: unknown[] }[]
+          >;
+        };
+        return runtime.checkTables();
+      });
+      await t.test(
+        "keeps nothing from a feed that names the versions try/ ships",
+        async () => {
+          assert.deepEqual(
+            checked.map(({ kept, later, refused }) => ({
+              kept,
+              later,
+              refused,
+            })),
+            [{ kept: [], later: undefined, refused: [] }],
+          );
+        },
+      );
+
+      await page.route(ENGINE, (route) => route.abort());
+      await page.goto(`${served.url}${AT.pod(ALEX)}`);
+      await settled(page, 30_000);
+      await t.test("draws a copied pod from its kept answers", async () => {
+        assert.equal(await page.textContent("main h1"), "Alex Rivera");
+        assert.ok((await tiles(page)).size > 0);
+      });
+      await t.test("draws it with no engine loaded", async () => {
+        assert.equal(await page.getAttribute("body", "data-engine"), null);
+      });
+      await page.waitForFunction(
+        () =>
+          document
+            .querySelector("aside section.tables")
+            ?.textContent?.includes("The reference tables could not be read."),
+        undefined,
+        { timeout: 30_000 },
+      );
+      const nav = (await page.textContent("aside section.tables")) ?? "";
+      await t.test(
+        "says in the sidebar that the reference tables could not be read, with the engine's file refused",
+        async () => {
+          assert.ok(
+            nav.includes("The reference tables could not be read."),
+            nav,
+          );
+          assert.ok(!nav.includes("Loading") && !nav.includes("None yet"), nav);
+        },
+      );
+      const tablesKept = await page.evaluate(async () =>
+        (await indexedDB.databases())
+          .map(({ name }) => name ?? "")
+          .filter((name) => name.endsWith(":cascade-tables")),
+      );
+      await t.test("keeps one set of tables for every address", async () => {
+        assert.equal(tablesKept.length, 1, tablesKept.join(", "));
+      });
+
+      const sources = alex["entry/Where it came from"] ?? [];
+      const penicillin = sources.filter(
+        ({ entryLabel }) => entryLabel === "Allergy entry · Penicillin",
+      );
+      assert.ok(penicillin.length > 1, "Alex's penicillin is from one place");
+      const row = (alex["pod/My active allergies"] ?? []).find(
+        ({ entry }) => entry === penicillin[0]?.entry,
+      );
+      assert.ok(row);
+      await page.click('a.tile[href="#see-allergies"]');
+      await inPlace(page, async () => {
+        await page
+          .locator("#see-allergies tbody tr")
+          .filter({ hasText: String(row.allergen) })
+          .locator("td:first-child a")
+          .first()
+          .click();
+        await page.waitForURL((url) => AT.entryOf(url.href) !== null);
+      });
+      await t.test(
+        "opens a row's entry from the kept answers, without loading a page",
+        async () => {
+          assert.equal(AT.entryOf(page.url()), view.entryId(String(row.entry)));
+          assert.equal(await page.textContent("main h1"), row.allergen);
+          assert.equal(await page.getAttribute("body", "data-engine"), null);
+        },
+      );
+      const came = await page
+        .locator("main .card", { hasText: "Where it came from" })
+        .innerText();
+      await t.test("names each place the entry came from", async () => {
+        for (const place of new Set(penicillin.map(view.placeOf)))
+          assert.ok(came.includes(place), `${place} is not in ${came}`);
+      });
+      await page.close();
+    } finally {
+      await context.close();
+    }
+  });
 });
 
 /** Every value of every object store of the database `name`, as text, by key. */
@@ -3435,50 +3983,59 @@ async function storedIn(
   }, name);
 }
 
-test("in try/, a pod for Rowan Ellery Marsh signed in at North as Odalys Brandt warns that the record is Odalys's, not Rowan's, and offers only a button that names both, which brings the record in", async () => {
-  const demo = await loadHospitals();
-  const people = view.demoPeople(demo);
-  const rowan = people.find(({ name }) => name === "Rowan Ellery Marsh");
-  const odalys = people.find(({ name }) => name === "Odalys Brandt");
-  assert.ok(rowan && odalys, "a demo person is missing");
-  const north = odalys.at[0];
-  assert.ok(north, "Odalys is at no hospital");
-  const loaded = demo.find((each) => each.hospital.fhirBase === north.fhirBase);
-  const patient = Object.entries(loaded?.patients ?? {}).find(
-    ([, bundle]) => view.patientName(bundle) === odalys.name,
-  )?.[0];
-  assert.ok(patient, "the hospital holds no patient Odalys Brandt");
+describe("Connecting to a demo hospital · Sign in at", () => {
+  test("when the patient signed in as is not the pod's person", async (t) => {
+    const { person: rowan } = await demoPatient("Rowan Ellery Marsh", false);
+    const { hospital: north, patient } = await demoPatient(
+      "Odalys Brandt",
+      false,
+    );
 
-  const context = await browser.newContext();
-  try {
-    const page = watched(await context.newPage());
-    await page.goto(`${served.url}${AT.home}`);
-    await settled(page);
-    await newPod(page, view.familyFirst(rowan));
-    await page.waitForFunction(
-      () => navigator.serviceWorker.controller !== null,
-    );
-    await allowAs(
-      page,
-      await signInAt(page, view.hospitalName(north.name)),
-      patient,
-    );
-    assert.equal(
-      (await page.textContent("#connection .note.warm"))?.trim(),
-      "This record is Odalys Brandt's, not Rowan Ellery Marsh's.",
-    );
-    assert.deepEqual(
-      await page.$$eval("#connection button", (found) =>
-        found.map((each) => each.textContent?.trim()),
-      ),
-      ["Bring Odalys Brandt's records into Rowan Ellery Marsh's pod anyway"],
-    );
-    await page.click("#connection button.quiet:has-text('anyway')");
-    await settled(page, 300_000);
-    assert.ok((await tiles(page)).size > 0, "the pod's page shows no record");
-  } finally {
-    await context.close();
-  }
+    const context = await browser.newContext();
+    try {
+      const page = watched(await context.newPage());
+      await page.goto(`${served.url}${AT.home}`);
+      await settled(page);
+      await newPod(page, view.familyFirst(rowan));
+      await page.waitForFunction(
+        () => navigator.serviceWorker.controller !== null,
+      );
+      await allowAs(
+        page,
+        await signInAt(page, view.hospitalName(north.name)),
+        patient,
+      );
+      await t.test(
+        "warns that the record is the patient's, not the pod's person's",
+        async () => {
+          assert.equal(
+            (await page.textContent("#connection .note.warm"))?.trim(),
+            "This record is Odalys Brandt's, not Rowan Ellery Marsh's.",
+          );
+        },
+      );
+      await t.test("offers only a button that names both", async () => {
+        assert.deepEqual(
+          await page.$$eval("#connection button", (found) =>
+            found.map((each) => each.textContent?.trim()),
+          ),
+          [
+            "Bring Odalys Brandt's records into Rowan Ellery Marsh's pod anyway",
+          ],
+        );
+      });
+      await page.click("#connection button.quiet:has-text('anyway')");
+      await settled(page, 300_000);
+      await t.test("brings the record in from that button", async () => {
+        assert.ok(
+          (await tiles(page)).size > 0,
+          "the pod's page shows no record",
+        );
+      });
+    } finally {
+      await context.close();
+    }
+  });
 });
 
 /** The words of `words` that the page's local or session storage holds. */
@@ -3492,181 +4049,268 @@ async function wordsKept(page: Page, words: readonly string[]) {
   }, words);
 }
 
-test("in try/, an encrypted pod shows six words, is made once words 2 and 5 are typed, keeps nothing readable in the browser's storage, and after a reload opens only with the words", async () => {
-  const context = await browser.newContext();
-  await context.addInitScript(() => {
-    const offered: { id: string; password: string }[] = [];
-    Object.assign(globalThis, {
-      offered,
-      PasswordCredential: class {
-        init: { id: string; password: string };
-        constructor(init: { id: string; password: string }) {
-          this.init = init;
-        }
-      },
-    });
-    navigator.credentials.store = async (credential) => {
-      offered.push(
-        (credential as unknown as { init: (typeof offered)[0] }).init,
-      );
-      return undefined;
-    };
-  });
-  try {
-    const page = watched(await context.newPage());
-    await page.goto(`${served.url}${AT.home}`);
-    await settled(page);
-    await page.click('a[href="#new-pod"]');
-    await page.check("#encrypt-pod");
-    await page.fill(
-      '#new-pod input[aria-label="A person\'s name"]',
-      "Grace Hopper",
-    );
-    await inPlace(page, () =>
-      page.click('#new-pod button:has-text("Make the pod")'),
-    );
-    const words = await page.locator(".words li").allTextContents();
-    assert.equal(words.length, 6);
-
-    const confirm = page.locator("form", {
-      has: page.locator('input[name="word2"]'),
-    });
-    const signUp = await confirm.evaluate((form) => {
-      const named = (field: string) =>
-        form.querySelector<HTMLInputElement>(`input[name="${field}"]`)!;
-      return ["username", "password"].map((field) => {
-        const input = named(field);
-        return {
-          type: input.type,
-          autocomplete: input.autocomplete,
-          value: input.value,
-          hidden:
-            input.readOnly ||
-            input.closest("[aria-hidden]") !== null ||
-            input.offsetParent === null,
-        };
+/**
+ * An encrypted pod is sealed with six words the app shows once; only the words open it, and nothing readable is kept on disk or in the browser. The person proves they kept the words by typing words 2 and 5.
+ */
+describe("Encrypting a pod with six words · Encrypt this pod with six words", () => {
+  test("with an encrypted pod made in try/", async (t) => {
+    const context = await browser.newContext();
+    await context.addInitScript(() => {
+      const offered: { id: string; password: string }[] = [];
+      Object.assign(globalThis, {
+        offered,
+        PasswordCredential: class {
+          init: { id: string; password: string };
+          constructor(init: { id: string; password: string }) {
+            this.init = init;
+          }
+        },
       });
+      navigator.credentials.store = async (credential) => {
+        offered.push(
+          (credential as unknown as { init: (typeof offered)[0] }).init,
+        );
+        return undefined;
+      };
     });
-    assert.deepEqual(signUp, [
-      {
-        type: "text",
-        autocomplete: "username",
-        value: "grace-hopper",
-        hidden: false,
-      },
-      {
-        type: "password",
-        autocomplete: "new-password",
-        value: words.join(" "),
-        hidden: false,
-      },
-    ]);
-    assert.equal(
-      page.url().includes(words[0]!),
-      false,
-      "the words are never in the address",
-    );
-    assert.deepEqual(
-      await wordsKept(page, words),
-      [],
-      "the words are never in local or session storage",
-    );
+    try {
+      const page = watched(await context.newPage());
+      await page.goto(`${served.url}${AT.home}`);
+      await settled(page);
+      await page.click('a[href="#new-pod"]');
+      await page.check("#encrypt-pod");
+      await page.fill(
+        '#new-pod input[aria-label="A person\'s name"]',
+        "Grace Hopper",
+      );
+      await inPlace(page, () =>
+        page.click('#new-pod button:has-text("Make the pod")'),
+      );
+      const words = await page.locator(".words li").allTextContents();
+      await t.test("shows six words", async () => {
+        assert.equal(words.length, 6);
+      });
 
-    assert.equal(
-      await page.getAttribute("button[data-copy-words]", "type"),
-      "button",
-    );
+      const confirm = page.locator("form", {
+        has: page.locator('input[name="word2"]'),
+      });
+      const signUp = await confirm.evaluate((form) => {
+        const named = (field: string) =>
+          form.querySelector<HTMLInputElement>(`input[name="${field}"]`)!;
+        return ["username", "password"].map((field) => {
+          const input = named(field);
+          return {
+            type: input.type,
+            autocomplete: input.autocomplete,
+            value: input.value,
+            hidden:
+              input.readOnly ||
+              input.closest("[aria-hidden]") !== null ||
+              input.offsetParent === null,
+          };
+        });
+      });
+      await t.test(
+        "offers the pod's name and the six words to a password manager as a new sign-up",
+        async () => {
+          assert.deepEqual(signUp, [
+            {
+              type: "text",
+              autocomplete: "username",
+              value: "grace-hopper",
+              hidden: false,
+            },
+            {
+              type: "password",
+              autocomplete: "new-password",
+              value: words.join(" "),
+              hidden: false,
+            },
+          ]);
+        },
+      );
+      await t.test("never puts a word in the address", async () => {
+        assert.equal(
+          page.url().includes(words[0]!),
+          false,
+          "the words are never in the address",
+        );
+      });
+      const keptBefore = await wordsKept(page, words);
 
-    await page.fill('input[name="password"]', "a suggested password");
-    await page.fill('input[name="word2"]', words[1]!);
-    await page.fill('input[name="word5"]', words[4]!);
-    await inPlace(page, () =>
-      page.click('button:has-text("Make the encrypted pod")'),
-    );
-    assert.match(
-      (await page.textContent("main")) ?? "",
-      /must hold the six words above/,
-    );
-    assert.equal(
-      await page.inputValue('input[name="password"]'),
-      words.join(" "),
-      "the field is reset to the words",
-    );
-    assert.equal(
-      (await page.evaluate(async () => await indexedDB.databases())).some(
-        ({ name }) => name === "cascade-pod:grace-hopper",
-      ),
-      false,
-      "a changed password field makes nothing",
-    );
-    await page.fill('input[name="username"]', "someone-else");
-    await page.fill('input[name="word2"]', words[1]!);
-    await page.fill('input[name="word5"]', words[4]!);
-    await inPlace(page, () =>
-      page.click('button:has-text("Make the encrypted pod")'),
-    );
-    assert.match(
-      (await page.textContent("main")) ?? "",
-      /Pod field must keep the pod's name/,
-    );
+      await t.test(
+        "makes Copy words a plain button, so it submits nothing",
+        async () => {
+          assert.equal(
+            await page.getAttribute("button[data-copy-words]", "type"),
+            "button",
+          );
+        },
+      );
 
-    await page.fill('input[name="word2"]', words[1]!);
-    await page.fill('input[name="word5"]', "wrong");
-    await inPlace(page, () =>
-      page.click('button:has-text("Make the encrypted pod")'),
-    );
-    assert.match(
-      (await page.textContent("main")) ?? "",
-      /Those aren't words 2 and 5/,
-    );
-    assert.equal(
-      (await page.evaluate(async () => await indexedDB.databases())).some(
-        ({ name }) => name === "cascade-pod:grace-hopper",
-      ),
-      false,
-      "a wrong check makes nothing",
-    );
+      await page.fill('input[name="password"]', "a suggested password");
+      await page.fill('input[name="word2"]', words[1]!);
+      await page.fill('input[name="word5"]', words[4]!);
+      await inPlace(page, () =>
+        page.click('button:has-text("Make the encrypted pod")'),
+      );
+      await t.test(
+        "refuses a changed password field, resets it to the words and makes nothing",
+        async () => {
+          assert.match(
+            (await page.textContent("main")) ?? "",
+            /must hold the six words above/,
+          );
+          assert.equal(
+            await page.inputValue('input[name="password"]'),
+            words.join(" "),
+            "the field is reset to the words",
+          );
+          assert.equal(
+            (await page.evaluate(async () => await indexedDB.databases())).some(
+              ({ name }) => name === "cascade-pod:grace-hopper",
+            ),
+            false,
+            "a changed password field makes nothing",
+          );
+        },
+      );
+      await page.fill('input[name="username"]', "someone-else");
+      await page.fill('input[name="word2"]', words[1]!);
+      await page.fill('input[name="word5"]', words[4]!);
+      await inPlace(page, () =>
+        page.click('button:has-text("Make the encrypted pod")'),
+      );
+      await t.test(
+        "refuses a changed pod field and makes nothing",
+        async () => {
+          assert.match(
+            (await page.textContent("main")) ?? "",
+            /Pod field must keep the pod's name/,
+          );
+          assert.equal(
+            (await page.evaluate(async () => await indexedDB.databases())).some(
+              ({ name }) => name === "cascade-pod:grace-hopper",
+            ),
+            false,
+            "a changed pod field makes nothing",
+          );
+        },
+      );
 
-    await page.fill('input[name="word2"]', words[1]!);
-    await page.fill('input[name="word5"]', words[4]!);
-    await inPlace(page, () =>
-      page.click('button:has-text("Make the encrypted pod")'),
-    );
-    assert.equal(AT.podOf(page.url()), "grace-hopper");
-    assert.deepEqual(await wordsKept(page, words), []);
-    assert.deepEqual(
-      await page.evaluate(
-        () =>
-          (globalThis as unknown as { offered: unknown[] }).offered as object[],
-      ),
-      [{ id: "grace-hopper", name: "grace-hopper", password: words.join(" ") }],
-      "the browser's password manager is offered the words, once",
-    );
+      await page.fill('input[name="word2"]', words[1]!);
+      await page.fill('input[name="word5"]', "wrong");
+      await inPlace(page, () =>
+        page.click('button:has-text("Make the encrypted pod")'),
+      );
+      await t.test(
+        "refuses wrong words 2 and 5 and makes nothing",
+        async () => {
+          assert.match(
+            (await page.textContent("main")) ?? "",
+            /Those aren't words 2 and 5/,
+          );
+          assert.equal(
+            (await page.evaluate(async () => await indexedDB.databases())).some(
+              ({ name }) => name === "cascade-pod:grace-hopper",
+            ),
+            false,
+            "a wrong check makes nothing",
+          );
+        },
+      );
 
-    for (const database of [
-      "cascade-pod:grace-hopper",
-      "cascade-answers:grace-hopper",
-    ]) {
-      const stored = await storedIn(page, database);
-      assert.ok(stored.length > 0, `${database} holds values`);
-      for (const { key, text } of stored) {
-        if (key === "settings/encryption.json") continue;
-        assert.ok(text.length > 0, key);
-        for (const readable of ["@prefix", "Grace", '"title"', '"rows"'])
-          assert.equal(text.includes(readable), false, `${key}: ${readable}`);
-        assert.throws(() => JSON.parse(text), `${key} parses as JSON`);
+      await page.fill('input[name="word2"]', words[1]!);
+      await page.fill('input[name="word5"]', words[4]!);
+      await inPlace(page, () =>
+        page.click('button:has-text("Make the encrypted pod")'),
+      );
+      await t.test("makes the pod once words 2 and 5 are typed", async () => {
+        assert.equal(AT.podOf(page.url()), "grace-hopper");
+      });
+      const keptAfter = await wordsKept(page, words);
+      await t.test(
+        "never puts the words in localStorage or sessionStorage",
+        async () => {
+          assert.deepEqual(
+            keptBefore,
+            [],
+            "the words are never in local or session storage",
+          );
+          assert.deepEqual(keptAfter, []);
+        },
+      );
+      await t.test(
+        "offers the words to the browser's password manager once",
+        async () => {
+          assert.deepEqual(
+            await page.evaluate(
+              () =>
+                (globalThis as unknown as { offered: unknown[] })
+                  .offered as object[],
+            ),
+            [
+              {
+                id: "grace-hopper",
+                name: "grace-hopper",
+                password: words.join(" "),
+              },
+            ],
+            "the browser's password manager is offered the words, once",
+          );
+        },
+      );
+
+      const databases: {
+        database: string;
+        stored: { key: string; text: string }[];
+      }[] = [];
+      for (const database of [
+        "cascade-pod:grace-hopper",
+        "cascade-answers:grace-hopper",
+      ]) {
+        const stored = await storedIn(page, database);
+        assert.ok(stored.length > 0, `${database} holds values`);
+        databases.push({ database, stored });
       }
-    }
+      await t.test(
+        "keeps nothing readable in the pod's database or its answers'",
+        async () => {
+          for (const { stored } of databases)
+            for (const { key, text } of stored) {
+              if (key === "settings/encryption.json") continue;
+              assert.ok(text.length > 0, key);
+              for (const readable of ["@prefix", "Grace", '"title"', '"rows"'])
+                assert.equal(
+                  text.includes(readable),
+                  false,
+                  `${key}: ${readable}`,
+                );
+              assert.throws(() => JSON.parse(text), `${key} parses as JSON`);
+            }
+        },
+      );
 
-    await page.goto(`${served.url}${AT.pod("grace-hopper")}`);
-    await settled(page);
-    await page.fill('input[name="password"]', "one two three four five six");
-    await inPlace(page, () => page.click('button:has-text("Open this pod")'));
-    assert.match((await page.textContent("main")) ?? "", /don't open this pod/);
-    await page.fill('input[name="password"]', words.join(" "));
-    await inPlace(page, () => page.click('button:has-text("Open this pod")'));
-    assert.match((await page.textContent("main")) ?? "", /Grace Hopper/);
-  } finally {
-    await context.close();
-  }
+      await page.goto(`${served.url}${AT.pod("grace-hopper")}`);
+      await settled(page);
+      await page.fill('input[name="password"]', "one two three four five six");
+      await inPlace(page, () => page.click('button:has-text("Open this pod")'));
+      await t.test("refuses other words after a reload", async () => {
+        assert.match(
+          (await page.textContent("main")) ?? "",
+          /don't open this pod/,
+        );
+      });
+      await page.fill('input[name="password"]', words.join(" "));
+      await inPlace(page, () => page.click('button:has-text("Open this pod")'));
+      await t.test(
+        "opens the pod with its six words after a reload",
+        async () => {
+          assert.match((await page.textContent("main")) ?? "", /Grace Hopper/);
+        },
+      );
+    } finally {
+      await context.close();
+    }
+  });
 });
