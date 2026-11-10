@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { loadHospital, loadStories } from "@the-cascade-protocol/sandbox/node";
 import {
   changesIn,
-  type Finding,
+  type LabChange,
   openPod,
   type Pod,
   pullFiles,
@@ -186,7 +186,7 @@ export const VARIANTS_SAID = {
 export interface Story {
   pod: Pod;
   answers: Record<string, Row[]>;
-  changes: Finding[];
+  changes: LabChange[];
 }
 
 let built: Promise<Map<string, Story>> | undefined;

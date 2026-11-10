@@ -34,7 +34,7 @@ export default tseslint.config(
         },
         {
           selector:
-            'ImportDeclaration[source.value="cascade-runtime"] > ImportSpecifier[imported.name=/^(tablesBeside|loopbackSignIn|configureTables|configureRuntime|entryVersion|finishSignIn|popupSignIn|appTables|checkTables|warm|podTitle|deletePod)$/]',
+            'ImportDeclaration[source.value="cascade-runtime"] > ImportSpecifier[imported.name=/^(tablesBeside|loopbackSignIn|configureTables|configureRuntime|browserBuildVersion|finishSignIn|popupSignIn|appTables|checkTables|warm|podTitle|deletePod)$/]',
           message:
             "PodApi imports only what cascade-runtime exports in both conditions: not tablesBeside, loopbackSignIn, configureTables or the browser-only exports.",
         },
