@@ -314,7 +314,7 @@ async function nodeJoin(family: string): Promise<Joined> {
       await pod.ask({
         query: `SELECT ?justification ?used WHERE {
           ?judgment <${terms.justification}> ?justification .
-          OPTIONAL { ?judgment <http://www.w3.org/ns/prov#used> ?used }
+          OPTIONAL { ?judgment <http://www.w3.org/ns/prov#wasDerivedFrom> ?used }
         }`,
       })
     ).map(({ justification = "", used = "" }) => ({
@@ -1717,7 +1717,7 @@ ${shots.join("\n")}`);
           const sames = await pod.ask({
             query: `SELECT ?used ?counts (GROUP_CONCAT(STR(?code); separator=" ") AS ?codes) WHERE {
               ?judgment <${terms.justification}> <${terms.SameMappedCodeAndDate}> ;
-                <http://www.w3.org/ns/prov#used> ?used ; <http://www.w3.org/ns/prov#hadMember> ?record .
+                <http://www.w3.org/ns/prov#wasDerivedFrom> ?used ; <http://www.w3.org/ns/prov#hadMember> ?record .
               VALUES ?used { <${first}> <${second}> }
               ?record <http://purl.org/pav/hasCurrentVersion>/<${terms.vaccineCode}> ?code
               BIND (EXISTS { ?judgment <https://ns.cascadeprotocol.org/cascade#countsUnderLens> true } AS ?counts)
