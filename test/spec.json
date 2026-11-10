@@ -411,6 +411,11 @@
       "aliases": ["standard output", "standard input"]
     },
     {
+      "term": "statin",
+      "definition": "a medicine that lowers cholesterol, such as atorvastatin.",
+      "aliases": ["statins"]
+    },
+    {
       "term": "step",
       "definition": "here, one change a person asks the app for from a form on a screen, such as setting a date or making a pod; the screen's route runs it and draws what came of it.",
       "aliases": ["steps"]
@@ -555,6 +560,7 @@
     "router.test.ts",
     "said.test.ts",
     "samples.test.ts",
+    "screens.test.ts",
     "stems.test.ts"
   ],
   "build": [
