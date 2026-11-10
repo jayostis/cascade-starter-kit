@@ -200,7 +200,7 @@ export function storyPods(): Promise<Map<string, Story>> {
       const { pull } = await pulled(north, patient);
       const pod = await openPod();
       const imported = await pod.import(pullFiles(pull, "north"), {
-        aboutSubject: true,
+        claim: true,
       });
       assert.equal(imported.refused, undefined, patient);
       const answers = Object.fromEntries(

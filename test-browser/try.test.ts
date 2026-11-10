@@ -302,7 +302,7 @@ async function nodeJoin(family: string): Promise<Joined> {
         hospitalId(loaded),
       );
       has.set(hospital.name, hasLines(hospital.name, await pod.look(files)));
-      const imported = await pod.import(files, { aboutSubject: true });
+      const imported = await pod.import(files, { claim: true });
       assert.equal(imported.refused, undefined);
     }
     const answers = await answersOf(pod);
@@ -1463,7 +1463,7 @@ test("in the browser, look and import read the files a person picks as Node read
         look: await node.look(path),
         after: await shownAfter(
           node,
-          await node.import(path, { aboutSubject: true }),
+          await node.import(path, { claim: true }),
           QUESTIONS,
         ),
       });
@@ -1570,7 +1570,7 @@ test("in the browser, look and import read the files a person picks as Node read
         ) => Promise<After>;
         return run(
           scope.pod,
-          await scope.pod.import(scope.picked, { aboutSubject: true }),
+          await scope.pod.import(scope.picked, { claim: true }),
           questions,
         );
       },

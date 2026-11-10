@@ -580,7 +580,7 @@ const connection = await connect(
 const pod = await openPod();
 const files = pullFiles(await pull(connection, DEMO_PLAN), "expected");
 const look = await pod.look(files);
-await pod.import(files, { aboutSubject: true });
+await pod.import(files, { claim: true });
 const allergens = (await pod.ask(${JSON.stringify(ALLERGIES)})).map(({ allergen }) => allergen).sort();
 await pod.close();
 const south = await loadHospital("cascade-south");
@@ -2731,7 +2731,7 @@ if (release === undefined) {
       script,
       `import { openPod } from "cascade-runtime";
 const pod = await openPod("pods/alex-rivera");
-const { refused } = await pod.import(${JSON.stringify(C_CDA)}, { aboutSubject: true });
+const { refused } = await pod.import(${JSON.stringify(C_CDA)}, { claim: true });
 await pod.close();
 if (refused !== undefined) throw new Error(refused);
 `,

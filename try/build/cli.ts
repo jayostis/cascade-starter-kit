@@ -6,7 +6,7 @@ import { env } from "node:process";
 import { fileURLToPath } from "node:url";
 import { parseArgs, promisify } from "node:util";
 import {
-  publishedSamples,
+  samplesToPublish,
   type Pod,
   type Tables,
 } from "cascade-runtime/published";
@@ -75,7 +75,7 @@ async function buildTry(samples: readonly string[], version: string) {
 
 /** Writes build/pages: each kit's sample where try/ copies it from, the app's browser build in try/, and a root page that sends a visitor to try/. */
 async function buildPages(): Promise<number> {
-  const samples = await publishedSamples({ look: looks });
+  const samples = await samplesToPublish({ lookups: looks });
   const version = await builtFrom();
   const tree = new Map<string, Uint8Array>(samples.files);
   tree.set("index.html", new TextEncoder().encode(REDIRECT));

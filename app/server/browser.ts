@@ -9,7 +9,7 @@ import process, { env, exit, stdout } from "node:process";
 import { fileURLToPath } from "node:url";
 import { getRequestListener } from "@hono/node-server";
 import type { HttpBindings } from "@hono/node-server";
-import { publishedSamples } from "cascade-runtime/published";
+import { samplesToPublish } from "cascade-runtime/published";
 import { Hono } from "hono";
 import { build } from "vite";
 import { withPages } from "./app.ts";
@@ -19,7 +19,7 @@ const APP = fileURLToPath(new URL("../", import.meta.url));
 const OUT = join(APP, "dist-browser");
 
 stdout.write("Making the kits' samples, which a first visit copies…\n");
-const samples = await publishedSamples({ look: looks });
+const samples = await samplesToPublish({ lookups: looks });
 stdout.write("Building the app for a browser into dist-browser/…\n");
 env.CASCADE_SAMPLES = [...samples.kits.keys()].join(" ");
 await build({
