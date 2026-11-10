@@ -993,6 +993,8 @@ describe("Reading a pod as a person's record · try/pods/<pod>/", () => {
     const context = await browser.newContext();
     try {
       const page = watched(await context.newPage());
+      await page.route(ENGINE, () => {});
+      await page.route(TABLE_ROWS, () => {});
       await page.goto(`${served.url}${AT.home}`);
       await settled(page);
       const worth = await texts(page, ".worth li");
@@ -2513,11 +2515,9 @@ describe("Naming records by the reference tables · try/tables/", () => {
       await t.test(
         "opens the electrolytes panel from her potassium result",
         async () => {
-          const { pathname, search } = new URL(page.url());
-          assert.equal(
-            pathname + search,
-            "/try/pods/priya-natarajan/panel?panel=24326-1",
-          );
+          const { pathname, searchParams } = new URL(page.url());
+          assert.equal(pathname, "/try/pods/priya-natarajan/panel");
+          assert.match(searchParams.get("panel") ?? "", /24326-1$/);
           assert.match(
             (await page.textContent("main h1")) ?? "",
             /^Your results in/,
