@@ -74,6 +74,11 @@
       "definition": "of the template, the app with no add-on: its screens, its server, the sample pods and the tool list. Of an address, the path the app is served under, such as `/cascade/`."
     },
     {
+      "term": "body",
+      "definition": "what a request sends to an operation at `POST /api/<operation>`: a JSON object holding that operation's inputs, such as `{ \"pod\": \"ines\" }` for `waitingWords`.",
+      "aliases": ["bodies"]
+    },
+    {
       "term": "box",
       "definition": "a panel the app draws over a screen for one task, such as making a pod or showing a connection; closing it shows the screen again.",
       "aliases": ["boxes"]
@@ -187,6 +192,10 @@
       "definition": "the screen that lists the hospitals a person can sign in at, each on a card with its sign-in."
     },
     {
+      "term": "four settings",
+      "definition": "the four `.env` lines that choose the chat's model: `CASCADE_MODEL_PROVIDER`, `CASCADE_MODEL_URL`, `CASCADE_MODEL_NAME` and `CASCADE_MODEL_KEY`."
+    },
+    {
       "term": "host",
       "definition": "here, the object `podApi(host)` reads its pods, reference tables and hospitals through: `nodeHost()` over folders on Node, another over the browser's own storage in a page.",
       "aliases": ["hosts"]
@@ -280,6 +289,10 @@
     {
       "term": "PodApi",
       "definition": "`podApi(host)` in `pod-api.ts`: every read and write the app makes of its pods and reference tables, as operations that take and give plain JSON. The server, the pages, the commands and the tools all go through it."
+    },
+    {
+      "term": "PodApi's sentence",
+      "definition": "the sentence `inputRefusal()` returns for an input PodApi refuses, such as `pod must be a string`; a schema over HTTP must refuse with that same sentence."
     },
     {
       "term": "provider",

@@ -22,7 +22,6 @@ import {
   ROW,
   rows,
   said,
-  SEEN,
   SOURCES,
   storyPods,
   VARIANT_ANSWERS,
@@ -39,14 +38,7 @@ type Line = { sentence: string; entry: string; tag?: string };
 /** The three things a line of Worth a look holds that a reader of a screen sees. */
 const shown = ({ entry, sentence, tag }: Line) => [entry, sentence, tag];
 
-const at = (entry: string, place: string, places: number) => ({
-  entry,
-  place,
-  records: "1",
-  places: String(places),
-});
-
-/** A pod's rows: what needs review, what only was seen more than once, and the names the rows are of. */
+/** A pod's rows: what needs review, and the names the rows are of. */
 const REVIEWED = {
   [ALLERGIES]: [
     { entry: "e1", allergen: "Penicillin" },
@@ -62,14 +54,6 @@ const REVIEWED = {
   [MEDICATIONS]: [
     { entry: "e8", medication: "Lisinopril 10 MG Oral Tablet" },
     { entry: "e11" },
-  ],
-  [SEEN]: [
-    at("e1", "Meridian Health System", 3),
-    at("e1", "Larkspur Valley Health", 3),
-    at("e1", "entered by Alex in the Cascade app", 3),
-    at("e2", "Cascade North Demo Hospital", 1),
-    at("e3", "Larkspur Valley Health", 1),
-    at("e4", "Larkspur Valley Health", 1),
   ],
   [REVIEW]: [
     { entry: "e5", needs: "members disagree on criticality" },
@@ -300,7 +284,7 @@ describe("What a pod's screen says is worth a look · worthALook()", () => {
       );
     });
 
-    it("gives no line for a view entry that was only seen more than once", () => {
+    it("gives no line for a view entry that nothing says needs review", () => {
       assert.equal(
         REVIEW_LINES.some(({ entry }) => entry === "e1"),
         false,
@@ -1313,11 +1297,13 @@ describe("Naming pods, people and places as a person says them · slug(), person
       });
     const rowan = "Rowan Ellery Marsh";
 
-    it("returns `certain` when a name of the patient is the subject's, whatever its case, spacing or accents", () => {
+    it("returns `certain` when a name of the patient is the subject's, whatever its case, spacing or how an accent is written, as one character or a letter and a mark", () => {
       for (const [subject, names] of [
         [rowan, named(["Rowan Ellery", "Marsh"])],
         [" rowan  ellery MARSH ", named(["Rowan Ellery", "Marsh"])],
         ["José García", named(["José", "García"])],
+        ["José García", named(["José", "García"])],
+        ["JOSÉ GARCÍA", named(["José", "García"])],
       ] as const)
         assert.equal(said.gradePerson(subject, names), "certain", subject);
     });

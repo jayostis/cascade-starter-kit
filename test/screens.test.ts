@@ -544,9 +544,15 @@ describe("Reading a pod as a person's record · PodPage", () => {
       });
       assert.ok(!none.includes("By class"));
     });
+  });
 
-    it("gives the day a prescription was written under Prescribed, and leaves Since empty where no start of use is known", async () => {
-      const story = (await storyPods()).get("story-statin")!;
+  describe("given the statin story's medications", () => {
+    let story: Story;
+    before(async () => {
+      story = (await storyPods()).get("story-statin")!;
+    });
+
+    it("gives the day a prescription was written under Prescribed, and leaves Since empty where no start of use is known", () => {
       const history = story.answers[HISTORY]!;
       const shown = medicationRows(podOf("ines-calloway", story));
       assert.ok(shown.length > 0, "the story's medications");
@@ -580,27 +586,41 @@ describe("Reading a pod as a person's record · PodPage", () => {
     );
     const ofVariants = ({ href }: { href?: string }) =>
       [V1, ORPHAN].includes(href ?? "");
-    const before = page();
+    const plain = page();
     const differing = `MLH1 ${NAME}: your 2022 report from ${HARBOURLINE} differs from ClinVar today.`;
     const worth = (markup: string) =>
       /<div class="card worth[^"]*">([\s\S]*?)<\/div>/.exec(markup)?.[1];
 
     it("draws a Genetic variants tile beside the others, with how many it holds", () => {
-      assert.ok(textOf(before).includes("Allergies 1"));
-      assert.ok(textOf(before).includes("Genetic variants 2"));
+      assert.ok(textOf(plain).includes("Allergies 1"));
+      assert.ok(textOf(plain).includes("Genetic variants 2"));
     });
 
     it("draws a row for each variant that opens its entry, with its gene, its expression and how many reports", () => {
-      assert.deepEqual(rowsOf(before).filter(ofVariants), [
+      assert.deepEqual(rowsOf(plain).filter(ofVariants), [
         { text: `MLH1 ${NAME} 2`, href: V1 },
         { text: "NM_000500.1:c.1A>G 1", href: ORPHAN },
       ]);
     });
 
-    it("draws the same rows whatever the tables name", () => {
+    it("draws the same rows whatever the tables name, a name for another row's code changing none of them", () => {
+      const CODE = "urn:test:penicillin";
+      const [allergy] = VARIANT_ANSWERS[ALLERGIES];
+      const coded = {
+        ...VARIANT_ANSWERS,
+        [ALLERGIES]: [{ ...allergy, code: CODE }],
+      };
+      const about = new Map([
+        [
+          CODE,
+          { name: { label: "Penicillin, per the tables", altLabels: [] } },
+        ],
+      ]);
+      const named = page({ answers: coded, about });
+      assert.ok(textOf(named).includes("Penicillin, per the tables"));
       assert.deepEqual(
-        rowsOf(page({ about: new Map() })).filter(ofVariants),
-        rowsOf(before).filter(ofVariants),
+        rowsOf(named).filter(ofVariants),
+        rowsOf(plain).filter(ofVariants),
       );
     });
 
@@ -611,22 +631,22 @@ describe("Reading a pod as a person's record · PodPage", () => {
           .map(({ text }) => text),
         [`MLH1 ${NAME} Differs 2`, "NM_000500.1:c.1A>G 1"],
       );
-      assert.ok(!textOf(before).includes(DIFFERS), "no tag before");
+      assert.ok(!textOf(plain).includes(DIFFERS), "no tag before");
     });
 
     it("keeps what ClinVar says today, and the counsellor sentence, off the pod's screen", () => {
       assert.ok(
-        !textOf(before).includes("ClinVar today"),
+        !textOf(plain).includes("ClinVar today"),
         "no column of its own",
       );
-      assert.ok(!/class="card [^"]*\bvariants\b/.test(before));
-      assert.ok(!textOf(before).includes("counsellor"));
-      assert.ok(!textOf(before).includes("Cascade keeps it as one variant"));
+      assert.ok(!/class="card [^"]*\bvariants\b/.test(plain));
+      assert.ok(!textOf(plain).includes("counsellor"));
+      assert.ok(!textOf(plain).includes("Cascade keeps it as one variant"));
     });
 
     it("says in Worth a look which report differs from ClinVar today, linking to the variant's entry", () => {
       assert.ok(
-        !textOf(before).includes("differs from ClinVar"),
+        !textOf(plain).includes("differs from ClinVar"),
         "nothing needs a look yet",
       );
       const card = worth(page({ said: VARIANTS_SAID }));
@@ -1464,7 +1484,7 @@ describe("Connecting to a demo hospital · ConnectionBox, HospitalsPage", () => 
         assert.ok(text.includes("Sign in"), heading);
     });
 
-    it("names a hospital's places on its card", () => {
+    it("names the town a hospital is in on its card", () => {
       assert.ok(cards[0]?.text.includes("North Town"));
     });
 
@@ -2838,6 +2858,11 @@ describe("Seeing what changed after a medication · PodPage, TrendPage, withImpo
   });
 
   describe("given every sentence the app says of a lab change", () => {
+    let storyPodsMap: Map<string, Story>;
+    before(async () => {
+      storyPodsMap = await storyPods();
+    });
+
     it("never says why a result changed, in any sentence `CHANGED` gives", () => {
       const changed = said.CHANGED as Record<
         string,
@@ -2851,8 +2876,8 @@ describe("Seeing what changed after a medication · PodPage, TrendPage, withImpo
       for (const sentence of sentences) assert.doesNotMatch(sentence, CAUSES);
     });
 
-    it("never says why, of a lab change of the five story pods or on its trend", async () => {
-      for (const [patient, story] of await storyPods()) {
+    it("never says why, of a lab change of the five story pods or on its trend", () => {
+      for (const [patient, story] of storyPodsMap) {
         for (const finding of story.changes.filter(
           ({ direction }: LabChange) => direction !== "not enough results",
         ))
@@ -2874,6 +2899,7 @@ describe("Seeing what changed after a medication · PodPage, TrendPage, withImpo
     let story: Story;
     let twice: ReturnType<typeof importedTwice>["twice"];
     let text: string;
+    let ahead: string;
     let undated: string;
     let once: string;
     let unrevised: string;
@@ -2881,14 +2907,18 @@ describe("Seeing what changed after a medication · PodPage, TrendPage, withImpo
       story = (await storyPods()).get("story-statin")!;
       const built = importedTwice(story);
       twice = built.twice;
-      const zone = process.env.TZ;
-      process.env.TZ = "America/Los_Angeles";
-      try {
-        text = textOf(podOf("pell-hargrove", story, twice));
-      } finally {
-        if (zone === undefined) delete process.env.TZ;
-        else process.env.TZ = zone;
-      }
+      const inZone = (zone: string) => {
+        const was = process.env.TZ;
+        process.env.TZ = zone;
+        try {
+          return textOf(podOf("pell-hargrove", story, twice));
+        } finally {
+          if (was === undefined) delete process.env.TZ;
+          else process.env.TZ = was;
+        }
+      };
+      text = inZone("America/Los_Angeles");
+      ahead = inZone("Pacific/Auckland");
       undated = textOf(
         podOf("pell-hargrove", story, {
           ...twice,
@@ -2923,6 +2953,11 @@ describe("Seeing what changed after a medication · PodPage, TrendPage, withImpo
         /From Cascade North, retrieved 29 January 2024: 2 records\. From Cascade North, as of 1 February 2025: 1 record/,
       );
       assert.doesNotMatch(text, /Oct 17, 2026/);
+    });
+
+    it("gives the day retrieved in the person's own zone, so midnight UTC is the day before in Los Angeles and the same day in Auckland", () => {
+      assert.match(text, /retrieved 29 January 2024/);
+      assert.match(ahead, /retrieved 30 January 2024/);
     });
 
     it("counts the records of an import that were a new version of one the pod held", () => {
@@ -3087,9 +3122,12 @@ describe("Seeing what changed after a medication · PodPage, TrendPage, withImpo
       );
     const mixed = daysOf("617310");
     const lane = textAt(mixed, "trend-lane-desc") ?? "";
+    let story: Story;
+    before(async () => {
+      story = (await storyPods()).get("story-statin")!;
+    });
 
-    it("describes the chart by its number of results, from the earliest day to the latest", async () => {
-      const story = (await storyPods()).get("story-statin")!;
+    it("describes the chart by its number of results, from the earliest day to the latest", () => {
       const page = trendOf("ines-calloway", story, {
         test: "18262-6",
         medication: "617310",
