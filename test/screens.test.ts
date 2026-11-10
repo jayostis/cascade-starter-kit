@@ -2219,14 +2219,14 @@ test("a pod brought in twice says where What changed comes from: the imports in 
     return [];
   };
   const base = { ...story.answers, [IMPORTS]: twice[IMPORTS] };
-  await said.withMechanism(
+  await said.withImportHistory(
     { ...base, [IMPORTS]: twice[IMPORTS]!.slice(0, 2) },
     story.changes,
     ask,
   );
-  await said.withMechanism(base, [], ask);
+  await said.withImportHistory(base, [], ask);
   assert.deepEqual(asked, [], "asked for a block that would not show");
-  await said.withMechanism(base, story.changes, ask);
+  await said.withImportHistory(base, story.changes, ask);
   assert.deepEqual(asked, [REVISIONS, VERSIONS]);
 });
 
