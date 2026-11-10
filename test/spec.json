@@ -515,9 +515,19 @@
     {
       "term": "Worth a look",
       "definition": "here, the list at the top of a pod's page of the few things the app would point a person to, each a sentence linking to its entry."
+    },
+    {
+      "term": "zod",
+      "definition": "the library the server's routes use to describe the shape of a request body and to refuse one that does not fit it."
     }
   ],
-  "shaped": ["built.test.ts"],
+  "shaped": [
+    "built.test.ts",
+    "bundle.test.ts",
+    "failure-annotations.test.ts",
+    "guide.test.ts",
+    "inputs.test.ts"
+  ],
   "build": [
     "The add-ons' manifests, against their folders and the versions the repository tests",
     "The app's AGENTS.md, against the app it describes",

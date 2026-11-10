@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { describe, it } from "node:test";
 import type { z } from "zod";
 
 const { INPUTS: CHECKED, inputRefusal } = (await import(
@@ -34,30 +34,43 @@ const VALUES = [
   [],
 ];
 
-test("each operation's route schema accepts what PodApi's own check accepts, and refuses the rest with PodApi's sentence", () => {
-  assert.deepEqual(Object.keys(SCHEMAS).sort(), Object.keys(CHECKED).sort());
-  for (const [operation, schema] of Object.entries(SCHEMAS)) {
-    const fields = [
-      ...new Set([
-        ...Object.keys(schema.shape),
-        ...Object.keys(CHECKED[operation] ?? {}),
-        "other",
-      ]),
-    ];
-    const inputs = [
-      [],
-      "text",
-      null,
-      {},
-      ...fields.flatMap((field) => VALUES.map((value) => ({ [field]: value }))),
-    ];
-    for (const input of inputs) {
-      const parsed = schema.safeParse(input);
-      assert.equal(
-        parsed.success ? undefined : refusalOf(parsed.error),
-        inputRefusal(operation, input),
-        `${operation} ${JSON.stringify(input)}`,
+/** The bodies that tell a route's schema from PodApi's own check: no object, an empty one, and each field with each kind of value. */
+function bodiesFor(operation: string, schema: z.ZodObject): unknown[] {
+  const fields = [
+    ...new Set([
+      ...Object.keys(schema.shape),
+      ...Object.keys(CHECKED[operation] ?? {}),
+      "other",
+    ]),
+  ];
+  return [
+    [],
+    "text",
+    null,
+    {},
+    ...fields.flatMap((field) => VALUES.map((value) => ({ [field]: value }))),
+  ];
+}
+
+describe("Calling PodApi over HTTP · /api/, INPUT_SCHEMAS, refusalOf()", () => {
+  describe("given a body PodApi's own check (`inputRefusal()`) would refuse", () => {
+    it("has a schema for each operation PodApi checks, and for no other", () => {
+      assert.deepEqual(
+        Object.keys(SCHEMAS).sort(),
+        Object.keys(CHECKED).sort(),
       );
-    }
-  }
+    });
+
+    for (const [operation, schema] of Object.entries(SCHEMAS))
+      it(`refuses \`${operation}\`'s body with PodApi's sentence, and accepts what PodApi accepts`, () => {
+        for (const input of bodiesFor(operation, schema)) {
+          const parsed = schema.safeParse(input);
+          assert.equal(
+            parsed.success ? undefined : refusalOf(parsed.error),
+            inputRefusal(operation, input),
+            `${operation} ${JSON.stringify(input)}`,
+          );
+        }
+      });
+  });
 });
