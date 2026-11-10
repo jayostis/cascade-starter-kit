@@ -162,7 +162,7 @@ describe("The SMART Health IT launcher, in try/ · npm run test:launcher", () =>
       );
       await t.test("names that patient in the box", () => {
         assert.ok(
-          chosen.name.includes(about.split(" ").at(-1) ?? ""),
+          about.split(" ").every((part) => chosen.name.includes(part)),
           `the launcher's ${chosen.name} is not the record's ${about}`,
         );
       });

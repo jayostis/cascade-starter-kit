@@ -70,7 +70,7 @@ jobs:
         run: |
           npx tsc -b
           node scripts/with-add-ons.mjs
-          node --test --test-reporter=spec --test-reporter-destination=stdout             --test-reporter=./runtime-js/scripts/junit-reporter.mjs --test-reporter-destination=test-browser-junit.xml             dist/test-browser/try.test.js dist/test-browser/starter.test.js
+          node --test --test-reporter=spec --test-reporter-destination=stdout             --test-reporter=./runtime-js/scripts/junit-reporter.mjs --test-reporter-destination=test-browser-junit.xml             $(node -p "require('./package.json').scripts['test:browser'].match(/dist\/test-browser\/\S+\.js/g).join(' ')")
       - name: The browser tests read as a specification
         if: ${{ !cancelled() }}
         run: node runtime-js/scripts/spec-shape.mjs test-browser-junit.xml test-browser/spec.json

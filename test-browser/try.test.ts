@@ -2256,7 +2256,7 @@ describe("Setting the world's date · .world-date", () => {
         await settled(page);
       };
       /** Signs the pod in at North as the story's patient, from Find a hospital, and brings the record in. */
-      const bringIn = async () => {
+      const signInAndBringIn = async () => {
         await page.click('a:has-text("Find a hospital")');
         await settled(page);
         const [popup] = await Promise.all([
@@ -2294,7 +2294,7 @@ describe("Setting the world's date · .world-date", () => {
       );
 
       await world(first.asOf);
-      await bringIn();
+      await signInAndBringIn();
       const [taken, ...more] = await metformin();
       await t.test(
         "lists metformin as active at the first pull's date",
@@ -2303,6 +2303,9 @@ describe("Setting the world's date · .world-date", () => {
           assert.match(taken ?? "", /Active/, "metformin is not taken");
         },
       );
+      await page
+        .locator(".changes", { hasText: "Nothing stands out yet." })
+        .waitFor({ timeout: 60_000 });
       await t.test(
         "draws no change card at the first pull's date",
         async () => {
@@ -2311,7 +2314,7 @@ describe("Setting the world's date · .world-date", () => {
       );
 
       await world(undefined);
-      await bringIn();
+      await signInAndBringIn();
       const [stopped, ...others] = await metformin();
       await t.test(
         "lists metformin as stopped once brought in again today",
@@ -2542,6 +2545,7 @@ describe("Naming records by the reference tables · try/tables/", () => {
         async () => {
           for (const said of ["required", "No result", "missing: "])
             assert.ok(panel.includes(said), `${said} is not in ${panel}`);
+          assert.match(panel, /missing: [^.\s]/, "no missing test is named");
         },
       );
       await t.test(
@@ -4078,13 +4082,7 @@ describe("Encrypting a pod with six words · Encrypt this pod with six words", (
           ]);
         },
       );
-      await t.test("never puts a word in the address", async () => {
-        assert.equal(
-          page.url().includes(words[0]!),
-          false,
-          "the words are never in the address",
-        );
-      });
+      const addressBefore = page.url();
       const keptBefore = await wordsKept(page, words);
 
       await t.test(
@@ -4176,6 +4174,15 @@ describe("Encrypting a pod with six words · Encrypt this pod with six words", (
       );
       await t.test("makes the pod once words 2 and 5 are typed", async () => {
         assert.equal(AT.podOf(page.url()), "grace-hopper");
+      });
+      await t.test("never puts a word in the address", async () => {
+        for (const address of [addressBefore, page.url()])
+          for (const word of words)
+            assert.equal(
+              new RegExp(String.raw`\b${word}\b`, "i").test(address),
+              false,
+              `the word ${word} is in the address ${address}`,
+            );
       });
       const keptAfter = await wordsKept(page, words);
       await t.test(
