@@ -361,9 +361,12 @@ describe("Serving the pods to an MCP client · npm run mcp, podServer()", () => 
       });
       const [first] = result.content as { text: string }[];
       assert.equal(result.isError, true);
-      assert.doesNotMatch(first!.text, /private/);
+      assert.equal(first!.text, "the server failed; its log says why");
       assert.equal(logged.mock.callCount(), 1);
+      const [error] = logged.mock.calls[0]!.arguments as [Error];
+      assert.match(error.message, /ENOENT/);
       await other.close();
+      await broken.close();
     });
   });
 

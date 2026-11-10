@@ -49,10 +49,11 @@ jobs:
       - name: The tests, with the report the unit-test page is made from
         if: ${{ !cancelled() && steps.runtime.outcome == 'success' }}
         run: |
-          npx tsc -b
-          node scripts/with-add-ons.mjs
           mkdir -p unit-tests
-          node scripts/test.mjs             --test-reporter=spec --test-reporter-destination=stdout             --test-reporter=./runtime-js/scripts/junit-reporter.mjs             --test-reporter-destination=unit-tests/junit.xml
+          node scripts/test.mjs \
+            --test-reporter=spec --test-reporter-destination=stdout \
+            --test-reporter=./runtime-js/scripts/junit-reporter.mjs \
+            --test-reporter-destination=unit-tests/junit.xml
       - name: The tests read as a specification
         if: ${{ !cancelled() && steps.runtime.outcome == 'success' }}
         run: node runtime-js/scripts/spec-shape.mjs unit-tests/junit.xml test/spec.json

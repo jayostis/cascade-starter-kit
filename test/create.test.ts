@@ -331,7 +331,7 @@ describe("Making an app · create-cascade-app <folder>", () => {
   });
 
   describe("when the made app's fixtures cannot be loaded", () => {
-    it("returns 1 with the app left made, and prints a hint that begins with `npm install`", async () => {
+    it("returns 1 with the app left made, and prints a hint to run `npm install` in it, then `npm run reset`", async () => {
       const terminal = {
         ...recording(),
         fixtures: async () => {
@@ -544,6 +544,7 @@ describe("Adding the chat and the MCP server to a new app · --with, terminal.ch
       assert.equal(typeof made.dependencies.ai, "string");
       assert.equal(made.scripts.model, "node model.ts");
       assert.ok(!existsSync(join(folder, "mcp.ts")));
+      assert.ok(!existsSync(join(folder, "mcp-server.ts")));
     });
 
     it("adds `mcp-server.ts` and `npm run mcp` for `mcp`, and no `ai` package", () => {

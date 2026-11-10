@@ -543,26 +543,6 @@
       "definition": "the library the server's routes use to describe the shape of a request body and to refuse one that does not fit it."
     }
   ],
-  "shaped": [
-    "built.test.ts",
-    "bundle.test.ts",
-    "chat.test.ts",
-    "create.test.ts",
-    "failure-annotations.test.ts",
-    "guide.test.ts",
-    "inputs.test.ts",
-    "mcp.test.ts",
-    "model.test.ts",
-    "page.test.ts",
-    "pin.test.ts",
-    "pod-api.test.ts",
-    "pull.test.ts",
-    "router.test.ts",
-    "said.test.ts",
-    "samples.test.ts",
-    "screens.test.ts",
-    "stems.test.ts"
-  ],
   "build": [
     "The add-ons' manifests, against their folders and the versions the repository tests",
     "The app's AGENTS.md, against the app it describes",

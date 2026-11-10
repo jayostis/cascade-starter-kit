@@ -53,14 +53,11 @@ function bodiesFor(operation: string, schema: z.ZodObject): unknown[] {
 }
 
 describe("Calling PodApi over HTTP · /api/, INPUT_SCHEMAS, refusalOf()", () => {
-  describe("given a body PodApi's own check (`inputRefusal()`) would refuse", () => {
-    it("has a schema for each operation PodApi checks, and for no other", () => {
-      assert.deepEqual(
-        Object.keys(SCHEMAS).sort(),
-        Object.keys(CHECKED).sort(),
-      );
-    });
+  it("has a schema for each operation PodApi checks, and for no other", () => {
+    assert.deepEqual(Object.keys(SCHEMAS).sort(), Object.keys(CHECKED).sort());
+  });
 
+  describe("given a body PodApi's own check (`inputRefusal()`) would refuse", () => {
     for (const [operation, schema] of Object.entries(SCHEMAS))
       it(`refuses \`${operation}\`'s body with PodApi's sentence, and accepts what PodApi accepts`, () => {
         for (const input of bodiesFor(operation, schema)) {

@@ -968,7 +968,9 @@ describe("Setting up the chat's model from a terminal · npm run model, setUpMod
     });
 
     it("writes a bullet for each character kept, and never the character", () => {
-      assert.equal([...shown].filter((c) => c === "•").length, 2 + 2 + 2 + 1);
+      const typed = 2 + 1 + 1 + 1; // a, b, c, d and the pasted e
+      const redrawn = 2; // the Ctrl+V hint draws "ab" again
+      assert.equal([...shown].filter((c) => c === "•").length, typed + redrawn);
       assert.ok(
         !written.some((text) => /^[a-d]$/.test(text)),
         "a character showed",
@@ -984,7 +986,7 @@ describe("Setting up the chat's model from a terminal · npm run model, setUpMod
     });
 
     it("erases one bullet for Backspace", () => {
-      assert.ok(shown.includes("\b \b"), "Backspace erased nothing");
+      assert.equal(shown.split("\b \b").length - 1, 1);
     });
 
     it("ignores arrow and Delete keys", () => {

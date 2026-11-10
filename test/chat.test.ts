@@ -330,6 +330,7 @@ describe("Answering a person's question with a model · POST /chat, GET /chat, c
     const PAGE = `/pods/${STATIN}/trend`;
     let chunks: Chunk[];
     let calls: LanguageModelV4CallOptions[];
+    let findings: (typeof finding)[];
     let finding: {
       key: string;
       said: string;
@@ -349,9 +350,9 @@ describe("Answering a person's question with a model · POST /chat, GET /chat, c
         ...said("find anything interesting"),
         page: PAGE,
       });
-      finding = (
-        ofType(chunks, "tool-output-available")[0]!.output as (typeof finding)[]
-      )[0]!;
+      findings = ofType(chunks, "tool-output-available")[0]!
+        .output as (typeof finding)[];
+      finding = findings[0]!;
     });
 
     it("streams the tool's call, its result and the answer, in that order", () => {
@@ -371,14 +372,18 @@ describe("Answering a person's question with a model · POST /chat, GET /chat, c
         finding.view,
         `/pods/${STATIN}/trend?test=18262-6&medication=617310`,
       );
-      assert.equal(
-        finding.rows.length,
-        finding.before.count + finding.after.count,
-      );
       const lab = await pods.get(STATIN)!.ask("pod/My lab results");
       const entries = new Set(lab.map((row) => entryId(row.entry!)));
-      for (const row of finding.rows)
-        assert.ok(entries.has(row.entry), row.entry);
+      for (const each of findings) {
+        assert.match(
+          each.said,
+          /was (lower|higher) after .* was prescribed\.$/,
+        );
+        assert.ok(each.view.startsWith(`/pods/${STATIN}/trend?test=`));
+        assert.equal(each.rows.length, each.before.count + each.after.count);
+        for (const row of each.rows)
+          assert.ok(entries.has(row.entry), row.entry);
+      }
     });
 
     it("returns to the model the finding without its rows", () => {
@@ -648,7 +653,8 @@ describe("Answering a person's question with a model · POST /chat, GET /chat, c
     });
 
     it("logs the error", () => {
-      assert.ok(logged.mock.callCount() > 0);
+      const [error] = logged.mock.calls[0]!.arguments as [Error];
+      assert.match(error.message, /ENOENT/);
     });
   });
 
@@ -852,6 +858,8 @@ describe("Letting a model use the app's tools from the chat · chatTools(), MAX_
         message.role === "tool" ? message.content : [],
       );
       assert.equal(fed.length, table.length);
+      const toModel = JSON.stringify(fed);
+      for (const [, , , reason] of table) assert.match(toModel, reason);
     });
   });
 
