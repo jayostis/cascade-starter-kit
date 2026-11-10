@@ -1103,7 +1103,7 @@ export function podApi(host: PodHost) {
     changed(connection);
     pod
       .import(files, {
-        aboutSubject: true,
+        claimProfiles: true,
         onProgress: (part) => {
           connection.bringing = part;
           changed(connection);

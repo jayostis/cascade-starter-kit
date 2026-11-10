@@ -95,7 +95,7 @@ export interface ConnectionNow {
   readonly retry?: boolean;
   readonly sources?: readonly {
     records: Readonly<Record<string, number>>;
-    claimed: boolean;
+    holdsSubjectsRecords: boolean;
   }[];
   readonly pulled?: {
     readonly denied: readonly { type: string; category?: string }[];

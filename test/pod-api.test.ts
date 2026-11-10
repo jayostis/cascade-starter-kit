@@ -377,7 +377,7 @@ before(async () => {
   const { pull } = await pulled(north, story.patient);
   const statin = await openPod(join(folder, STATIN));
   const imported = await statin.import(pullFiles(pull, "north"), {
-    aboutSubject: true,
+    claimProfiles: true,
   });
   assert.equal(imported.refused, undefined);
   const labs = await statin.ask(LABS);
@@ -538,7 +538,7 @@ function paged() {
         ...files,
         ["north/bundle.json", new TextEncoder().encode(JSON.stringify(bundle))],
       ]),
-      { aboutSubject: true },
+      { claimProfiles: true },
     );
     assert.equal(imported.refused, undefined);
     await pod.close();
@@ -1518,7 +1518,7 @@ function checks() {
         ...files,
         ["north/bundle.json", new TextEncoder().encode(JSON.stringify(bundle))],
       ]),
-      { aboutSubject: true },
+      { claimProfiles: true },
     );
     assert.equal(imported.refused, undefined);
     await pod.close();
