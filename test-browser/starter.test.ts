@@ -1156,7 +1156,7 @@ describe("Encrypting a pod with six words · Encrypt this pod with six words", (
       await t.test("never puts a word in the address", async () => {
         for (const word of words)
           assert.equal(
-            new RegExp(`\b${word}\b`, "i").test(page.url()),
+            new RegExp(String.raw`\b${word}\b`, "i").test(page.url()),
             false,
             `the word ${word} is in the address`,
           );
