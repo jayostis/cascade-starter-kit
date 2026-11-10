@@ -62,6 +62,14 @@
       "aliases": ["addresses"]
     },
     {
+      "term": "Anthropic",
+      "definition": "the company that makes the Claude models; one of the providers a chat can use, over its own interface."
+    },
+    {
+      "term": "Backspace",
+      "definition": "the key that deletes the character just typed."
+    },
+    {
       "term": "base",
       "definition": "of the template, the app with no add-on: its screens, its server, the sample pods and the tool list. Of an address, the path the app is served under, such as `/cascade/`."
     },
@@ -123,6 +131,10 @@
       "term": "credit",
       "definition": "the sentence a reference table's publisher asks to be shown wherever the table's content is, such as LOINC's notice; the app prints it once on each screen that shows what the table says.",
       "aliases": ["credits"]
+    },
+    {
+      "term": "Ctrl+V",
+      "definition": "the keys most programs paste with. A prompt that reads the keyboard itself gets nothing from them, so the app says to paste another way."
     },
     {
       "term": "demo hospital",
@@ -534,6 +546,7 @@
     "guide.test.ts",
     "inputs.test.ts",
     "mcp.test.ts",
+    "model.test.ts",
     "page.test.ts",
     "pin.test.ts",
     "pull.test.ts",
