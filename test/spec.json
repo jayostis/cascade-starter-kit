@@ -527,6 +527,7 @@
     "failure-annotations.test.ts",
     "guide.test.ts",
     "inputs.test.ts",
+    "mcp.test.ts",
     "page.test.ts",
     "pin.test.ts",
     "pull.test.ts",
