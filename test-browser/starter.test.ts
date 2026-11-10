@@ -364,24 +364,24 @@ test("with no model set the window says to run npm run model and has no form; wi
   await page.close();
 
   const seen: Promise<string>[] = [];
-  const watched = await browser.newPage();
-  watched.on("request", (request) =>
+  const seeing = await browser.newPage();
+  seeing.on("request", (request) =>
     seen.push(Promise.resolve(`${request.url()} ${request.postData() ?? ""}`)),
   );
-  watched.on("response", (response) =>
+  seeing.on("response", (response) =>
     seen.push(response.text().catch(() => "")),
   );
-  await watched.goto(`${modelled.origin}/pods/ada-lovelace/`);
+  await seeing.goto(`${modelled.origin}/pods/ada-lovelace/`);
   assert.equal(
-    await watched.locator(".chat-bar .muted").textContent(),
+    await seeing.locator(".chat-bar .muted").textContent(),
     "stub-1, on this computer",
   );
-  await ask(watched, ASKS);
-  await watched.locator(".chat-log .model", { hasText: "Done." }).waitFor();
-  seen.push(storage(watched).then(({ all }) => all));
-  seen.push(watched.content());
+  await ask(seeing, ASKS);
+  await seeing.locator(".chat-log .model", { hasText: "Done." }).waitFor();
+  seen.push(storage(seeing).then(({ all }) => all));
+  seen.push(seeing.content());
   const shown = (await Promise.all(seen)).join("\n");
-  await watched.close();
+  await seeing.close();
   assert.match(shown, /"type":"tool-input-available"/);
   assert.match(shown, /"name":"stub-1"/);
   assert.equal(shown.includes(KEY), false);
@@ -425,11 +425,11 @@ test("a write the model asked for is withdrawn when its chat is closed: the box 
   await ask(page, "make a pod for Dora Xu");
   const asking = page.getByRole("alertdialog");
   await asking.waitFor();
-  const before = posts.length;
+  const asked = posts.length;
   await page.getByRole("button", { name: "New chat" }).dispatchEvent("click");
   await asking.waitFor({ state: "detached" });
   await page.waitForTimeout(500);
-  assert.equal(posts.length, before);
+  assert.equal(posts.length, asked);
   const made = (await (
     await post(modelled.origin, "/api/pods", {})
   ).json()) as {
