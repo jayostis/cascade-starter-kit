@@ -1,0 +1,25 @@
+{
+  "about": "try/ and the made app in Chromium: what only a browser shows.",
+  "capabilities": [
+    "Opening try/ for the first time · try/",
+    "Reading a pod as a person's record · try/pods/<pod>/",
+    "Keeping pods in the browser · indexedDB",
+    "Menus and the About box · File, Help, #about",
+    "Importing files a person picks · pod.look(), pod.import()",
+    "Connecting to a demo hospital · Sign in at",
+    "Setting the world's date · .world-date",
+    "Naming records by the reference tables · try/tables/",
+    "Keeping the reference tables current in a browser · cascade-runtime.json",
+    "Seeing what changed after a medication · find_changes, trend",
+    "Offering the app's tools to a browser's agent · document.modelContext",
+    "Confirming a write a model asks for · make_pod",
+    "Encrypting a pod with six words · Encrypt this pod with six words",
+    "Chatting with a model about a pod · add-ons/chat",
+    "Fitting the chat window on a small screen · add-ons/chat"
+  ],
+  "build": [
+    "Speed of a first visit to try/ · FIRST_VISIT_NAMES_BUDGET_MS",
+    "The SMART Health IT launcher, in try/ · npm run test:launcher",
+    "The deployed site · PAGES_URL, COMMIT"
+  ]
+}
