@@ -64,7 +64,7 @@ const messageOf = (error: unknown) =>
  * its schema accepts, and then answers, without error, the result sent back. The reason is in the provider's own
  * words where it gave one, with neither key nor address.
  */
-export async function check(
+export async function checkCallsTools(
   model: Model,
   {
     seconds = model.local ? LOCAL_CHECK_SECONDS : CHECK_SECONDS,
@@ -243,10 +243,10 @@ export interface Terminal {
 }
 
 /**
- * The flow: asks which model, reads a key if the provider needs one, checks the model and keeps the settings in the
+ * The setup: asks which model, reads a key if the provider needs one, checks the model and keeps the settings in the
  * folder's `.env`; the key is redacted from everything printed. Resolves the exit code.
  */
-export async function flow(
+export async function setUpModel(
   args: readonly string[],
   terminal: Terminal,
   folder = HERE,
@@ -346,7 +346,7 @@ export async function flow(
   say(`\nChecking that ${name} calls a tool…\n`);
   let result: Checked;
   try {
-    result = await check(modelOf({ provider, url, name, key }), {
+    result = await checkCallsTools(modelOf({ provider, url, name, key }), {
       ...checking,
       onWaiting: () => say("Still waiting for an answer…\n"),
     });
@@ -466,7 +466,7 @@ if (argv[1] && pathToFileURL(resolve(argv[1])).href === import.meta.url) {
     exit(2);
   }
   exit(
-    await flow(args, {
+    await setUpModel(args, {
       out: (text) => stdout.write(text),
       err: (text) => stderr.write(text),
       ask,

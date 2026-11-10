@@ -1,5 +1,6 @@
 {
   "name": "cascade-starter-kit",
+  "version": "0.0.0",
   "private": true,
   "type": "module",
   "description": "The app a person starts from on cascade-runtime: the template, try/ in a browser, and create-cascade-app.",

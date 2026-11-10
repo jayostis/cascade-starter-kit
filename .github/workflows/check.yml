@@ -24,7 +24,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@v5
         with:
-          node-version: "22"
+          node-version: "24"
           cache: npm
       - run: npm ci
       - id: runtime
@@ -35,5 +35,52 @@ jobs:
         run: npm run typecheck
       - if: ${{ !cancelled() && steps.runtime.outcome == 'success' }}
         run: npm run lint
+      - name: The runtime's report writer and shape check
+        if: ${{ !cancelled() && steps.runtime.outcome == 'success' }}
+        uses: actions/checkout@v7
+        with:
+          repository: jayostis/cascade-runtime-js
+          ref: main
+          path: runtime-js
+          sparse-checkout: |
+            scripts
+            packages/site/src
+          persist-credentials: false
+      - name: The tests, with the report the unit-test page is made from
+        if: ${{ !cancelled() && steps.runtime.outcome == 'success' }}
+        run: |
+          mkdir -p unit-tests
+          node scripts/test.mjs \
+            --test-reporter=spec --test-reporter-destination=stdout \
+            --test-reporter=./runtime-js/scripts/junit-reporter.mjs \
+            --test-reporter-destination=unit-tests/junit.xml
+      - name: The tests read as a specification
+        if: ${{ !cancelled() && steps.runtime.outcome == 'success' }}
+        run: node runtime-js/scripts/spec-shape.mjs unit-tests/junit.xml test/spec.json
+      - if: ${{ !cancelled() && steps.runtime.outcome == 'success' }}
+        run: cp test/spec.json unit-tests/spec.json
+      - if: ${{ !cancelled() && steps.runtime.outcome == 'success' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: unit-tests
+          path: unit-tests
+          if-no-files-found: error
+
+  # The package declares node >= 22; the job above runs on 24, where node:test names each test's file and line.
+  node-22:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - id: runtime
+        uses: ./.github/actions/runtime
+        with:
+          install: "true"
       - if: ${{ !cancelled() && steps.runtime.outcome == 'success' }}
         run: npm test

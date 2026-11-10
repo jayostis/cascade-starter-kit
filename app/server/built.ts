@@ -49,7 +49,7 @@ function newest(path: string): number {
  * Runs `build` when `dist/` of the app at `app` has no pages, a file they are built from was written since, or the
  * settings in `env` are not the ones the last build used; says whether it did.
  */
-export async function builtPages(
+export async function buildStalePages(
   app: string,
   build: () => Promise<void>,
   env: Record<string, string | undefined>,

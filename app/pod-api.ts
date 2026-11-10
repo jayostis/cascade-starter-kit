@@ -70,7 +70,7 @@ import {
   utcInstant,
   type VariantsSaid,
   variantsSaid,
-  withMechanism,
+  withImportHistory,
   worldInstant,
   worthALook,
 } from "./said.ts";
@@ -431,7 +431,7 @@ export function podApi(host: PodHost) {
       limit: 20,
     });
     return {
-      answers: await withMechanism(answers, changes, (question) =>
+      answers: await withImportHistory(answers, changes, (question) =>
         pod.ask(question),
       ),
       changes,

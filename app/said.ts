@@ -658,8 +658,8 @@ const IMPORTS = "pod/What each import brought in";
 const REVISIONS = "record/Its revisions, in the order they arrived";
 const VERSIONS = "record/What each version says";
 
-/** The questions only the mechanism under What changed reads: see `withMechanism`. */
-export const MECHANISM = [REVISIONS, VERSIONS];
+/** The questions only the import history under What changed reads: see `withImportHistory`. */
+export const IMPORT_HISTORY = [REVISIONS, VERSIONS];
 
 /** Every question `podPage` reads: ask each, and hand it the rows by question. */
 export const QUESTIONS = [
@@ -1489,7 +1489,7 @@ function variantRows(answers: Answers, said?: VariantsSaid): SectionRow[] {
 }
 
 /** The section's rows in the order its table opens in, a row with nothing to sort by last either way. */
-export function opening(
+export function openingOrder(
   section: Section,
   rows: readonly SectionRow[],
 ): SectionRow[] {
@@ -1921,11 +1921,11 @@ function differences(
 const STATUSES: ReadonlySet<string> = new Set(Object.values(terms.statusOf));
 
 /**
- * `answers` with the rows of `MECHANISM` added when `podPage` would draw them: the pod holds two imports or more and
+ * `answers` with the rows of `IMPORT_HISTORY` added when `podPage` would draw them: the pod holds two imports or more and
  * `changes` (as `changesIn` gives them) has a shown change of a medication. Otherwise `answers` as it is, and the two
  * questions are never asked; `ask` gives a question's rows.
  */
-export async function withMechanism(
+export async function withImportHistory(
   answers: Answers,
   changes: readonly Finding[],
   ask: (question: string) => Promise<readonly Row[]>,
@@ -1937,7 +1937,7 @@ export async function withMechanism(
   );
   if (imports.size < 2 || !shown) return answers;
   const rows = await Promise.all(
-    MECHANISM.map(async (question) => [question, await ask(question)]),
+    IMPORT_HISTORY.map(async (question) => [question, await ask(question)]),
   );
   return { ...answers, ...Object.fromEntries(rows) };
 }
