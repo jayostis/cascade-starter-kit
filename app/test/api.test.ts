@@ -2,7 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { replayKit } from "cascade-runtime/fixtures";
-import { afterAll, beforeAll, expect, test } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { nodeHost } from "../node-host.ts";
 import { podApi } from "../pod-api.ts";
 import { appServer } from "../server/app.ts";
@@ -39,32 +39,45 @@ afterAll(async () => {
   await rm(folder, { recursive: true, force: true, maxRetries: 5 });
 });
 
-test("the pods are listed", async () => {
-  const response = await post("pods", {});
-  expect(response.status).toBe(200);
-  const { pods } = (await response.json()) as { pods: { name: string }[] };
-  expect(pods.map(({ name }) => name)).toEqual(["alex-rivera"]);
-});
+/**
+ * The app's server answers each PodApi operation at `POST /api/<operation>`, which is how the app's own pages read and
+ * change a pod. These tests put the server in the process over a pod replayed from a kit, with no port opened: copy one
+ * to test a new operation or route.
+ */
+describe("Serving PodApi to the app's pages · POST /api/<operation>", () => {
+  describe("with Alex Rivera's kit replayed through its second import", () => {
+    it("lists the pods by name at `pods`", async () => {
+      const response = await post("pods", {});
+      expect(response.status).toBe(200);
+      const { pods } = (await response.json()) as { pods: { name: string }[] };
+      expect(pods.map(({ name }) => name)).toEqual(["alex-rivera"]);
+    });
 
-test("Alex's answers come back: what the first two imports brought in", async () => {
-  const response = await post("answers", { pod: "alex-rivera" });
-  expect(response.status).toBe(200);
-  const { answers } = (await response.json()) as {
-    answers: Record<string, unknown[]>;
-  };
-  expect(answers["pod/What each import brought in"].length).toBeGreaterThan(0);
-});
+    it("returns rows for a question's name at `answers`", async () => {
+      const response = await post("answers", { pod: "alex-rivera" });
+      expect(response.status).toBe(200);
+      const { answers } = (await response.json()) as {
+        answers: Record<string, unknown[]>;
+      };
+      expect(answers["pod/What each import brought in"].length).toBeGreaterThan(
+        0,
+      );
+    });
 
-test("with no chat added, /chat is no page of the app: a 404", async () => {
-  const response = await app.request(`${ORIGIN}/chat`, {
-    headers: { accept: "text/html" },
+    it("answers 400 with the rules' reason for a pod there is none of", async () => {
+      const response = await post("answers", { pod: "nobody" });
+      expect(response.status).toBe(400);
+      const { refused } = (await response.json()) as { refused: string };
+      expect(refused).toMatch(/no pod nobody/);
+    });
   });
-  expect(response.status).toBe(404);
-});
 
-test("an input the rules refuse is a 400 that says why, never a 500", async () => {
-  const response = await post("answers", { pod: "nobody" });
-  expect(response.status).toBe(400);
-  const { refused } = (await response.json()) as { refused: string };
-  expect(refused).toMatch(/no pod nobody/);
+  describe("with no chat added", () => {
+    it("answers 404 at /chat", async () => {
+      const response = await app.request(`${ORIGIN}/chat`, {
+        headers: { accept: "text/html" },
+      });
+      expect(response.status).toBe(404);
+    });
+  });
 });

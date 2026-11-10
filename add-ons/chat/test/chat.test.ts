@@ -4,7 +4,7 @@ import { join } from "node:path";
 import type { LanguageModelV4StreamPart } from "@ai-sdk/provider";
 import { MockLanguageModelV4 } from "ai/test";
 import { replayKit } from "cascade-runtime/fixtures";
-import { afterAll, beforeAll, expect, test } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Model } from "../models.ts";
 import { nodeHost } from "../node-host.ts";
 import { podApi } from "../pod-api.ts";
@@ -75,37 +75,45 @@ afterAll(async () => {
   await rm(folder, { recursive: true, force: true, maxRetries: 5 });
 });
 
-test("GET /chat names the model the app was set up with, never its address or key", async () => {
-  const response = await app.request(`${ORIGIN}/chat`);
-  expect(await response.json()).toEqual({
-    provider: "mock",
-    name: "mock-1",
-    local: true,
-  });
-});
+/**
+ * The chat add-on's routes: `GET /chat` says which model the app was set up with, `POST /chat` sends a question to it and
+ * streams the answer. These tests use the AI SDK's mock model, so they need no key and no network.
+ */
+describe("Chatting with a model over the server · chatRoutes(), /chat", () => {
+  describe("with a mock model", () => {
+    it("names the model by its provider, its name and whether it is local, and nothing more, at GET /chat", async () => {
+      const response = await app.request(`${ORIGIN}/chat`);
+      expect(await response.json()).toEqual({
+        provider: "mock",
+        name: "mock-1",
+        local: true,
+      });
+    });
 
-test("a question about a pod is answered in the model's words, as the AI SDK's UI message stream", async () => {
-  const response = await app.request(`${ORIGIN}/chat`, {
-    method: "POST",
-    headers: { origin: ORIGIN, "content-type": "application/json" },
-    body: JSON.stringify({
-      pod: "alex-rivera",
-      page: "/pods/alex-rivera/",
-      messages: [
-        {
-          id: "u1",
-          role: "user",
-          parts: [{ type: "text", text: "What did my imports bring in?" }],
-        },
-      ],
-    }),
+    it("streams the model's words as the AI SDK's UI message stream at POST /chat", async () => {
+      const response = await app.request(`${ORIGIN}/chat`, {
+        method: "POST",
+        headers: { origin: ORIGIN, "content-type": "application/json" },
+        body: JSON.stringify({
+          pod: "alex-rivera",
+          page: "/pods/alex-rivera/",
+          messages: [
+            {
+              id: "u1",
+              role: "user",
+              parts: [{ type: "text", text: "What did my imports bring in?" }],
+            },
+          ],
+        }),
+      });
+      expect(response.status).toBe(200);
+      const deltas = (await response.text())
+        .split("\n\n")
+        .filter((event) => event.startsWith("data: {"))
+        .map((event) => JSON.parse(event.slice("data: ".length)))
+        .filter(({ type }) => type === "text-delta")
+        .map(({ delta }) => delta);
+      expect(deltas.join("")).toBe(ANSWER);
+    });
   });
-  expect(response.status).toBe(200);
-  const deltas = (await response.text())
-    .split("\n\n")
-    .filter((event) => event.startsWith("data: {"))
-    .map((event) => JSON.parse(event.slice("data: ".length)))
-    .filter(({ type }) => type === "text-delta")
-    .map(({ delta }) => delta);
-  expect(deltas.join("")).toBe(ANSWER);
 });
