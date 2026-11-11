@@ -1169,8 +1169,8 @@ describe("Reading one entry of a pod · EntryPage, entryOf(), entryId()", () => 
           [COLUMBA, "2024-03-21"],
         ],
       );
-      holds(words, `${HARBOURLINE} report of May 1, 2022;`);
-      holds(words, `${COLUMBA} report of Mar 21, 2024;`);
+      holds(words, `${HARBOURLINE} report of 1 May 2022;`);
+      holds(words, `${COLUMBA} report of 21 March 2024;`);
     });
 
     it("says what Cascade did, each report with its lab and year, what ClinVar says today, then the counsellor sentence", () => {
@@ -2973,6 +2973,19 @@ describe("Seeing what changed after a medication · PodPage, TrendPage, withImpo
         text,
         / came in a new version: version 1 to version 2, in import 2, as of 1 February 2025\. Workflow status active → completed; medication use end date none → 15 April 2024\./,
       );
+    });
+
+    it("says a value that looks like a date but is none as written, not as `NaN undefined NaN`", () => {
+      const malformed = textOf(
+        podOf("pell-hargrove", story, {
+          ...twice,
+          [VERSIONS]: twice[VERSIONS].map((row) =>
+            row.value === "2024-04-15" ? { ...row, value: "2024-13-45" } : row,
+          ),
+        }),
+      );
+      assert.match(malformed, /medication use end date none → 2024-13-45\./);
+      assert.doesNotMatch(malformed, /NaN/);
     });
 
     it("gives the day a new version arrived, where the person is, when its import had no world's date", () => {

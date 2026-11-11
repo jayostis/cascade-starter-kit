@@ -5,10 +5,11 @@ import { Fragment } from "react";
 import type { LoaderFunctionArgs } from "react-router";
 import {
   capitalised,
-  day,
+  dayInWords,
   entryId,
   entryOf,
   maps,
+  onDaySaid,
   panelsOf,
   REQUIRED,
   sourcesOf,
@@ -160,9 +161,10 @@ export function EntryPage({
                 <strong>{place}</strong>{" "}
                 <span className={muted}>
                   {[
-                    issued !== undefined && `report of ${day(issued)}`,
+                    issued !== undefined &&
+                      `report of ${dayInWords(issued.slice(0, 10))}`,
                     retrieved !== undefined &&
-                      `retrieved ${stepWhenSaid({ arrived: retrieved })}`,
+                      `retrieved ${onDaySaid(retrieved)}`,
                     arrived !== undefined &&
                       `arrived ${stepWhenSaid({ arrived })}${importLabel === undefined ? "" : ` through ${importLabel}`}`,
                     records > 1 && `${records} records`,

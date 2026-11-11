@@ -1941,7 +1941,8 @@ const fieldSaid = (field: string) =>
 /** A statement's value as a person reads it in a sentence: a day in words, a thing by its label, an address by its last part. */
 function valueSaid({ value, valueLabel }: Row): string {
   if (valueLabel !== undefined) return valueLabel;
-  if (/^\d{4}-\d\d-\d\d/.test(value)) return dayInWords(value.slice(0, 10));
+  if (/^\d{4}-\d\d-\d\d/.test(value) && isDay(value.slice(0, 10)))
+    return dayInWords(value.slice(0, 10));
   return isCode(value) ? value.split(/[#/:]/).at(-1)! : value;
 }
 
@@ -2997,9 +2998,12 @@ export function stepWhenSaid({
   arrived,
   asOf,
 }: Pick<Step, "arrived" | "asOf">): string {
-  return asOf === undefined
-    ? `on ${localDayInWords(arrived)}`
-    : `as of ${dayInWords(asOf)}`;
+  return asOf === undefined ? onDaySaid(arrived) : `as of ${dayInWords(asOf)}`;
+}
+
+/** A time of the app's clock as the person's own day, said as `stepWhenSaid` says a version's arrival: `on 17 October 2026`. */
+export function onDaySaid(time: string): string {
+  return `on ${localDayInWords(time)}`;
 }
 
 /** The UTC day of an instant, in words: `1 February 2024`. */
