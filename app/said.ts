@@ -967,7 +967,47 @@ const SAID: Readonly<Record<string, (item: Item, row: Row) => string>> = {
     `${name === UNNAMED ? `An unnamed ${one}` : name} was kept as one ${one} with another before; newer reference tables or rules no longer match them, so they are shown apart.`,
   "possibly the same medication": ({ name, one }, { otherRecordLabel }) =>
     `${name === UNNAMED ? `An unnamed ${one}` : name} shares a code with ${otherNamed(otherRecordLabel, one)}, which Cascade keeps apart. Cascade cannot confirm that the shared code names one product, so they may or may not be the same.`,
+  "no longer joined under a newer rule list version": ({ name, one }) =>
+    `${who(name, one)} was matched with another under older matching rules; a newer version of the rules no longer joins them, so they are shown apart until someone decides.`,
+  "joined on one day, with no time to tell two draws apart": ({ name, one }) =>
+    `${who(name, one)} was joined from results recorded on one day with no time, so they may be two separate draws.`,
+  "one test at one instant, two values": ({ name, one }) =>
+    `${who(name, one)} has two results of one test at one moment that give different values.`,
+  "one test at one instant, in units that differ": ({ name, one }) =>
+    `${who(name, one)} has two results of one test at one moment in units that differ, so they may be one draw measured two ways.`,
+  "a member changed since it was judged": ({ name, one }) =>
+    `${who(name, one)} was judged to be one ${one}, but a record in it has changed since.`,
+  "observed later": ({ name, one }) =>
+    `The source's change time did not decide which version of ${whom(name, one)} is current, so the one seen later is shown.`,
+  "no basis": ({ name, one }) =>
+    `Nothing decided which version of ${whom(name, one)} is current, so the one shown was picked by its identifier alone.`,
+  "Befores that form a cycle": ({ name, one }) =>
+    `The order recorded for the versions of ${whom(name, one)} contradicts itself.`,
 };
+
+/** The reasons whose words carry a number or a date, which the vocabulary builds with CONCAT, each as its words match. */
+const SAID_BUILT: readonly (readonly [
+  RegExp,
+  (item: Item, found: string[]) => string,
+])[] = [
+  [
+    /^this source reports (\d+) records? at states older than it reported on (\S+)$/,
+    ({ name, one }, [count, date]) =>
+      `The source reports ${whom(name, one)}${count === "1" ? "" : ` and ${Number(count) - 1} more`} at ${count === "1" ? "a state" : "states"} older than it reported on ${dayInWords(date)}.`,
+  ],
+  [
+    /^this writer's clock was at least (\d+) days? behind$/,
+    ({ name, one }, [count]) =>
+      `${who(name, one)} was written by a source whose clock was at least ${count} ${count === "1" ? "day" : "days"} behind, so its change time may be wrong.`,
+  ],
+];
+
+/** An entry as a sentence starts with it: its name, or `An unnamed allergy`. */
+const who = (name: string, one: string) =>
+  name === UNNAMED ? `An unnamed ${one}` : name;
+/** An entry as a sentence names it after its first words: its name, or `an unnamed allergy`. */
+const whom = (name: string, one: string) =>
+  name === UNNAMED ? `an unnamed ${one}` : name;
 
 /** The other record of a pair, named from its label `Medication · Name · …`, or `another medication` when it has no name. */
 function otherNamed(label: string | undefined, one: string): string {
@@ -1098,7 +1138,12 @@ export function reviewKey(row: Row): string {
 
 /** The sentence a row of "What needs review" is told in, of `item`, the entry's `name` and what `one` of its kind is called. */
 export function reviewSaid(row: Row, item: Item): string {
-  return (SAID[row.needs] ?? (() => `${item.name}: ${row.needs}.`))(item, row);
+  if (Object.hasOwn(SAID, row.needs)) return SAID[row.needs]!(item, row);
+  for (const [pattern, said] of SAID_BUILT) {
+    const found = pattern.exec(row.needs);
+    if (found !== null) return said(item, found.slice(1));
+  }
+  return `${item.name}: ${row.needs}.`;
 }
 
 /** A pair of medications that share an ingredient, as `sharedIngredients` gives it. */
@@ -1232,7 +1277,7 @@ function counting({
   if (submitters === undefined) return undefined;
   return submitters === 1
     ? "one submitter"
-    : `${submitters === 0 ? "no" : submitters} submitters`;
+    : `${submitters === 0 ? "no" : number(submitters)} submitters`;
 }
 
 /** What a variant classifications row says, as the sentence ClinVar's page and a code's page give it. */
@@ -2931,9 +2976,11 @@ export function worldInstant(text: unknown): string | undefined {
 
 /** An instant in UTC, as a pull.json states it: `2024-02-01T07:00:00Z` for `2024-02-01T09:00:00+02:00`; undefined stays undefined. */
 export function utcInstant(asOf: string | undefined): string | undefined {
-  return asOf === undefined
+  if (asOf === undefined) return undefined;
+  const time = Date.parse(asOf);
+  return Number.isNaN(time)
     ? undefined
-    : new Date(Date.parse(asOf)).toISOString().replace(".000Z", "Z");
+    : new Date(time).toISOString().replace(".000Z", "Z");
 }
 
 /** A time of the app's clock as the person's own day, in the words `dayInWords` uses: `29 January 2024`. */
@@ -2942,6 +2989,16 @@ function localDayInWords(text: string): string {
   return Number.isNaN(date.getTime())
     ? String(text)
     : `${date.getDate()} ${MONTHS[date.getMonth()]} ${date.getFullYear()}`;
+}
+
+/** When a new version arrived, in the words `pullSaid` gives its import's day: `on 17 October 2026`, or `as of 1 February 2025`. */
+export function stepWhenSaid({
+  arrived,
+  asOf,
+}: Pick<Step, "arrived" | "asOf">): string {
+  return asOf === undefined
+    ? `on ${localDayInWords(arrived)}`
+    : `as of ${dayInWords(asOf)}`;
 }
 
 /** The UTC day of an instant, in words: `1 February 2024`. */

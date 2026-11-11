@@ -15,7 +15,6 @@ import {
   compare,
   day,
   dayAt,
-  dayInWords,
   entryId,
   type Finding,
   HISTORY,
@@ -24,7 +23,6 @@ import {
   howOf,
   LAB_SECTION,
   LABS,
-  localDay,
   named,
   namingCredits,
   openingOrder,
@@ -46,6 +44,7 @@ import {
   slug,
   SMALL,
   SOURCES,
+  stepWhenSaid,
   timeOf,
   trendOfFinding,
   valuesSaid,
@@ -387,11 +386,7 @@ function How({ how, about }: { how: HowSaid; about: Abouts }) {
           <p key={`${finding.key} ${at}`}>
             {capitalised(changeNames(finding, about).medication)} came in a new
             version: version {step.from} to version {step.to}, in import{" "}
-            {step.pull},{" "}
-            {step.asOf === undefined
-              ? `on ${localDay(step.arrived)}`
-              : `as of ${dayInWords(step.asOf)}`}
-            .
+            {step.pull}, {stepWhenSaid(step)}.
             {step.said.length > 0 &&
               ` ${capitalised(step.said.map(({ field, before, after }) => `${field} ${valuesSaid(before)} → ${valuesSaid(after)}`).join("; "))}.`}
           </p>

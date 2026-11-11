@@ -450,7 +450,7 @@ describe("What a pod's screen says is worth a look · worthALook()", () => {
 
     it("says a sentence, not `name: needs.`, for every value the vocabulary's three What needs review questions bind", () => {
       const { literals, concatenated } = reviewNeeds();
-      assert.ok(literals.length >= 15, `read ${literals.length} values`);
+      assert.ok(literals.length >= 14, `read ${literals.length} values`);
       for (const value of literals) {
         const sentence = said.reviewSaid({ needs: value }, item);
         assert.notEqual(sentence, `Latex: ${value}.`, value);
@@ -482,7 +482,7 @@ describe("What a pod's screen says is worth a look · worthALook()", () => {
     it("finds the plain values of a query, and the start of each built by CONCAT", () => {
       assert.deepEqual(
         needsIn(
-          'BIND ("a" AS ?needs) BIND (IF(?x, "b", "c") AS ?needs) ' +
+          'BIND ("9999-12-31" AS ?to) BIND ("a" AS ?needs) BIND (IF(?x, "b", "c") AS ?needs) ' +
             '{ VALUES (?kind ?needs) { (cascade:K "d") } }' +
             'BIND (CONCAT("this is new ", STR(?n)) AS ?needs)',
         ),
@@ -508,7 +508,9 @@ const CONCATENATED = [
 function needsIn(text: string) {
   const literals: string[] = [];
   const concatenated: string[] = [];
-  for (const bound of text.matchAll(/BIND\s*\(([\s\S]*?)\s+AS\s+\?needs\)/g)) {
+  for (const bound of text.matchAll(
+    /BIND\s*\(((?:(?!BIND)[\s\S])*?)\s+AS\s+\?needs\)/g,
+  )) {
     const expression = bound[1]!;
     const quoted = [...expression.matchAll(/"([^"]*)"/g)].map((q) => q[1]!);
     if (/^\s*CONCAT\s*\(/.test(expression)) concatenated.push(quoted[0]!);
