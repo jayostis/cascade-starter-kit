@@ -1423,6 +1423,35 @@ describe("Naming pods, people and places as a person says them · slug(), person
       assert.equal(said.personName("alex-rivera", held), "Alex Rivera");
     });
 
+    it("returns each title as typed when the titles are in a script `slug` empties, as pods titled `李明` and `王芳` are told apart by their titles", () => {
+      const apart = new Map([
+        ["pod-1", "李明"],
+        ["pod-2", "王芳"],
+      ]);
+      assert.equal(said.personName("pod-1", apart), "李明");
+      assert.equal(said.personName("pod-2", apart), "王芳");
+      const alone = new Map([
+        ["pod-1", "李明"],
+        ["pod-2", "Sam Lee"],
+      ]);
+      assert.equal(said.personName("pod-1", alone), "李明");
+    });
+
+    it("returns each pod's name with a capital on each word when pods share a title in a script `slug` empties, tidied and in any case", () => {
+      const same = new Map([
+        ["pod-1", "李明"],
+        ["pod-2", " 李明 "],
+      ]);
+      assert.equal(said.personName("pod-1", same), "Pod 1");
+      assert.equal(said.personName("pod-2", same), "Pod 2");
+      const cased = new Map([
+        ["pod-1", "Иван"],
+        ["pod-2", "иван"],
+      ]);
+      assert.equal(said.personName("pod-1", cased), "Pod 1");
+      assert.equal(said.personName("pod-2", cased), "Pod 2");
+    });
+
     it("returns the title a pod keeps, as typed, with its words spaced once, from `keptTitle`, and nothing for a pod held under its own name", () => {
       const sharing = new Map([
         ["pod-a", "Sam Lee"],
