@@ -1355,7 +1355,7 @@ describe("Naming pods, people and places as a person says them · slug(), person
       ["tamsin-at-north", "Tamsin at North"],
       ["o-brien-mcdonald", "O'Brien McDonald"],
       ["ada", "ada"],
-      ["alex-rivera-j24", "Alex Rivera"],
+      ["walker-test", "Ines Calloway"],
     ]);
 
     it("returns the name typed when the pod was made, as typed, `O'Brien McDonald` included", () => {
@@ -1381,11 +1381,57 @@ describe("Naming pods, people and places as a person says them · slug(), person
       assert.equal(said.personName("ada", titles), "Ada");
     });
 
-    it("returns the pod's name with a capital on each word when the typed name would make a pod of another name", () => {
+    it("returns the title as it is when it names another person than the pod's name does, as a pod made without a name is titled for the person of the record brought into it", () => {
+      assert.equal(said.personName("walker-test", titles), "Ines Calloway");
+    });
+
+    it("returns the pod's name with a capital on each word for each pod but one that shares a title, the one named for the title keeping it, so copies of a kit at two points stay apart", () => {
+      const copies = new Map([
+        ["alex-rivera", "Alex Rivera"],
+        ["alex-rivera-j24", "Alex Rivera"],
+      ]);
+      assert.equal(said.personName("alex-rivera", copies), "Alex Rivera");
       assert.equal(
-        said.personName("alex-rivera-j24", titles),
+        said.personName("alex-rivera-j24", copies),
         "Alex Rivera J24",
       );
+      const alone = new Map([["alex-rivera-j24", "Alex Rivera"]]);
+      assert.equal(said.personName("alex-rivera-j24", alone), "Alex Rivera");
+      const neither = new Map([
+        ["walker-test", " Ines  Calloway"],
+        ["other-test", "Ines Calloway "],
+      ]);
+      assert.equal(said.personName("walker-test", neither), "Walker Test");
+      assert.equal(said.personName("other-test", neither), "Other Test");
+    });
+
+    it("takes a title as shared when it differs only in case, so a pod named for neither keeps its own name", () => {
+      const cased = new Map([
+        ["walker-test", "Ines Calloway"],
+        ["other-test", "INES CALLOWAY"],
+      ]);
+      assert.equal(said.personName("walker-test", cased), "Walker Test");
+      assert.equal(said.personName("other-test", cased), "Other Test");
+    });
+
+    it("takes a title as shared with a pod named for it whose title cannot be read, untitled or sealed, held under its own name", () => {
+      const held = new Map([
+        ["alex-rivera", "alex-rivera"],
+        ["alex-rivera-j24", "Alex Rivera"],
+      ]);
+      assert.equal(said.personName("alex-rivera-j24", held), "Alex Rivera J24");
+      assert.equal(said.personName("alex-rivera", held), "Alex Rivera");
+    });
+
+    it("returns the title a pod keeps, as typed, with its words spaced once, from `keptTitle`, and nothing for a pod held under its own name", () => {
+      const sharing = new Map([
+        ["pod-a", "Sam Lee"],
+        ["pod-b", " Sam  Lee "],
+        ["ada", "ada"],
+      ]);
+      assert.equal(said.keptTitle("pod-b", sharing), "Sam Lee");
+      assert.equal(said.keptTitle("ada", sharing), undefined);
+      assert.equal(said.keptTitle("pod-c", sharing), undefined);
     });
   });
 

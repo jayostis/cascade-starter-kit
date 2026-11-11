@@ -1740,6 +1740,10 @@ describe("Connecting a pod to a hospital and bringing its records in · api.hosp
       assert.equal(shown.patient, "Ines Calloway");
     });
 
+    it("returns `titled: true` once it has pulled for a pod that was made with a name", async () => {
+      assert.equal((await pulledOnce()).shown.titled, true);
+    });
+
     it("returns nothing of the pulled bundle itself", async () => {
       assert.ok(
         !keys((await pulledOnce()).shown).includes("bundle"),
