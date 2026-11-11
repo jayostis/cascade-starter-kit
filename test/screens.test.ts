@@ -1624,7 +1624,7 @@ describe("Connecting to a demo hospital · ConnectionBox, HospitalsPage", () => 
           "This record is Odalys Brandt's. Bringing it in makes this Odalys Brandt's pod.",
         ),
       );
-      assert.equal(untitled.button, "Bring it into Rowan Ellery Marsh's pod");
+      assert.equal(untitled.button, "Bring it into Odalys Brandt's pod");
       assert.equal(untitled.note, "note", "an unknown pod's note stays plain");
     });
   });
