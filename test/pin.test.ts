@@ -57,7 +57,7 @@ describe("Moving the runtime pin · scripts/pin.mjs", () => {
     });
   });
 
-  describe("node scripts/pin.mjs <commit>, in a copy of the repository's two files", () => {
+  describe("given a copy of the repository's two files, running node scripts/pin.mjs <commit>", () => {
     /** Runs the script over a template pinned at OLD, a local server answering for every release with `status`; `lockReadOnly` makes the lock refuse its write. */
     async function run(status: number, lockReadOnly: boolean) {
       const root = await mkdtemp(join(tmpdir(), "pin-"));
