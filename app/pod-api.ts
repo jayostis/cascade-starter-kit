@@ -402,7 +402,7 @@ export function podApi(host: PodHost) {
     pod: Pod,
     person: string | undefined,
   ) {
-    if (!person?.trim() || pod.titled) return;
+    if (person === undefined || pod.titled) return;
     try {
       await pod.retitle(person);
       titles.set(name, person);

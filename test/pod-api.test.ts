@@ -1474,89 +1474,93 @@ const namedAfterBringIn = once(async () => {
  * A pod with no name on file brought a record whose Patient is named only in `text`, which gives no name to title it
  * by: whether `retitle` was asked, what was logged, and whether the record was brought in.
  */
-const unnamedPatientOnce = once(async () => {
-  const logged = mock.method(console, "error", () => undefined);
-  try {
-    const nameless = (value: unknown): unknown =>
-      Array.isArray(value)
-        ? value.map(nameless)
-        : typeof value === "object" && value !== null
-          ? Object.fromEntries(
-              Object.entries(value as Record<string, unknown>).map(
-                ([key, each]) => [
-                  key,
-                  key === "name" &&
-                  (value as { resourceType?: string }).resourceType ===
-                    "Patient"
-                    ? [{ text: "Rowan Marsh" }]
-                    : nameless(each),
-                ],
-              ),
-            )
-          : value;
-    const alter: Alter = async (request, hospital) => {
-      const response = await hospital(request);
-      if (!response.headers.get("Content-Type")?.includes("json"))
-        return response;
-      const body = nameless(await response.clone().json());
-      return new Response(JSON.stringify(body), response);
-    };
-    let retitled = 0;
-    const counting = (pod: object) =>
-      new Proxy(pod, {
-        get(target, key) {
-          const value = Reflect.get(target, key, target);
-          if (key === "retitle")
-            return (...args: unknown[]) => {
-              retitled += 1;
-              return (value as (...a: unknown[]) => unknown).apply(
-                target,
-                args,
-              );
-            };
-          return typeof value === "function" ? value.bind(target) : value;
-        },
-      });
-    let folderOf = "";
-    const { built } = await fresh((at) => {
-      folderOf = at;
-      return {
-        pods: new Proxy(
-          host(at).pods as unknown as {
-            open(...a: unknown[]): Promise<object>;
-          },
-          {
-            get: (target, key) =>
-              key === "open"
-                ? async (...args: unknown[]) =>
-                    counting(await target.open(...args))
-                : Reflect.get(target, key, target),
-          },
-        ),
-        hospitals: northHospitals([], alter),
+const unnamedPatientOnce = (given: unknown) =>
+  once(async () => {
+    const logged = mock.method(console, "error", () => undefined);
+    try {
+      const nameless = (value: unknown): unknown =>
+        Array.isArray(value)
+          ? value.map(nameless)
+          : typeof value === "object" && value !== null
+            ? Object.fromEntries(
+                Object.entries(value as Record<string, unknown>).map(
+                  ([key, each]) => [
+                    key,
+                    key === "name" &&
+                    (value as { resourceType?: string }).resourceType ===
+                      "Patient"
+                      ? given
+                      : nameless(each),
+                  ],
+                ),
+              )
+            : value;
+      const alter: Alter = async (request, hospital) => {
+        const response = await hospital(request);
+        if (!response.headers.get("Content-Type")?.includes("json"))
+          return response;
+        const body = nameless(await response.clone().json());
+        return new Response(JSON.stringify(body), response);
       };
-    });
-    await (
+      let retitled = 0;
+      const counting = (pod: object) =>
+        new Proxy(pod, {
+          get(target, key) {
+            const value = Reflect.get(target, key, target);
+            if (key === "retitle")
+              return (...args: unknown[]) => {
+                retitled += 1;
+                return (value as (...a: unknown[]) => unknown).apply(
+                  target,
+                  args,
+                );
+              };
+            return typeof value === "function" ? value.bind(target) : value;
+          },
+        });
+      let folderOf = "";
+      const { built } = await fresh((at) => {
+        folderOf = at;
+        return {
+          pods: new Proxy(
+            host(at).pods as unknown as {
+              open(...a: unknown[]): Promise<object>;
+            },
+            {
+              get: (target, key) =>
+                key === "open"
+                  ? async (...args: unknown[]) =>
+                      counting(await target.open(...args))
+                  : Reflect.get(target, key, target),
+            },
+          ),
+          hospitals: northHospitals([], alter),
+        };
+      });
       await (
-        nodeHost({ folder: folderOf }).pods as unknown as {
-          open(name: string): Promise<{ close(): Promise<void> }>;
-        }
-      ).open("rowan-ellery-marsh")
-    ).close();
-    const { connection } = await connected(built, "rowan-ellery-marsh");
-    const at = { pod: "rowan-ellery-marsh", connection };
-    await built.bring(at);
-    const shown = await built.connection({ ...at, wait: true });
-    return {
-      retitled,
-      logged: logged.mock.callCount(),
-      broughtIn: shown.broughtIn,
-      patient: shown.patient,
-    };
-  } finally {
-    logged.mock.restore();
-  }
-});
+        await (
+          nodeHost({ folder: folderOf }).pods as unknown as {
+            open(name: string): Promise<{ close(): Promise<void> }>;
+          }
+        ).open("rowan-ellery-marsh")
+      ).close();
+      const { connection } = await connected(built, "rowan-ellery-marsh");
+      const at = { pod: "rowan-ellery-marsh", connection };
+      await built.bring(at);
+      const shown = await built.connection({ ...at, wait: true });
+      return {
+        retitled,
+        logged: logged.mock.callCount(),
+        broughtIn: shown.broughtIn,
+        patient: shown.patient,
+      };
+    } finally {
+      logged.mock.restore();
+    }
+  });
+
+const textOnlyName = unnamedPatientOnce([{ text: "Rowan Marsh" }]);
+const blankGivenName = unnamedPatientOnce([{ given: [" "] }]);
 
 /** A bring-in whose import throws an error of the app's own, and what was logged. */
 const failedOnce = once(async () => {
@@ -1799,14 +1803,22 @@ describe("Connecting a pod to a hospital and bringing its records in · api.hosp
     });
 
     it("does not retitle a pod, and logs nothing, when the person of the record has no name to give it", async () => {
-      const { retitled, logged, broughtIn } = await unnamedPatientOnce();
+      const { retitled, logged, broughtIn } = await textOnlyName();
       assert.equal(broughtIn, true);
       assert.equal(retitled, 0);
       assert.equal(logged, 0);
     });
 
+    it("does not retitle a pod when the name of the person of the record is only a blank given name", async () => {
+      const { retitled, logged, broughtIn, patient } = await blankGivenName();
+      assert.equal(broughtIn, true);
+      assert.equal(retitled, 0);
+      assert.equal(logged, 0);
+      assert.equal(patient, undefined);
+    });
+
     it("gives no `patient` when the person of the record has no name, so no screen says whose record it is", async () => {
-      const { patient } = await unnamedPatientOnce();
+      const { patient } = await textOnlyName();
       assert.equal(patient, undefined);
     });
 
