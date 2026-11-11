@@ -131,6 +131,7 @@ const LDL = "18262-6";
 const ATORVASTATIN = "617310";
 const SECOND_ATORVASTATIN = "617314";
 const LABS = "pod/My lab results";
+const IMPORTS = "pod/What each import brought in";
 
 let folder: string;
 /** The words that open the encrypted pod. */
@@ -1282,6 +1283,7 @@ const pulledOnce = once(async () => {
   const bringing = await built.bring(connection);
   const brought = await built.connection({ ...connection, wait: true });
   const answers = await built.answers({ pod: "ada" });
+  const imports = await built.ask({ pod: "ada", question: IMPORTS });
   const again = await over.bring(connection);
   const after = await over.connection(connection);
   return {
@@ -1294,6 +1296,7 @@ const pulledOnce = once(async () => {
     bringing,
     brought,
     answers,
+    imports,
     again,
     after,
   };
@@ -1768,6 +1771,17 @@ describe("Connecting a pod to a hospital and bringing its records in · api.hosp
           ({ key }: Output) => key === `start:${ATORVASTATIN}:${LDL}`,
         ),
       );
+    });
+
+    it("holds one import for one bring-in, so the pod's record of the connect is not among its imports", async () => {
+      const { imports } = await pulledOnce();
+      const labels = new Map<string, string | undefined>(
+        imports.rows.map(
+          ({ import: id, importLabel }: Output) =>
+            [id, importLabel] as [string, string | undefined],
+        ),
+      );
+      assert.deepEqual([...labels.values()], ["FHIR pull"]);
     });
 
     it("reports loading the adapter, converting, saving and judging, in that order, through `onProgress`", async () => {
