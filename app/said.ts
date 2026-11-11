@@ -897,7 +897,7 @@ export function keptTitle(pod: string, titles?: Titles): string | undefined {
 /**
  * The title `titles` holds for a pod, as typed, when it is a name the pod was given: not the pod's own name, which is
  * what a pod made without a title is held under, and, where another pod holds the same title (in any case) or is
- * named for it, whatever title it holds, only for the pod `slug` of it names. A kit loaded again at another point under another name (`alex-rivera-j24`) holds the kit's title, and
+ * named for it, whatever title it holds, only for the pod `slug` of it names; a title `slug` empties (`李明`) is compared tidied and in any case, as no pod is named for it. A kit loaded again at another point under another name (`alex-rivera-j24`) holds the kit's title, and
  * showing it for both would hide what tells the copies apart.
  */
 export function typedName(pod: string, titles?: Titles): string | undefined {
@@ -905,9 +905,13 @@ export function typedName(pod: string, titles?: Titles): string | undefined {
   if (typed === undefined) return undefined;
   if (slug(typed) === pod) return typed;
   const own = slug(typed);
+  const same = (title: string | undefined) =>
+    own === ""
+      ? tidy(title)?.toLowerCase() === typed.toLowerCase()
+      : slug(tidy(title) ?? "") === own;
   const shared = [...(titles ?? [])].some(
     ([other, title]) =>
-      other !== pod && (other === own || slug(tidy(title) ?? "") === own),
+      other !== pod && ((own !== "" && other === own) || same(title)),
   );
   return shared ? undefined : typed;
 }
