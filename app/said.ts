@@ -883,17 +883,28 @@ export function slug(person: string): string {
 /** The titles pods were made under, by pod name. */
 export type Titles = ReadonlyMap<string, string | undefined>;
 
-/** The title `titles` holds for a pod, as typed, when `slug` of it is the pod's name; else undefined. */
+const tidy = (title: string | undefined) => title?.trim().replace(/\s+/g, " ");
+
+/**
+ * The title `titles` holds for a pod, as typed, when it is a name the pod was given: not the pod's own name, which is
+ * what a pod made without a title is held under, and, where another pod holds the same title, only for the pod `slug`
+ * of it names. A kit loaded again at another point under another name (`alex-rivera-j24`) holds the kit's title, and
+ * showing it for both would hide what tells the copies apart.
+ */
 export function typedName(pod: string, titles?: Titles): string | undefined {
-  const typed = titles?.get(pod)?.trim().replace(/\s+/g, " ");
-  return typed !== undefined && typed !== pod && slug(typed) === pod
-    ? typed
-    : undefined;
+  const typed = tidy(titles?.get(pod));
+  if (!typed || typed === pod) return undefined;
+  if (slug(typed) === pod) return typed;
+  const shared = [...(titles ?? [])].some(
+    ([other, title]) => other !== pod && tidy(title) === typed,
+  );
+  return shared ? undefined : typed;
 }
 
 /**
- * A pod's name as a person's: the title it was made under (`typedName`); else, and where the title is the pod's name
- * itself, as a pod made without one keeps, the pod's name capitalised: `rowan-ellery-marsh` is `Rowan Ellery Marsh`.
+ * A pod's name as a person's: the title it keeps (`typedName`), which may name another person than the pod's name, as
+ * a pod made without a title is titled for the person of the record brought into it; else the pod's name capitalised:
+ * `rowan-ellery-marsh` is `Rowan Ellery Marsh`.
  */
 export function personName(pod: string, titles?: Titles): string {
   return (
