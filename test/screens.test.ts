@@ -820,11 +820,11 @@ describe("Reading one entry of a pod · EntryPage, entryOf(), entryId()", () => 
       );
       holds(
         words,
-        `${AT_LARKSPUR} retrieved Jul 30, 2026; arrived Aug 1, 2026 through FHIR pull`,
+        `${AT_LARKSPUR} retrieved on 30 July 2026; arrived on 1 August 2026 through FHIR pull`,
       );
       holds(
         words,
-        `${AT_MERIDIAN} retrieved Sep 1, 2026; arrived Sep 10, 2026 through Apple Health export`,
+        `${AT_MERIDIAN} retrieved on 1 September 2026; arrived on 10 September 2026 through Apple Health export`,
       );
     });
 
@@ -1169,8 +1169,20 @@ describe("Reading one entry of a pod · EntryPage, entryOf(), entryId()", () => 
           [COLUMBA, "2024-03-21"],
         ],
       );
-      holds(words, `${HARBOURLINE} report of May 1, 2022;`);
-      holds(words, `${COLUMBA} report of Mar 21, 2024;`);
+      holds(words, `${HARBOURLINE} report of 1 May 2022;`);
+      holds(words, `${COLUMBA} report of 21 March 2024;`);
+    });
+
+    it("says a malformed report date as written", () => {
+      const malformed = {
+        ...entry,
+        where: [{ place: HARBOURLINE, issued: "2024-13-45", records: 1 }],
+      };
+      const text = wordsOf(
+        entryPage({ entry: malformed, panels: [] }, [CLINVAR], "martin-okafor"),
+      );
+      holds(text, `${HARBOURLINE} report of 2024-13-45`);
+      assert.doesNotMatch(text, /NaN|undefined/);
     });
 
     it("says what Cascade did, each report with its lab and year, what ClinVar says today, then the counsellor sentence", () => {
@@ -2868,7 +2880,7 @@ describe("Seeing what changed after a medication · PodPage, TrendPage, withImpo
       );
       assert.match(
         textOf(thin),
-        /[A-Z][^.:]*: [^.]+ was prescribed May 6, 2024, with 3 results before and 1 after\./,
+        /[A-Z][^.:]*: [^.]+ was prescribed 6 May 2024, with 3 results before and 1 after\./,
       );
     });
 
@@ -3008,14 +3020,27 @@ describe("Seeing what changed after a medication · PodPage, TrendPage, withImpo
     it("says which versions of the medication differ, in which import, and what differs between them", () => {
       assert.match(
         text,
-        / came in a new version: version 1 to version 2, in import 2, as of 1 February 2025\. Workflow status active → completed; medication use end date none → Apr 15, 2024\./,
+        / came in a new version: version 1 to version 2, in import 2, as of 1 February 2025\. Workflow status active → completed; medication use end date none → 15 April 2024\./,
       );
+    });
+
+    it("says a value that looks like a date but is none as written, not as `NaN undefined NaN`", () => {
+      const malformed = textOf(
+        podOf("pell-hargrove", story, {
+          ...twice,
+          [VERSIONS]: twice[VERSIONS].map((row) =>
+            row.value === "2024-04-15" ? { ...row, value: "2024-13-45" } : row,
+          ),
+        }),
+      );
+      assert.match(malformed, /medication use end date none → 2024-13-45\./);
+      assert.doesNotMatch(malformed, /NaN/);
     });
 
     it("gives the day a new version arrived, where the person is, when its import had no world's date", () => {
       assert.ok(
         undated.includes(
-          `in import 2, on ${said.localDay("2026-10-17T09:05:00Z")}.`,
+          `in import 2, ${said.stepWhenSaid({ arrived: "2026-10-17T09:05:00Z" })}.`,
         ),
         undated,
       );
@@ -3171,14 +3196,14 @@ describe("Seeing what changed after a medication · PodPage, TrendPage, withImpo
       });
       assert.match(
         textAt(page, "trend-chart-desc") ?? "",
-        /^6 results from Sep 1, 2023 to Dec 2, 2024/,
+        /^6 results from 1 September 2023 to 2 December 2024/,
       );
     });
 
     it("names the test and the medication by the record's own text, with nothing busy, until the tables name them", () => {
       assert.match(textOf(own), /LDL/);
       assert.match(textOf(own), /Atorvastatin/);
-      assert.match(own, /Atorvastatin started Jan 5, 2024./);
+      assert.match(own, /Atorvastatin started 5 January 2024./);
       assert.doesNotMatch(own, /aria-busy/);
     });
 
@@ -3208,14 +3233,14 @@ describe("Seeing what changed after a medication · PodPage, TrendPage, withImpo
     it("describes the chart with the medication's days", () => {
       assert.match(
         textAt(mixed, "trend-chart-desc") ?? "",
-        /Atorvastatin prescribed Jan 1, 2024\. Atorvastatin started Mar 4, 2024\.$/,
+        /Atorvastatin prescribed 1 January 2024\. Atorvastatin started 4 March 2024\.$/,
       );
     });
 
     it("says each medication's days in its lane", () => {
       for (const sentence of [
-        "Atorvastatin: prescribed Jan 1, 2024, from Mar 4, 2024, not stopped.",
-        "Metformin: prescribed May 1, 2023, from Jun 1, 2023 to Feb 1, 2024.",
+        "Atorvastatin: prescribed 1 January 2024, from 4 March 2024, not stopped.",
+        "Metformin: prescribed 1 May 2023, from 1 June 2023 to 1 February 2024.",
       ])
         assert.ok(lane.includes(sentence), lane);
     });
@@ -3290,7 +3315,7 @@ describe("Seeing what changed after a medication · PodPage, TrendPage, withImpo
       const lane = textAt(page, "trend-lane-desc");
       assert.ok(
         lane?.includes(
-          `${story.changes[0]!.medication.name}: prescribed Mar 4, 2024, start of use not known, not stopped.`,
+          `${story.changes[0]!.medication.name}: prescribed 4 March 2024, start of use not known, not stopped.`,
         ),
         lane,
       );

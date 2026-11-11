@@ -1194,7 +1194,7 @@ try {
       );
       assert.match(
         how,
-        /Workflow status active → completed; medication use end date none → Apr 15, 2024\./,
+        /Workflow status active → completed; medication use end date none → 15 April 2024\./,
       );
     },
   );
@@ -1856,7 +1856,7 @@ if (release === undefined) {
           `${title}: the entry does not carry ClinVar's own caution`,
         );
         if (gene === "MLH1" && id !== undefined)
-          assert.match(text, /report of [A-Z][a-z]{2} \d{1,2}, \d{4}/);
+          assert.match(text, /report of \d{1,2} [A-Z][a-z]+ \d{4}/);
       }
     },
   );

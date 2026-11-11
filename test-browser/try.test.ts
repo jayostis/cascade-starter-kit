@@ -3667,7 +3667,7 @@ describe("Seeing what changed after a medication · find_changes, trend", () => 
         assert.match(
           how,
           new RegExp(
-            `Workflow status active → completed; medication use end date none → ${view.day(finding.date)}`,
+            `Workflow status active → completed; medication use end date none → ${view.dayInWords(finding.date.slice(0, 10))}`,
           ),
         );
       });
