@@ -1397,6 +1397,12 @@ describe("Naming pods, people and places as a person says them · slug(), person
       );
       const alone = new Map([["alex-rivera-j24", "Alex Rivera"]]);
       assert.equal(said.personName("alex-rivera-j24", alone), "Alex Rivera");
+      const neither = new Map([
+        ["walker-test", " Ines  Calloway"],
+        ["other-test", "Ines Calloway "],
+      ]);
+      assert.equal(said.personName("walker-test", neither), "Walker Test");
+      assert.equal(said.personName("other-test", neither), "Other Test");
     });
   });
 

@@ -1129,10 +1129,10 @@ describe("Connecting to a demo hospital · Sign in at", () => {
     await t.test(
       "says whose record it is and that the pod keeps its name, and names no one else as the pod's owner",
       async () => {
-        const said = (await box.textContent()) ?? "";
+        const said = (await box.innerText()) ?? "";
         assert.match(
           said,
-          /This record is Ines Calloway's, not Cy Sealed's\. Bringing it in leaves this pod named Cy Sealed\./,
+          /This record is Ines Calloway's, not Cy Sealed's[.]\s+Bringing it in leaves this pod named Cy Sealed\./,
         );
         assert.doesNotMatch(said, /makes this/);
         assert.equal(
