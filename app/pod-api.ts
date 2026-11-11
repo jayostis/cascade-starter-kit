@@ -393,7 +393,10 @@ export function podApi(host: PodHost) {
     return titles.get(name) ?? name;
   }
 
-  /** A pod with no name on file takes the name of the person whose profile it has claimed; a name on file is kept. */
+  /**
+   * A pod with no name on file takes the name of the person whose profile it has claimed; a name on file is kept, and
+   * so is none when the person's name is empty.
+   */
   async function titledAfter(
     name: string,
     pod: Pod,
