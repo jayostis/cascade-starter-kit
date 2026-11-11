@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { readdirSync, readFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
 import { after, before, describe, it } from "node:test";
 import { codeStems, terms } from "cascade-runtime";
 import {
@@ -441,7 +444,157 @@ describe("What a pod's screen says is worth a look · worthALook()", () => {
       assert.deepEqual(sharedOf("e3", [RXNORM_SERIES]), []);
     });
   });
+
+  describe("reviewSaid(row, item)", () => {
+    const item = { name: "Latex", one: "allergy" };
+
+    it("says a sentence, not `name: needs.`, for every value the vocabulary's three What needs review questions bind", () => {
+      const { literals, concatenated } = reviewNeeds();
+      assert.ok(literals.length >= 14, `read ${literals.length} values`);
+      for (const value of literals) {
+        const sentence = said.reviewSaid({ needs: value }, item);
+        assert.notEqual(sentence, `Latex: ${value}.`, value);
+        assert.ok(sentence.includes("Latex"), `${value}: ${sentence}`);
+      }
+      assert.equal(concatenated.length, 2, concatenated.join(" | "));
+    });
+
+    it("says a sentence for each value the vocabulary builds by CONCAT, built from the query's own pieces", () => {
+      for (const value of reviewNeeds().concatenated)
+        assert.notEqual(
+          said.reviewSaid({ needs: value }, item),
+          `Latex: ${value}.`,
+          value,
+        );
+    });
+
+    it("keeps `name: needs.` for a value built by CONCAT once the query changes a tail of it", () => {
+      const { concatenated } = reviewNeeds((text) =>
+        text.replace('" behind"', '" late"'),
+      );
+      assert.ok(
+        concatenated.some(
+          (value) =>
+            said.reviewSaid({ needs: value }, item) === `Latex: ${value}.`,
+        ),
+        concatenated.join(" | "),
+      );
+    });
+
+    it("keeps `name: needs.` for a value no one has written a sentence for", () => {
+      assert.equal(
+        said.reviewSaid({ needs: "something new" }, item),
+        "Latex: something new.",
+      );
+    });
+
+    it("finds the plain values of a query, and an example of each built by CONCAT from its own pieces", () => {
+      assert.deepEqual(
+        needsIn(
+          'BIND ("9999-12-31" AS ?to) BIND ("a" AS ?needs) BIND (IF(?x, "b", "c") AS ?needs) ' +
+            '{ VALUES (?kind ?needs) { (cascade:K "d") } }' +
+            'BIND (CONCAT("this is new ", STR(?n), IF(?n = 1, " one", " ones"), " on ", SUBSTR(STR(?d), 1, 10)) AS ?needs)',
+        ),
+        {
+          literals: ["a", "b", "c", "d"],
+          concatenated: ["this is new 3 ones on 2024-05-01"],
+        },
+      );
+    });
+  });
 });
+
+/**
+ * What a What needs review query binds to `?needs`: each plain value, and one example of each value built by CONCAT.
+ * An example is made of the CONCAT's own pieces, a quoted piece as written, an `IF` as its last quoted piece, a
+ * `SUBSTR` as a date and any other as the number 3, so a change to a piece of the query changes the example.
+ */
+function needsIn(text: string) {
+  const literals: string[] = [];
+  const concatenated: string[] = [];
+  for (const bound of text.matchAll(
+    /BIND\s*\(((?:(?!BIND)[\s\S])*?)\s+AS\s+\?needs\)/g,
+  )) {
+    const expression = bound[1]!;
+    const built = /^\s*CONCAT\s*\(([\s\S]*)\)\s*$/.exec(expression);
+    if (built !== null) concatenated.push(example(built[1]!));
+    else
+      literals.push(
+        ...[...expression.matchAll(/"([^"]*)"/g)].map((q) => q[1]!),
+      );
+  }
+  for (const pair of text.matchAll(/\(cascade:\w+\s+"([^"]+)"\)/g))
+    literals.push(pair[1]!);
+  return { literals, concatenated };
+}
+
+/** One value of a CONCAT, from its arguments `"words ", STR(?n), IF(?n = 1, " one", " ones")`. */
+function example(args: string): string {
+  const pieces: string[] = [];
+  let depth = 0;
+  let start = 0;
+  let quoted = false;
+  for (let at = 0; at <= args.length; at++) {
+    const char = args[at];
+    if (char === '"') quoted = !quoted;
+    else if (quoted) continue;
+    else if (char === "(") depth++;
+    else if (char === ")") depth--;
+    else if ((char === "," && depth === 0) || char === undefined) {
+      pieces.push(args.slice(start, at).trim());
+      start = at + 1;
+    }
+  }
+  return pieces
+    .map((piece) =>
+      piece.startsWith('"')
+        ? piece.slice(1, -1)
+        : piece.startsWith("IF")
+          ? [...piece.matchAll(/"([^"]*)"/g)].at(-1)![1]!
+          : piece.startsWith("SUBSTR")
+            ? "2024-05-01"
+            : "3",
+    )
+    .join("");
+}
+
+/**
+ * What the three What needs review questions of the vocabulary the installed runtime carries bind to `?needs`;
+ * `change` edits each query's text first.
+ */
+function reviewNeeds(change: (text: string) => string = (text) => text) {
+  const components = join(
+    dirname(
+      createRequire(import.meta.url).resolve("cascade-runtime/package.json"),
+    ),
+    "components",
+    "cascade-vocabulary",
+  );
+  const version = readdirSync(components, { withFileTypes: true }).find(
+    (entry) => entry.isDirectory(),
+  )!.name;
+  const all = { literals: [] as string[], concatenated: [] as string[] };
+  for (const kind of ["entry", "judgment", "record"]) {
+    const found = needsIn(
+      change(
+        readFileSync(
+          join(
+            components,
+            version,
+            "queries",
+            "questions",
+            kind,
+            "What needs review.rq",
+          ),
+          "utf8",
+        ),
+      ),
+    );
+    all.literals.push(...found.literals);
+    all.concatenated.push(...found.concatenated);
+  }
+  return all;
+}
 
 /**
  * A pod's screen has a section for each kind of record, such as Medications or Lab results, each a table of the
@@ -787,12 +940,12 @@ describe("Saying what ClinVar says of a variant and of each report · variantSai
     it("names a report by its year, and by its day when two reports are of one year", () => {
       assert.deepEqual(
         variantOf("days").reports.map(({ when }) => when),
-        ["2020", "Mar 21, 2024", "Nov 2, 2024", undefined],
+        ["2020", "21 March 2024", "2 November 2024", undefined],
       );
       assert.deepEqual(sentencesOf("days").slice(0, 3), [
         "Your 2020 report gives no ACMG classification.",
-        "Your Mar 21, 2024 report said pathogenic.",
-        "Your Nov 2, 2024 report said uncertain significance.",
+        "Your 21 March 2024 report said pathogenic.",
+        "Your 2 November 2024 report said uncertain significance.",
       ]);
     });
 
@@ -877,10 +1030,10 @@ describe("Saying what ClinVar says of a variant and of each report · variantSai
       assert.match(clinvarOf("subTier")!, /, no contributing submitters\.$/);
     });
 
-    it("says a row that counts submitters, not contributing ones, as `3 submitters`, and one as `one submitter`", () => {
+    it("says a row that counts submitters, not contributing ones, as `three submitters`, in words as contributing ones are, and one as `one submitter`", () => {
       assert.equal(
         clinvarOf("counted"),
-        "ClinVar today says uncertain significance, 3 submitters.",
+        "ClinVar today says uncertain significance, three submitters.",
       );
       assert.match(clinvarOf("unclassified")!, /, one submitter\.$/);
     });
@@ -1665,6 +1818,30 @@ describe("Setting the day the demo hospitals answer as of · api.setWorldDate(),
         "2024-02-01T07:00:00Z",
       );
       assert.equal(said.utcInstant(undefined), undefined);
+    });
+
+    it("returns undefined, and does not throw, for text that is not an instant", () => {
+      for (const text of ["x", "", "yesterday", "2024-13-45T00:00:00Z"])
+        assert.equal(said.utcInstant(text), undefined, JSON.stringify(text));
+    });
+  });
+
+  describe("stepWhenSaid(step)", () => {
+    it("says the day a new version arrived in words, as the pulls above it say theirs: `on 17 October 2026`", () => {
+      assert.equal(
+        said.stepWhenSaid({ arrived: "2026-10-17T12:00:00" }),
+        "on 17 October 2026",
+      );
+    });
+
+    it("says the world's date a version's import answered as of, in the same words", () => {
+      assert.equal(
+        said.stepWhenSaid({
+          arrived: "2026-10-17T12:00:00",
+          asOf: "2025-02-01T23:59:59Z",
+        }),
+        "as of 1 February 2025",
+      );
     });
   });
 

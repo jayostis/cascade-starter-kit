@@ -6,7 +6,7 @@ import {
   type Abouts,
   type Coded,
   day,
-  dayAt,
+  dayAtInWords,
   LARGE,
   type Left,
   leftSaid,
@@ -144,7 +144,7 @@ export function TrendPage({
             marks={marks}
             unit={unit}
             title={name}
-            desc={`${resultsSaid(points.length)} from ${dayAt(Math.min(...times))} to ${dayAt(Math.max(...times))}, from ${rounded(Math.min(...values))} to ${rounded(Math.max(...values))} ${unit}.${marks.map(({ time, text }) => ` ${text} ${dayAt(time)}.`).join("")}`}
+            desc={`${resultsSaid(points.length)} from ${dayAtInWords(Math.min(...times))} to ${dayAtInWords(Math.max(...times))}, from ${rounded(Math.min(...values))} to ${rounded(Math.max(...values))} ${unit}.${marks.map(({ time, text }) => ` ${text} ${dayAtInWords(time)}.`).join("")}`}
             axes
           />
           <Lane
@@ -159,7 +159,7 @@ export function TrendPage({
                 : drugs
                     .map(
                       (drug) =>
-                        `${drug.name}: ${therapySpan(drug, (on) => dayAt(timeOf(on)))}.`,
+                        `${drug.name}: ${therapySpan(drug, (on) => dayAtInWords(timeOf(on)))}.`,
                     )
                     .join(" ")
             }
