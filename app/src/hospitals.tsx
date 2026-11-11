@@ -212,6 +212,7 @@ export function ConnectionBox({
     );
   }
   const about = connection.patient;
+  const whose = grade === undefined && about !== undefined ? about : who;
   const denied = (connection.pulled?.denied ?? []).map(({ type, category }) =>
     category === undefined ? type : `${type} (${category})`,
   );
@@ -246,7 +247,7 @@ export function ConnectionBox({
               {counted(source.records) || "nothing"}.
             </p>
             <p className={muted}>
-              {who}'s pod{" "}
+              {whose}'s pod{" "}
               {source.holdsSubjectsRecords
                 ? "already has records from here"
                 : "has nothing from here yet"}
@@ -268,7 +269,7 @@ export function ConnectionBox({
           ? bring(`Bring ${about}'s records into ${who}'s pod anyway`, quiet)
           : grade === "possible"
             ? bring(`Bring ${about}'s records into ${who}'s pod`)
-            : bring(`Bring it into ${who}'s pod`)}
+            : bring(`Bring it into ${whose}'s pod`)}
       </div>
     </>,
   );
