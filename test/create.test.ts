@@ -283,19 +283,17 @@ describe("Making an app · create-cascade-app <folder>", () => {
       assert.equal(terminal.done.length, 2 + KITS.length, "the kits loaded");
     });
 
-    it("prints why the tables could not be set up, and loads the pods all the same", async () => {
+    it("returns 1 with the app left made, saying why and to run `npm run reset`, and loads no pod", async () => {
       const { terminal } = tablesThat(true);
       const folder = join(parent, "tables-fail");
-      assert.equal(await create([folder], terminal), 0);
+      assert.equal(await create([folder], terminal), 1);
+      assert.ok(existsSync(join(folder, "package.json")), "the app is gone");
       const text = terminal.text();
       assert.match(text, /the app's tables could not be set up: no room/);
+      assert.match(text, /`npm run reset`/);
       assert.doesNotMatch(text, /Listing the codes…/);
-      assert.ok(
-        text.indexOf("Checking the feed…") <
-          text.indexOf("Loading the pod alex-rivera"),
-        "a setup line came after the first kit's",
-      );
-      assert.equal(terminal.done.length, 2 + KITS.length, "the kits loaded");
+      assert.doesNotMatch(text, /Loading the pod/);
+      assert.equal(terminal.done.length, 2, "an install and the fixtures only");
     });
   });
 
