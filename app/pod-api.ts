@@ -87,7 +87,7 @@ export function notOpenedHere(name: string): string {
 export const SCOPES = ["launch/patient", "patient/*.read", "patient/*.rs"];
 
 /** How long a `connection` call with `wait` holds before it answers the connection as it is. */
-const WAIT_MS = 25_000;
+export const WAIT_MS = 25_000;
 
 /** What a person is told when a bring-in or a pull's files fail for a reason that is the app's, not the record's. */
 const NOT_BROUGHT_IN =

@@ -54,9 +54,10 @@ type Api = Record<
 > & { close(): Promise<void> };
 type Host = Record<string, unknown> & { tables: unknown };
 
-const { podApi, maps, notOpenedHere } = (await import(
+const { podApi, maps, notOpenedHere, WAIT_MS } = (await import(
   new URL("../../app/pod-api.ts", import.meta.url).href
 )) as {
+  WAIT_MS: number;
   podApi: (host: Host) => Api;
   maps: (output: Output) => Output;
   notOpenedHere: (name: string) => string;
@@ -1367,7 +1368,7 @@ const parkedOnce = once(async () => {
     .connection({ pod: "ada", connection: first, wait: true })
     .then((shown) => (held = shown));
   while (held === undefined) {
-    mock.timers.tick(25_000);
+    mock.timers.tick(WAIT_MS);
     await new Promise((done) => setImmediate(done));
   }
   mock.timers.reset();
@@ -1414,6 +1415,49 @@ const failedOnce = once(async () => {
   } finally {
     logged.mock.restore();
   }
+});
+
+/** A bring-in over a pod whose `import` records the parts `onProgress` is told, as each begins. */
+const partsOnce = once(async () => {
+  const parts: string[] = [];
+  const recording = (pod: object) =>
+    new Proxy(pod, {
+      get(target, key) {
+        const value = Reflect.get(target, key, target);
+        if (key !== "import") {
+          return typeof value === "function" ? value.bind(target) : value;
+        }
+        return (
+          files: unknown,
+          options: { onProgress?: (told: { part: string }) => unknown },
+        ) =>
+          (value as (...a: unknown[]) => unknown).call(target, files, {
+            ...options,
+            onProgress: (told: { part: string }) => {
+              parts.push(told.part);
+              return options.onProgress?.(told);
+            },
+          });
+      },
+    });
+  const { built } = await fresh((at) => ({
+    pods: new Proxy(
+      host(at).pods as unknown as { open(...a: unknown[]): Promise<object> },
+      {
+        get: (target, key) =>
+          key === "open"
+            ? async (...args: unknown[]) =>
+                recording(await target.open(...args))
+            : Reflect.get(target, key, target),
+      },
+    ),
+  }));
+  await built.makePod({ person: "Ada" });
+  const at = { pod: "ada", connection: 0 };
+  at.connection = (await connected(built, "ada")).connection;
+  await built.bring(at);
+  await built.connection({ ...at, wait: true });
+  return { parts };
 });
 
 /**
@@ -1496,7 +1540,7 @@ describe("Connecting a pod to a hospital and bringing its records in · api.hosp
       // A call the change did not end returns after `wait` 25 seconds, as it is: a loaded machine can stall that long.
       states.forEach((each, at) => {
         if (at > 0 && each === states[at - 1])
-          assert.ok(held[at]! >= 25_000, `${each} again after ${held[at]} ms`);
+          assert.ok(held[at]! >= WAIT_MS, `${each} again after ${held[at]} ms`);
       });
     });
 
@@ -1541,6 +1585,17 @@ describe("Connecting a pod to a hospital and bringing its records in · api.hosp
           ({ key }: Output) => key === `start:${ATORVASTATIN}:${LDL}`,
         ),
       );
+    });
+
+    it("reports loading the adapter, converting, saving and judging, in that order, through `onProgress`", async () => {
+      const { parts } = await partsOnce();
+      const each = parts.filter((part, at) => part !== parts[at - 1]);
+      assert.deepEqual(each, [
+        "loading the adapter",
+        "converting",
+        "saving",
+        "judging",
+      ]);
     });
 
     it('imports a pull once: a second call returns `step: "pulled"`, and the connection has `broughtIn: true`', async () => {
