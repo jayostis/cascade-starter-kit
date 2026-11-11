@@ -1262,8 +1262,11 @@ const pulledOnce = once(async () => {
   const connection = { pod: "ada", connection: n };
   let shown = await built.connection(connection);
   const states = [state(shown)];
+  const held = [0];
   while (!shown.settled) {
+    const asked = performance.now();
     shown = await built.connection({ ...connection, wait: "change" });
+    held.push(performance.now() - asked);
     states.push(state(shown));
   }
   const bringing = await built.bring(connection);
@@ -1276,6 +1279,7 @@ const pulledOnce = once(async () => {
     authorize,
     authorized: authorized[0]!,
     states,
+    held,
     shown,
     bringing,
     brought,
@@ -1487,10 +1491,12 @@ describe("Connecting a pod to a hospital and bringing its records in · api.hosp
 
   describe("api.connection({ pod, connection, wait })", () => {
     it('returns with `wait: "change"` only when the step, the count of requests or the bring-in\'s part has changed', async () => {
-      const { states } = await pulledOnce();
+      const { states, held } = await pulledOnce();
       assert.ok(states.length > 1);
+      // A call the change did not end returns after `wait` 25 seconds, as it is: a loaded machine can stall that long.
       states.forEach((each, at) => {
-        if (at > 0) assert.notEqual(each, states[at - 1]);
+        if (at > 0 && each === states[at - 1])
+          assert.ok(held[at]! >= 25_000, `${each} again after ${held[at]} ms`);
       });
     });
 
