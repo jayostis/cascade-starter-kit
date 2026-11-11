@@ -434,8 +434,9 @@ export async function create(
     await fixtures.setUpTables(join(target, "pods"), phaseOn(terminal.out));
   } catch (error) {
     terminal.err(
-      `the app's tables could not be set up: ${(error as Error).message}\nThe pods try to load them again.\n`,
+      `the app is installed, but the app's tables could not be set up: ${(error as Error).message}\nRun \`npm run reset\` in it to set them up and load its pods.\n`,
     );
+    return 1;
   }
   const loaded = [];
   for (const kit of KITS) {

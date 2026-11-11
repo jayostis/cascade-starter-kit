@@ -1,4 +1,19 @@
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
+import { once } from "node:events";
+import {
+  chmod,
+  copyFile,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, it } from "node:test";
 
 type Lock = { packages: Record<string, unknown> };
@@ -39,6 +54,67 @@ describe("Moving the runtime pin · scripts/pin.mjs", () => {
         ),
       };
       assert.deepEqual(Object.keys(lockWithoutRuntime(lock).packages), kept);
+    });
+  });
+
+  describe("given a copy of the repository's two files, running node scripts/pin.mjs <commit>", () => {
+    /** Runs the script over a template pinned at OLD, a local server answering for every release with `status`; `lockReadOnly` makes the lock refuse its write. */
+    async function run(status: number, lockReadOnly: boolean) {
+      const root = await mkdtemp(join(tmpdir(), "pin-"));
+      const server = createServer((_, response) => {
+        response.statusCode = status;
+        response.end();
+      }).listen(0, "127.0.0.1");
+      try {
+        await once(server, "listening");
+        const { port } = server.address() as AddressInfo;
+        const address = (sha: string) =>
+          `http://127.0.0.1:${port}/build-${sha}/cascade-runtime-0.0.0-commit-${sha}.tgz`;
+        await mkdir(join(root, "scripts"));
+        await mkdir(join(root, "app"));
+        for (const file of ["pin.mjs", "pin-lib.mjs"])
+          await copyFile(
+            new URL(`../../scripts/${file}`, import.meta.url),
+            join(root, "scripts", file),
+          );
+        const manifest = `${JSON.stringify({ dependencies: { "cascade-runtime": address(OLD) } }, null, 2)}\n`;
+        const lock = `${JSON.stringify({ packages: { "": {} } }, null, 2)}\n`;
+        await writeFile(join(root, "app", "package.json"), manifest);
+        await writeFile(join(root, "package-lock.json"), lock);
+        if (lockReadOnly) await chmod(join(root, "package-lock.json"), 0o444);
+        // Asynchronously: this process's server must answer the script's request.
+        const child = spawn(
+          process.execPath,
+          [join(root, "scripts", "pin.mjs"), NEW],
+          { cwd: root, stdio: "ignore" },
+        );
+        const [status] = (await once(child, "close")) as [number | null];
+        if (lockReadOnly) await chmod(join(root, "package-lock.json"), 0o644);
+        return {
+          status,
+          manifest: await readFile(join(root, "app", "package.json"), "utf8"),
+          lock: await readFile(join(root, "package-lock.json"), "utf8"),
+          wasManifest: manifest,
+          wasLock: lock,
+        };
+      } finally {
+        server.close();
+        await rm(root, { recursive: true, force: true });
+      }
+    }
+
+    it("exits 2 and writes nothing for a commit with no release", async () => {
+      const after = await run(404, false);
+      assert.equal(after.status, 2);
+      assert.equal(after.manifest, after.wasManifest);
+      assert.equal(after.lock, after.wasLock);
+    });
+
+    it("puts the manifest back, and exits non-zero, when the lock's write fails after the manifest's", async () => {
+      const after = await run(200, true);
+      assert.notEqual(after.status, 0);
+      assert.equal(after.manifest, after.wasManifest);
+      assert.equal(after.lock, after.wasLock);
     });
   });
 

@@ -28,11 +28,23 @@ try {
 }
 if (moved !== undefined) {
   manifest.dependencies["cascade-runtime"] = moved;
-  await writeFile(TEMPLATE, `${JSON.stringify(manifest, null, 2)}\n`);
-  await writeFile(
-    LOCK,
-    `${JSON.stringify(lockWithoutRuntime(JSON.parse(lockText)), null, 2)}\n`,
-  );
+  const restore = async () => {
+    await writeFile(TEMPLATE, manifestText);
+    await writeFile(LOCK, lockText).catch(() => undefined);
+  };
+  try {
+    await writeFile(TEMPLATE, `${JSON.stringify(manifest, null, 2)}\n`);
+    await writeFile(
+      LOCK,
+      `${JSON.stringify(lockWithoutRuntime(JSON.parse(lockText)), null, 2)}\n`,
+    );
+  } catch (error) {
+    await restore();
+    stderr.write(
+      `${error.message}\napp/package.json and the lock are as they were\n`,
+    );
+    process.exit(1);
+  }
   stdout.write(`cascade-runtime: ${pin}\n              -> ${moved}\n`);
   const npm = spawnSync("npm install --no-audit --no-fund", {
     cwd: ROOT,
@@ -40,8 +52,7 @@ if (moved !== undefined) {
     shell: true,
   });
   if (npm.status !== 0) {
-    await writeFile(TEMPLATE, manifestText);
-    await writeFile(LOCK, lockText);
+    await restore();
     stderr.write(
       "the install failed; app/package.json and the lock are as they were\n",
     );
