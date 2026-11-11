@@ -8,11 +8,11 @@ import {
   day,
   entryId,
   entryOf,
-  localDay,
   maps,
   panelsOf,
   REQUIRED,
   sourcesOf,
+  stepWhenSaid,
   tableId,
   type Abouts,
   type Answers,
@@ -162,9 +162,9 @@ export function EntryPage({
                   {[
                     issued !== undefined && `report of ${day(issued)}`,
                     retrieved !== undefined &&
-                      `retrieved ${localDay(retrieved)}`,
+                      `retrieved ${stepWhenSaid({ arrived: retrieved })}`,
                     arrived !== undefined &&
-                      `arrived ${localDay(arrived)}${importLabel === undefined ? "" : ` through ${importLabel}`}`,
+                      `arrived ${stepWhenSaid({ arrived })}${importLabel === undefined ? "" : ` through ${importLabel}`}`,
                     records > 1 && `${records} records`,
                   ]
                     .filter(Boolean)

@@ -820,11 +820,11 @@ describe("Reading one entry of a pod · EntryPage, entryOf(), entryId()", () => 
       );
       holds(
         words,
-        `${AT_LARKSPUR} retrieved Jul 30, 2026; arrived Aug 1, 2026 through FHIR pull`,
+        `${AT_LARKSPUR} retrieved on 30 July 2026; arrived on 1 August 2026 through FHIR pull`,
       );
       holds(
         words,
-        `${AT_MERIDIAN} retrieved Sep 1, 2026; arrived Sep 10, 2026 through Apple Health export`,
+        `${AT_MERIDIAN} retrieved on 1 September 2026; arrived on 10 September 2026 through Apple Health export`,
       );
     });
 
@@ -2971,14 +2971,14 @@ describe("Seeing what changed after a medication · PodPage, TrendPage, withImpo
     it("says which versions of the medication differ, in which import, and what differs between them", () => {
       assert.match(
         text,
-        / came in a new version: version 1 to version 2, in import 2, as of 1 February 2025\. Workflow status active → completed; medication use end date none → Apr 15, 2024\./,
+        / came in a new version: version 1 to version 2, in import 2, as of 1 February 2025\. Workflow status active → completed; medication use end date none → 15 April 2024\./,
       );
     });
 
     it("gives the day a new version arrived, where the person is, when its import had no world's date", () => {
       assert.ok(
         undated.includes(
-          `in import 2, on ${said.localDay("2026-10-17T09:05:00Z")}.`,
+          `in import 2, ${said.stepWhenSaid({ arrived: "2026-10-17T09:05:00Z" })}.`,
         ),
         undated,
       );

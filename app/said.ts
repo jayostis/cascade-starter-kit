@@ -1938,10 +1938,10 @@ const fieldSaid = (field: string) =>
     .replace(/([a-z\d])([A-Z])/g, "$1 $2")
     .toLowerCase();
 
-/** A statement's value as a person reads it: a day as its date, a thing by its label, an address by its last part. */
+/** A statement's value as a person reads it in a sentence: a day in words, a thing by its label, an address by its last part. */
 function valueSaid({ value, valueLabel }: Row): string {
   if (valueLabel !== undefined) return valueLabel;
-  if (/^\d{4}-\d\d-\d\d/.test(value)) return day(value);
+  if (/^\d{4}-\d\d-\d\d/.test(value)) return dayInWords(value.slice(0, 10));
   return isCode(value) ? value.split(/[#/:]/).at(-1)! : value;
 }
 
@@ -2985,6 +2985,7 @@ export function utcInstant(asOf: string | undefined): string | undefined {
 
 /** A time of the app's clock as the person's own day, in the words `dayInWords` uses: `29 January 2024`. */
 function localDayInWords(text: string): string {
+  if (/^\d{4}-\d\d-\d\d$/.test(String(text))) return dayInWords(String(text));
   const date = new Date(Date.parse(String(text)));
   return Number.isNaN(date.getTime())
     ? String(text)

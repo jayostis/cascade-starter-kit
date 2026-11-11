@@ -456,20 +456,29 @@ describe("What a pod's screen says is worth a look · worthALook()", () => {
         assert.notEqual(sentence, `Latex: ${value}.`, value);
         assert.ok(sentence.includes("Latex"), `${value}: ${sentence}`);
       }
-      assert.deepEqual(
-        concatenated.sort(),
-        CONCATENATED.map(([start]) => start).sort(),
-        "a value the vocabulary builds by CONCAT has no example here",
-      );
+      assert.equal(concatenated.length, 2, concatenated.join(" | "));
     });
 
-    it("says a sentence for each value the vocabulary builds by CONCAT", () => {
-      for (const [, value] of CONCATENATED)
+    it("says a sentence for each value the vocabulary builds by CONCAT, built from the query's own pieces", () => {
+      for (const value of reviewNeeds().concatenated)
         assert.notEqual(
           said.reviewSaid({ needs: value }, item),
           `Latex: ${value}.`,
           value,
         );
+    });
+
+    it("keeps `name: needs.` for a value built by CONCAT once the query changes a tail of it", () => {
+      const { concatenated } = reviewNeeds((text) =>
+        text.replace('" behind"', '" late"'),
+      );
+      assert.ok(
+        concatenated.some(
+          (value) =>
+            said.reviewSaid({ needs: value }, item) === `Latex: ${value}.`,
+        ),
+        concatenated.join(" | "),
+      );
     });
 
     it("keeps `name: needs.` for a value no one has written a sentence for", () => {
@@ -479,32 +488,27 @@ describe("What a pod's screen says is worth a look · worthALook()", () => {
       );
     });
 
-    it("finds the plain values of a query, and the start of each built by CONCAT", () => {
+    it("finds the plain values of a query, and an example of each built by CONCAT from its own pieces", () => {
       assert.deepEqual(
         needsIn(
           'BIND ("9999-12-31" AS ?to) BIND ("a" AS ?needs) BIND (IF(?x, "b", "c") AS ?needs) ' +
             '{ VALUES (?kind ?needs) { (cascade:K "d") } }' +
-            'BIND (CONCAT("this is new ", STR(?n)) AS ?needs)',
+            'BIND (CONCAT("this is new ", STR(?n), IF(?n = 1, " one", " ones"), " on ", SUBSTR(STR(?d), 1, 10)) AS ?needs)',
         ),
-        { literals: ["a", "b", "c", "d"], concatenated: ["this is new "] },
+        {
+          literals: ["a", "b", "c", "d"],
+          concatenated: ["this is new 3 ones on 2024-05-01"],
+        },
       );
     });
   });
 });
 
-/** A value the vocabulary builds by CONCAT: the words it starts with, and one example. */
-const CONCATENATED = [
-  [
-    "this source reports ",
-    "this source reports 3 records at states older than it reported on 2024-05-01",
-  ],
-  [
-    "this writer's clock was at least ",
-    "this writer's clock was at least 40 days behind",
-  ],
-];
-
-/** What a What needs review query binds to `?needs`: each plain value, and the words each built by CONCAT starts with. */
+/**
+ * What a What needs review query binds to `?needs`: each plain value, and one example of each value built by CONCAT.
+ * An example is made of the CONCAT's own pieces, a quoted piece as written, an `IF` as its last quoted piece, a
+ * `SUBSTR` as a date and any other as the number 3, so a change to a piece of the query changes the example.
+ */
 function needsIn(text: string) {
   const literals: string[] = [];
   const concatenated: string[] = [];
@@ -512,17 +516,53 @@ function needsIn(text: string) {
     /BIND\s*\(((?:(?!BIND)[\s\S])*?)\s+AS\s+\?needs\)/g,
   )) {
     const expression = bound[1]!;
-    const quoted = [...expression.matchAll(/"([^"]*)"/g)].map((q) => q[1]!);
-    if (/^\s*CONCAT\s*\(/.test(expression)) concatenated.push(quoted[0]!);
-    else literals.push(...quoted);
+    const built = /^\s*CONCAT\s*\(([\s\S]*)\)\s*$/.exec(expression);
+    if (built !== null) concatenated.push(example(built[1]!));
+    else
+      literals.push(
+        ...[...expression.matchAll(/"([^"]*)"/g)].map((q) => q[1]!),
+      );
   }
   for (const pair of text.matchAll(/\(cascade:\w+\s+"([^"]+)"\)/g))
     literals.push(pair[1]!);
   return { literals, concatenated };
 }
 
-/** What the three What needs review questions of the vocabulary the installed runtime carries bind to `?needs`. */
-function reviewNeeds() {
+/** One value of a CONCAT, from its arguments `"words ", STR(?n), IF(?n = 1, " one", " ones")`. */
+function example(args: string): string {
+  const pieces: string[] = [];
+  let depth = 0;
+  let start = 0;
+  let quoted = false;
+  for (let at = 0; at <= args.length; at++) {
+    const char = args[at];
+    if (char === '"') quoted = !quoted;
+    else if (quoted) continue;
+    else if (char === "(") depth++;
+    else if (char === ")") depth--;
+    else if ((char === "," && depth === 0) || char === undefined) {
+      pieces.push(args.slice(start, at).trim());
+      start = at + 1;
+    }
+  }
+  return pieces
+    .map((piece) =>
+      piece.startsWith('"')
+        ? piece.slice(1, -1)
+        : piece.startsWith("IF")
+          ? [...piece.matchAll(/"([^"]*)"/g)].at(-1)![1]!
+          : piece.startsWith("SUBSTR")
+            ? "2024-05-01"
+            : "3",
+    )
+    .join("");
+}
+
+/**
+ * What the three What needs review questions of the vocabulary the installed runtime carries bind to `?needs`;
+ * `change` edits each query's text first.
+ */
+function reviewNeeds(change: (text: string) => string = (text) => text) {
   const components = join(
     dirname(
       createRequire(import.meta.url).resolve("cascade-runtime/package.json"),
@@ -530,20 +570,24 @@ function reviewNeeds() {
     "components",
     "cascade-vocabulary",
   );
-  const version = readdirSync(components)[0]!;
+  const version = readdirSync(components, { withFileTypes: true }).find(
+    (entry) => entry.isDirectory(),
+  )!.name;
   const all = { literals: [] as string[], concatenated: [] as string[] };
   for (const kind of ["entry", "judgment", "record"]) {
     const found = needsIn(
-      readFileSync(
-        join(
-          components,
-          version,
-          "queries",
-          "questions",
-          kind,
-          "What needs review.rq",
+      change(
+        readFileSync(
+          join(
+            components,
+            version,
+            "queries",
+            "questions",
+            kind,
+            "What needs review.rq",
+          ),
+          "utf8",
         ),
-        "utf8",
       ),
     );
     all.literals.push(...found.literals);
@@ -1785,7 +1829,7 @@ describe("Setting the day the demo hospitals answer as of · api.setWorldDate(),
   describe("stepWhenSaid(step)", () => {
     it("says the day a new version arrived in words, as the pulls above it say theirs: `on 17 October 2026`", () => {
       assert.equal(
-        said.stepWhenSaid({ arrived: "2026-10-17T12:00:00Z" }),
+        said.stepWhenSaid({ arrived: "2026-10-17T12:00:00" }),
         "on 17 October 2026",
       );
     });
@@ -1793,7 +1837,7 @@ describe("Setting the day the demo hospitals answer as of · api.setWorldDate(),
     it("says the world's date a version's import answered as of, in the same words", () => {
       assert.equal(
         said.stepWhenSaid({
-          arrived: "2026-10-17T12:00:00Z",
+          arrived: "2026-10-17T12:00:00",
           asOf: "2025-02-01T23:59:59Z",
         }),
         "as of 1 February 2025",
