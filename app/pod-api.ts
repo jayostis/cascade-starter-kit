@@ -770,13 +770,19 @@ export function podApi(host: PodHost) {
       throw new Refusal(
         "That name is one Windows keeps for itself: add another word.",
       );
-    if ((await host.pods.names()).includes(name))
-      return { pod: name, made: false };
-    if (host.samples?.includes(name)) {
-      if (encrypt)
+    const sample = host.samples?.includes(name) === true;
+    if (sample && encrypt)
+      throw new Refusal(
+        `${name} is a sample, and a sample is not encrypted: make it without encryption, or give another name for an encrypted pod.`,
+      );
+    if ((await host.pods.names()).includes(name)) {
+      if (encrypt && (await isPlaintext(name)))
         throw new Refusal(
-          `${name} is a sample, and a sample is not encrypted: make it without encryption, or give another name for an encrypted pod.`,
+          `A pod named ${name} exists already, and it is not encrypted: give another name for an encrypted pod.`,
         );
+      return { pod: name, made: false };
+    }
+    if (sample) {
       await sampleFor(name);
       return { pod: name, loaded: true };
     }
@@ -824,6 +830,33 @@ export function podApi(host: PodHost) {
     await (await host.pods.open(name, { secret })).close();
   }
 
+  /** Whether the pod there is by `name` opens with no secret and is not encrypted; a locked pod is encrypted. */
+  async function isPlaintext(name: string) {
+    try {
+      return !(await openOnce(name)).encrypted;
+    } catch (error) {
+      if (error instanceof Unopened) return false;
+      throw error;
+    }
+  }
+
+  /**
+   * Opens a locked pod with `secret` of this call alone, never joining an opening another call made with its own secret.
+   * The pod is kept when this instance holds none for the name, and closed when it does.
+   */
+  async function openLocked(name: string, secret: string) {
+    const own = await host.pods.open(name, { secret });
+    const other = opened.get(name);
+    const held =
+      other !== undefined &&
+      (await other.then(
+        () => true,
+        () => false,
+      ));
+    if (held || opened.has(name)) await own.close();
+    else opened.set(name, Promise.resolve(own));
+  }
+
   async function unlock({ pod: given, secret = "" }: Input<"unlock">) {
     const name = await known(given);
     let pod: Pod | undefined;
@@ -833,7 +866,7 @@ export function podApi(host: PodHost) {
       if (!(error instanceof Unopened)) throw error;
       if (secret.trim() === "")
         throw new Unopened("incorrect secret", "no secret was given");
-      await openOnce(name, { secret });
+      await openLocked(name, secret);
     }
     if (pod?.encrypted) await checkSecret(name, secret);
     return { pod: name, opened: true };

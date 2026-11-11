@@ -10,7 +10,7 @@ import { addresses } from "../addresses.ts";
 import { podPath, trendPath } from "../pods.ts";
 import { PAGE_TOOLS } from "../said.ts";
 import { TOOLS } from "../tools.ts";
-import type { Operations } from "./api.ts";
+import { type Operations, refused } from "./api.ts";
 
 const MAX_BODY_BYTES = 1024 * 1024;
 const FAILED = "the server failed; its log says why";
@@ -31,11 +31,9 @@ const READS = (TOOLS as unknown as readonly Read[]).filter(
 );
 const ADDRESS = { pod: podPath, trend: trendPath, entry: addresses().entry };
 
-const isRefusal = (error: unknown): error is Error =>
-  error instanceof Error && error.name === "Refusal";
-/** A refusal that carries an `outcome` is the runtime's `Unopened`, which is a `Refusal` by name. */
+/** A refusal that carries an `outcome` is the runtime's `Unopened`. */
 const isUnopened = (error: unknown): error is Error & { outcome: string } =>
-  isRefusal(error) &&
+  refused(error) &&
   typeof (error as { outcome?: unknown }).outcome === "string";
 
 /** The routes over `api`: 200 with the tool's answer; 400 `{ refused }` for input the tool's schema or the rules refuse; 404 for a name that is no read; 423 `{ unopened, refused }` for a pod that is locked, as `/api/` answers; 500 with a fixed sentence for anything else. */
@@ -81,7 +79,7 @@ export function toolRoutes(api: Operations) {
               { unopened: error.outcome, refused: error.message },
               423,
             );
-          if (isRefusal(error)) return c.json({ refused: error.message }, 400);
+          if (refused(error)) return c.json({ refused: error.message }, 400);
           console.error(error);
           return c.json({ error: FAILED }, 500);
         }

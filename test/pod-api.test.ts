@@ -942,6 +942,34 @@ describe("Making, unlocking and deleting pods · api.makePod(), api.waitingWords
       );
     });
 
+    it("refuses `encrypt: true` for a sample that is already loaded, and leaves the pod as it was", async () => {
+      const { over } = await fresh((at) => ({
+        samples: ["sample"],
+        copySample: (name: string) => openPod(join(at, name)),
+      }));
+      await over.makePod({ person: "Sample" });
+      await assert.rejects(
+        over.makePod({ person: "Sample", encrypt: true }),
+        (error: Error) =>
+          error.name === "Refusal" &&
+          /sample/i.test(error.message) &&
+          /encrypt/i.test(error.message),
+      );
+      assert.equal((await over.pod({ pod: "sample" })).encrypted, false);
+    });
+
+    it("refuses `encrypt: true` for a pod that exists unencrypted, with a sentence that says so", async () => {
+      const { over } = await fresh();
+      await over.makePod({ person: "Plain" });
+      await assert.rejects(
+        over.makePod({ person: "Plain", encrypt: true }),
+        (error: Error) =>
+          error.name === "Refusal" &&
+          /exists already/.test(error.message) &&
+          /not encrypted/.test(error.message),
+      );
+    });
+
     it("copies a sample once when two calls ask for it at the same moment", async () => {
       let copies = 0;
       const { built } = await fresh((at) => ({
@@ -1026,6 +1054,41 @@ describe("Making, unlocking and deleting pods · api.makePod(), api.waitingWords
     it("throws `Unopened` with `incorrect secret` for an encrypted pod that is already open, given no words", async () => {
       const { againEmpty } = await inesOnce();
       assert.ok(unopened(againEmpty, "incorrect secret"), String(againEmpty));
+    });
+
+    it("answers each of two calls at the same moment by its own secret: the right words open the pod, other words throw `Unopened`", async () => {
+      const given = host();
+      const pods = given.pods as unknown as {
+        open(name: string, options?: { secret?: string }): Promise<unknown>;
+      };
+      let release!: () => void;
+      const held = new Promise<void>((done) => (release = done));
+      const holding = {
+        ...pods,
+        open: async (name: string, options?: { secret?: string }) => {
+          if (options?.secret !== undefined) await held;
+          return pods.open(name, options);
+        },
+      };
+      const each = crossing(api({ ...given, pods: holding }));
+      const calls = Promise.allSettled([
+        each.unlock({ pod: SEALED, secret: SEALED_WORDS }),
+        each.unlock({ pod: SEALED, secret: "not the words at all" }),
+      ]);
+      await new Promise((done) => setTimeout(done, 20));
+      release();
+      const [right, wrong] = await calls;
+      assert.deepEqual(
+        right.status === "fulfilled" && right.value,
+        { pod: SEALED, opened: true },
+        String(right.status === "rejected" && right.reason),
+      );
+      assert.ok(
+        wrong.status === "rejected" &&
+          unopened(wrong.reason, "incorrect secret"),
+        wrong.status === "fulfilled" ? "opened with the wrong words" : "",
+      );
+      assert.equal((await each.pod({ pod: SEALED })).locked, undefined);
     });
 
     it("returns `opened: true` for a pod that is open and not encrypted, whatever `secret` holds", async () => {
