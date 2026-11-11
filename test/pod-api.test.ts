@@ -1305,6 +1305,38 @@ const parkedOnce = once(async () => {
   return { held, deleted, closed: signals[1]!.aborted };
 });
 
+/** A pod with no name on file and a pod made under one, each brought a record of another person: their titles after. */
+const namedAfterBringIn = once(async () => {
+  const brought = async (
+    pod: string,
+    make: (local: Api, at: string) => Promise<unknown>,
+  ) => {
+    const at = await mkdtemp(join(tmpdir(), "pod-api-named-"));
+    folders.push(at);
+    const local = api({ ...host(at), hospitals: northHospitals() });
+    await make(local, at);
+    const { connection } = await connected(local, pod);
+    const target = { pod, connection };
+    await local.bring(target);
+    await local.connection({ ...target, wait: true });
+    const { pods } = await local.pods({});
+    await local.close();
+    return pods.find(({ name }: Output) => name === pod).title;
+  };
+  return {
+    untitled: await brought("rowan-ellery-marsh", async (_, at) =>
+      (
+        await (
+          nodeHost({ folder: at }).pods as unknown as {
+            open(name: string): Promise<{ close(): Promise<void> }>;
+          }
+        ).open("rowan-ellery-marsh")
+      ).close(),
+    ),
+    titled: await brought("ada", (local) => local.makePod({ person: "Ada" })),
+  };
+});
+
 /** A bring-in whose import throws an error of the app's own, and what was logged. */
 const failedOnce = once(async () => {
   const logged = mock.method(console, "error", () => undefined);
@@ -1475,6 +1507,12 @@ describe("Connecting a pod to a hospital and bringing its records in · api.hosp
       assert.equal(after.broughtIn, true);
       assert.equal(after.failed, undefined);
       assert.ok(after.sources.length > 0);
+    });
+
+    it("titles a pod with no name on file for the person of the record brought in, and leaves a name on file", async () => {
+      const { untitled, titled } = await namedAfterBringIn();
+      assert.equal(untitled, "Ines Calloway");
+      assert.equal(titled, "Ada");
     });
 
     it("says `Not brought in: …` in `failed`, with `retry: true`, when the import throws an error of the app's own", async () => {
