@@ -831,12 +831,15 @@ const inesOnce = once(async () => {
   const locked = await caught(later.answers({ pod: "ines" }));
   const unlocked = await later.unlock({ pod: "ines", secret: words });
   const opened = (await later.answers({ pod: "ines" })).answers;
-  const again = await later.unlock({ pod: "ines", secret: "" });
-  const againWrong = await later.unlock({
-    pod: "ines",
-    secret: "not the words",
-  });
+  const again = await later.unlock({ pod: "ines", secret: words });
+  const againEmpty = await later
+    .unlock({ pod: "ines", secret: "" })
+    .catch((error: unknown) => error);
+  const againWrong = await later
+    .unlock({ pod: "ines", secret: "not the words" })
+    .catch((error: unknown) => error);
   return {
+    againEmpty,
     againWrong,
     waiting,
     listed,
@@ -921,6 +924,52 @@ describe("Making, unlocking and deleting pods · api.makePod(), api.waitingWords
       assert.deepEqual(pods, ["rowan-ellery-marsh", "sample"]);
     });
 
+    it("refuses `encrypt: true` for a sample's name with a sentence that says samples are not encrypted, and loads nothing", async () => {
+      const { over } = await fresh((at) => ({
+        samples: ["sample"],
+        copySample: (name: string) => openPod(join(at, name)),
+      }));
+      await assert.rejects(
+        over.makePod({ person: "Sample", encrypt: true }),
+        (error: Error) =>
+          error.name === "Refusal" &&
+          /sample/i.test(error.message) &&
+          /encrypt/i.test(error.message),
+      );
+      assert.deepEqual(
+        (await over.pods({})).pods.map(({ name }: Output) => name),
+        [],
+      );
+    });
+
+    it("refuses `encrypt: true` for a sample that is already loaded, and leaves the pod as it was", async () => {
+      const { over } = await fresh((at) => ({
+        samples: ["sample"],
+        copySample: (name: string) => openPod(join(at, name)),
+      }));
+      await over.makePod({ person: "Sample" });
+      await assert.rejects(
+        over.makePod({ person: "Sample", encrypt: true }),
+        (error: Error) =>
+          error.name === "Refusal" &&
+          /sample/i.test(error.message) &&
+          /encrypt/i.test(error.message),
+      );
+      assert.equal((await over.pod({ pod: "sample" })).encrypted, false);
+    });
+
+    it("refuses `encrypt: true` for a pod that exists unencrypted, with a sentence that says so", async () => {
+      const { over } = await fresh();
+      await over.makePod({ person: "Plain" });
+      await assert.rejects(
+        over.makePod({ person: "Plain", encrypt: true }),
+        (error: Error) =>
+          error.name === "Refusal" &&
+          /exists already/.test(error.message) &&
+          /not encrypted/.test(error.message),
+      );
+    });
+
     it("copies a sample once when two calls ask for it at the same moment", async () => {
       let copies = 0;
       const { built } = await fresh((at) => ({
@@ -993,10 +1042,60 @@ describe("Making, unlocking and deleting pods · api.makePod(), api.waitingWords
       assert.ok(opened);
     });
 
-    it("returns `opened: true` for a pod that is already open, whatever `secret` holds", async () => {
-      const { again, againWrong } = await inesOnce();
-      assert.deepEqual(again, { pod: "ines", opened: true });
-      assert.deepEqual(againWrong, { pod: "ines", opened: true });
+    it("returns `opened: true` for an encrypted pod that is already open, given its own six words", async () => {
+      assert.deepEqual((await inesOnce()).again, { pod: "ines", opened: true });
+    });
+
+    it("throws `Unopened` with `incorrect secret` for an encrypted pod that is already open, given other words", async () => {
+      const { againWrong } = await inesOnce();
+      assert.ok(unopened(againWrong, "incorrect secret"), String(againWrong));
+    });
+
+    it("throws `Unopened` with `incorrect secret` for an encrypted pod that is already open, given no words", async () => {
+      const { againEmpty } = await inesOnce();
+      assert.ok(unopened(againEmpty, "incorrect secret"), String(againEmpty));
+    });
+
+    it("answers each of two calls at the same moment by its own secret: the right words open the pod, other words throw `Unopened`", async () => {
+      const given = host();
+      const pods = given.pods as unknown as {
+        open(name: string, options?: { secret?: string }): Promise<unknown>;
+      };
+      let release!: () => void;
+      const held = new Promise<void>((done) => (release = done));
+      const holding = {
+        ...pods,
+        open: async (name: string, options?: { secret?: string }) => {
+          if (options?.secret !== undefined) await held;
+          return pods.open(name, options);
+        },
+      };
+      const each = crossing(api({ ...given, pods: holding }));
+      const calls = Promise.allSettled([
+        each.unlock({ pod: SEALED, secret: SEALED_WORDS }),
+        each.unlock({ pod: SEALED, secret: "not the words at all" }),
+      ]);
+      await new Promise((done) => setTimeout(done, 20));
+      release();
+      const [right, wrong] = await calls;
+      assert.deepEqual(
+        right.status === "fulfilled" && right.value,
+        { pod: SEALED, opened: true },
+        String(right.status === "rejected" && right.reason),
+      );
+      assert.ok(
+        wrong.status === "rejected" &&
+          unopened(wrong.reason, "incorrect secret"),
+        wrong.status === "fulfilled" ? "opened with the wrong words" : "",
+      );
+      assert.equal((await each.pod({ pod: SEALED })).locked, undefined);
+    });
+
+    it("returns `opened: true` for a pod that is open and not encrypted, whatever `secret` holds", async () => {
+      assert.deepEqual(
+        await overHttp.unlock({ pod: STATIN, secret: "any words" }),
+        { pod: STATIN, opened: true },
+      );
     });
 
     it("throws `Unopened` with `incorrect secret` when `secret` holds no word", async () => {
@@ -2047,6 +2146,39 @@ const checks = once(async () => {
   };
 });
 
+/** What the server refuses before it answers: a request that names another host, and a method it does not serve. */
+describe("Guarding the server · guard()", () => {
+  let app: ReturnType<typeof toolsOf>["app"];
+  let origin: string;
+  before(() => ({ app, origin } = toolsOf(inProcess)));
+
+  it("responds 403 to a request whose `Host` is not the server's own address, on `/api/` in JSON and elsewhere as a page", async () => {
+    const api = await app.request("http://rebound.example/api/pods", {
+      method: "POST",
+      headers: { origin, "content-type": "application/json" },
+      body: "{}",
+    });
+    assert.equal(api.status, 403);
+    assert.deepEqual(await api.json(), {
+      refused: "not this server's address",
+    });
+    const page = await app.request("http://rebound.example/tools");
+    assert.equal(page.status, 403);
+    assert.match(await page.text(), /<h1>Refused: not this server's address/);
+  });
+
+  it("responds 405 to a method that is neither GET nor POST", async () => {
+    for (const method of ["PUT", "DELETE", "PATCH"]) {
+      const refused = await app.request(`${origin}/api/pods`, { method });
+      assert.equal(refused.status, 405, method);
+    }
+  });
+
+  it("answers a GET on the server's own address", async () => {
+    assert.equal((await app.request(`${origin}/tools`)).status, 200);
+  });
+});
+
 /**
  * A page that carries no runtime of its own offers a model the app's read tools by calling the server: `GET /tools`
  * lists them, and `POST /tools/<name>` runs one on a JSON input. Only `free` tools that open no screen are here; a
@@ -2118,6 +2250,20 @@ describe("Running the read tools over HTTP · GET /tools, POST /tools/<name>", (
         ((await wrong.json()) as { refused: string }).refused,
         /must be one of/,
       );
+    });
+
+    it("responds 423 with `{ unopened, refused }`, as `/api/` does, for an encrypted pod that is not open", async () => {
+      const locked = await server().run("ask", {
+        pod: SEALED,
+        format: "compact",
+      });
+      assert.equal(locked.status, 423);
+      const body = (await locked.json()) as {
+        unopened: string;
+        refused: string;
+      };
+      assert.equal(body.unopened, "secret needed");
+      assert.equal(typeof body.refused, "string");
     });
 
     it("responds 404 for a tool that writes or moves the app, and for a name that is no tool", async () => {

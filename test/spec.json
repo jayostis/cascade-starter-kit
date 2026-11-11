@@ -35,6 +35,7 @@
     "Grouping reference tables by publisher, and saying what a check did · sourcesOf(), pageNumber(), checkedNote()",
     "Questions the chat offers before a person types · firstQuestion(), suggestedQuestions()",
     "Tools a model may call, by consent tier · TOOLS, NEVER",
+    "Guarding the server · guard()",
     "Running the read tools over HTTP · GET /tools, POST /tools/<name>",
     "Choosing the chat's model from settings · modelFrom(), modelOf(), CASCADE_MODEL_*",
     "Checking that a model can call tools · checkCallsTools()",

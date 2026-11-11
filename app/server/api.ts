@@ -23,7 +23,7 @@ interface Refused {
   readonly outcome?: string;
 }
 
-const refused = (error: unknown): error is Refused =>
+export const refused = (error: unknown): error is Refused =>
   error instanceof Error &&
   (error.name === "Refusal" || error.name === "Unopened");
 
