@@ -242,6 +242,54 @@ const host = (at = folder) => ({
   hospitals: northHospitals(),
   world,
 });
+type Closable = { close(): Promise<void> };
+
+/**
+ * `given` with every `pods.open` call counted, every pod it opened counted, and every such pod counted when closed. With `held`, an opening with a
+ * secret waits for `release()`; `started(n)` resolves once `n` such openings have begun.
+ */
+function opening(given: ReturnType<typeof host>, held = false) {
+  const pods = given.pods as unknown as {
+    open(name: string, options?: { secret?: string }): Promise<Closable>;
+  };
+  const seen = { calls: 0, opens: 0, closes: 0 };
+  const waiters: { n: number; done: () => void }[] = [];
+  let begun = 0;
+  let release!: () => void;
+  const gate = new Promise<void>((done) => (release = done));
+  const counting = {
+    ...given,
+    pods: {
+      ...given.pods,
+      open: async (name: string, options?: { secret?: string }) => {
+        seen.calls += 1;
+        if (options?.secret !== undefined) {
+          begun += 1;
+          for (const { n, done } of waiters) if (n <= begun) done();
+          if (held) await gate;
+        }
+        const pod = await pods.open(name, options);
+        seen.opens += 1;
+        const close = pod.close.bind(pod);
+        pod.close = async () => {
+          seen.closes += 1;
+          return close();
+        };
+        return pod;
+      },
+    },
+  };
+  return {
+    host: counting,
+    seen,
+    release,
+    started: (n: number) =>
+      new Promise<void>((done) => {
+        if (begun >= n) done();
+        else waiters.push({ n, done });
+      }),
+  };
+}
 const made: Api[] = [];
 const servers: Server[] = [];
 
@@ -1057,26 +1105,14 @@ describe("Making, unlocking and deleting pods · api.makePod(), api.waitingWords
     });
 
     it("answers each of two calls at the same moment by its own secret: the right words open the pod, other words throw `Unopened`", async () => {
-      const given = host();
-      const pods = given.pods as unknown as {
-        open(name: string, options?: { secret?: string }): Promise<unknown>;
-      };
-      let release!: () => void;
-      const held = new Promise<void>((done) => (release = done));
-      const holding = {
-        ...pods,
-        open: async (name: string, options?: { secret?: string }) => {
-          if (options?.secret !== undefined) await held;
-          return pods.open(name, options);
-        },
-      };
-      const each = crossing(api({ ...given, pods: holding }));
+      const holding = opening(host(), true);
+      const each = crossing(api(holding.host));
       const calls = Promise.allSettled([
         each.unlock({ pod: SEALED, secret: SEALED_WORDS }),
         each.unlock({ pod: SEALED, secret: "not the words at all" }),
       ]);
-      await new Promise((done) => setTimeout(done, 20));
-      release();
+      await holding.started(2);
+      holding.release();
       const [right, wrong] = await calls;
       assert.deepEqual(
         right.status === "fulfilled" && right.value,
@@ -1089,6 +1125,39 @@ describe("Making, unlocking and deleting pods · api.makePod(), api.waitingWords
         wrong.status === "fulfilled" ? "opened with the wrong words" : "",
       );
       assert.equal((await each.pod({ pod: SEALED })).locked, undefined);
+    });
+
+    it("keeps one opening and closes the other of two calls at the same moment with the right words", async () => {
+      const holding = opening(host(), true);
+      const each = crossing(api(holding.host));
+      const calls = Promise.all([
+        each.unlock({ pod: SEALED, secret: SEALED_WORDS }),
+        each.unlock({ pod: SEALED, secret: SEALED_WORDS }),
+      ]);
+      await holding.started(2);
+      holding.release();
+      assert.deepEqual(await calls, [
+        { pod: SEALED, opened: true },
+        { pod: SEALED, opened: true },
+      ]);
+      const { opens, closes } = holding.seen;
+      assert.equal(opens - closes, 1, `${opens} openings, ${closes} closed`);
+    });
+
+    it("opens no pod to check the words of an encrypted pod that is already open", async () => {
+      const counting = opening(host());
+      const each = crossing(api(counting.host));
+      await each.unlock({ pod: SEALED, secret: SEALED_WORDS });
+      const calls = counting.seen.calls;
+      assert.deepEqual(
+        await each.unlock({ pod: SEALED, secret: SEALED_WORDS }),
+        { pod: SEALED, opened: true },
+      );
+      await assert.rejects(
+        each.unlock({ pod: SEALED, secret: "not the words at all" }),
+        (error) => unopened(error, "incorrect secret"),
+      );
+      assert.equal(counting.seen.calls, calls);
     });
 
     it("returns `opened: true` for a pod that is open and not encrypted, whatever `secret` holds", async () => {

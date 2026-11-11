@@ -16,6 +16,7 @@ export async function looks(pod: Pod, tables: Tables): Promise<void> {
       names: async () => [SAMPLE],
       title: async () => undefined,
       open: async () => pod,
+      checkSecret: async () => false,
       remove: async () => undefined,
     },
     tables: async () => tables,
