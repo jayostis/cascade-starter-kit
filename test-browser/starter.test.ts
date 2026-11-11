@@ -1046,15 +1046,17 @@ describe("Connecting to a demo hospital · Sign in at", () => {
   };
 
   test("with a pod made without a name, when a record is brought into it", async (t) => {
+    // An app of its own: a pod titled "Ines Calloway" in the shared one (made above) would share the title.
+    let own = await startStarter({});
     await promisify(execFile)(
       process.execPath,
       ["pod.ts", "new", "walker-test"],
       {
-        cwd: bare.folder,
+        cwd: own.folder,
       },
     );
     const page = await browser.newPage();
-    const box = await signedInAsInes(page, bare.origin, "walker-test");
+    const box = await signedInAsInes(page, own.origin, "walker-test");
     await t.test(
       "says the record is Ines Calloway's and bringing it in makes this her pod",
       async () => {
@@ -1102,10 +1104,10 @@ describe("Connecting to a demo hospital · Sign in at", () => {
     });
     await page.close();
 
-    await bare.stop(true);
-    bare = await startStarter({}, bare.folder);
+    await own.stop(true);
+    own = await startStarter({}, own.folder);
     const again = await browser.newPage();
-    await again.goto(`${bare.origin}/pods/walker-test/`);
+    await again.goto(`${own.origin}/pods/walker-test/`);
     await again.locator("main h1", { hasText: /\S/ }).first().waitFor();
     await t.test(
       "names it so after the app is stopped and started",
@@ -1120,6 +1122,7 @@ describe("Connecting to a demo hospital · Sign in at", () => {
       },
     );
     await again.close();
+    await own.stop();
   });
 
   test("with an encrypted pod made with a name, when another person's record is brought into it", async (t) => {

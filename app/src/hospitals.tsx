@@ -14,10 +14,10 @@ import {
   importPart,
   listed,
   type Person,
+  keptTitle,
   personName,
   pulledAsOfSaid,
   slug,
-  typedName,
   worldDateSaid,
 } from "../said.ts";
 import { openSignIn } from "./actions.tsx";
@@ -152,10 +152,11 @@ export function ConnectionBox({
     if (location.hash === "#connection") location.replace("#connection");
   }, []);
   const who = personName(pod, titles);
-  const typed = typedName(pod, titles);
-  const titled = typed !== undefined || connection.titled === true;
+  const kept = keptTitle(pod, titles);
+  const titled = kept !== undefined || connection.titled === true;
+  const keeps = kept ?? who;
   const grade = titled
-    ? gradePerson(typed ?? who, connection.patientNames ?? [])
+    ? gradePerson(keeps, connection.patientNames ?? [])
     : undefined;
   const name = hospitalName(connection.row.name);
   const bring = (label: string, className?: string) => (
@@ -213,8 +214,8 @@ export function ConnectionBox({
   }
   const about = connection.patient;
   const whose = !titled && about !== undefined ? about : who;
-  const keeps = (
-    <p className={muted}>Bringing it in leaves this pod named {who}.</p>
+  const keepsSaid = (
+    <p className={muted}>Bringing it in leaves this pod named {keeps}.</p>
   );
   const denied = (connection.pulled?.denied ?? []).map(({ type, category }) =>
     category === undefined ? type : `${type} (${category})`,
@@ -229,10 +230,10 @@ export function ConnectionBox({
       {about !== undefined &&
         (grade === undefined ? (
           titled ? (
-            slug(about) !== slug(who) && (
+            slug(about) !== slug(keeps) && (
               <p className={note}>
                 This record is {about}'s. Bringing it in leaves this pod named{" "}
-                {who}.
+                {keeps}.
               </p>
             )
           ) : (
@@ -246,15 +247,15 @@ export function ConnectionBox({
         ) : grade === "possible" ? (
           <>
             <p className={muted}>This record is {about}'s.</p>
-            {keeps}
+            {keepsSaid}
           </>
         ) : (
           grade === "certainly-not" && (
             <>
               <p className={noteWarm} role="alert">
-                This record is {about}'s, not {who}'s.
+                This record is {about}'s, not {keeps}'s.
               </p>
-              {keeps}
+              {keepsSaid}
             </>
           )
         ))}

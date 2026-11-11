@@ -1729,6 +1729,63 @@ describe("Connecting to a demo hospital · ConnectionBox, HospitalsPage", () => 
       assert.ok(!sealedNoNames.said.includes("makes this"));
       assert.equal(sealedNoNames.button, "Bring it into Cy Sealed's pod");
     });
+
+    /** Two pods titled "Sam Lee", the page showing the second as its name: the title it keeps is what a record is graded against. */
+    const sharing = (given: string, family: string) => {
+      const markup = drawn.connectionBox({
+        pod: "pod-b",
+        titles: new Map([
+          ["pod-a", "Sam Lee"],
+          ["pod-b", "Sam Lee"],
+        ]),
+        back: "#",
+        connection: at("pulled", {
+          ...PULLED,
+          sources: [{ records: {}, holdsSubjectsRecords: false }],
+          patient: `${given} ${family}`,
+          patientNames: [{ name: `${given} ${family}`, family }],
+          titled: true,
+        }),
+      });
+      return textOf(markup);
+    };
+
+    it("grades a record against the title the pod keeps, with no warning for that person's record, when the page shows the pod's name for a title other pods share", () => {
+      const said = sharing("Sam", "Lee");
+      assert.ok(!said.includes("This record is"), said);
+      assert.ok(said.includes("Bring it into Pod B's pod"), said);
+    });
+
+    it("names the title the pod keeps, not the name the page shows, in the warning for another person's record, when the page shows the pod's name for a title other pods share", () => {
+      const said = sharing("Odalys", "Brandt");
+      assert.ok(
+        said.includes(
+          "This record is Odalys Brandt's, not Sam Lee's. Bringing it in leaves this pod named Sam Lee.",
+        ),
+        said,
+      );
+    });
+
+    it("grades a record as certain for the kit's copy at another point, which keeps the kit's title", () => {
+      const said = textOf(
+        drawn.connectionBox({
+          pod: "alex-rivera-j24",
+          titles: new Map([
+            ["alex-rivera", "Alex Rivera"],
+            ["alex-rivera-j24", "Alex Rivera"],
+          ]),
+          back: "#",
+          connection: at("pulled", {
+            ...PULLED,
+            sources: [{ records: {}, holdsSubjectsRecords: false }],
+            patient: "Alex Rivera",
+            patientNames: [{ name: "Alex Rivera", family: "Rivera" }],
+            titled: true,
+          }),
+        }),
+      );
+      assert.ok(!said.includes("This record is"), said);
+    });
   });
 
   describe("when a connection has failed", () => {

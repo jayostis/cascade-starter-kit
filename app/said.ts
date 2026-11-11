@@ -886,17 +886,28 @@ export type Titles = ReadonlyMap<string, string | undefined>;
 const tidy = (title: string | undefined) => title?.trim().replace(/\s+/g, " ");
 
 /**
+ * The title `titles` holds for a pod, its words spaced once: none when it is the pod's own name, which is what a pod
+ * with no title, or one whose title cannot be read, is held under.
+ */
+export function keptTitle(pod: string, titles?: Titles): string | undefined {
+  const title = tidy(titles?.get(pod));
+  return !title || title === pod ? undefined : title;
+}
+
+/**
  * The title `titles` holds for a pod, as typed, when it is a name the pod was given: not the pod's own name, which is
- * what a pod made without a title is held under, and, where another pod holds the same title, only for the pod `slug`
- * of it names. A kit loaded again at another point under another name (`alex-rivera-j24`) holds the kit's title, and
+ * what a pod made without a title is held under, and, where another pod holds the same title (in any case) or is
+ * named for it, whatever title it holds, only for the pod `slug` of it names. A kit loaded again at another point under another name (`alex-rivera-j24`) holds the kit's title, and
  * showing it for both would hide what tells the copies apart.
  */
 export function typedName(pod: string, titles?: Titles): string | undefined {
-  const typed = tidy(titles?.get(pod));
-  if (!typed || typed === pod) return undefined;
+  const typed = keptTitle(pod, titles);
+  if (typed === undefined) return undefined;
   if (slug(typed) === pod) return typed;
+  const own = slug(typed);
   const shared = [...(titles ?? [])].some(
-    ([other, title]) => other !== pod && tidy(title) === typed,
+    ([other, title]) =>
+      other !== pod && (other === own || slug(tidy(title) ?? "") === own),
   );
   return shared ? undefined : typed;
 }

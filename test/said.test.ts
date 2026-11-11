@@ -1404,6 +1404,35 @@ describe("Naming pods, people and places as a person says them · slug(), person
       assert.equal(said.personName("walker-test", neither), "Walker Test");
       assert.equal(said.personName("other-test", neither), "Other Test");
     });
+
+    it("takes a title as shared when it differs only in case, so a pod named for neither keeps its own name", () => {
+      const cased = new Map([
+        ["walker-test", "Ines Calloway"],
+        ["other-test", "INES CALLOWAY"],
+      ]);
+      assert.equal(said.personName("walker-test", cased), "Walker Test");
+      assert.equal(said.personName("other-test", cased), "Other Test");
+    });
+
+    it("takes a title as shared with a pod named for it whose title cannot be read, untitled or sealed, held under its own name", () => {
+      const held = new Map([
+        ["alex-rivera", "alex-rivera"],
+        ["alex-rivera-j24", "Alex Rivera"],
+      ]);
+      assert.equal(said.personName("alex-rivera-j24", held), "Alex Rivera J24");
+      assert.equal(said.personName("alex-rivera", held), "Alex Rivera");
+    });
+
+    it("returns the title a pod keeps, as typed, with its words spaced once, from `keptTitle`, and nothing for a pod held under its own name", () => {
+      const sharing = new Map([
+        ["pod-a", "Sam Lee"],
+        ["pod-b", " Sam  Lee "],
+        ["ada", "ada"],
+      ]);
+      assert.equal(said.keptTitle("pod-b", sharing), "Sam Lee");
+      assert.equal(said.keptTitle("ada", sharing), undefined);
+      assert.equal(said.keptTitle("pod-c", sharing), undefined);
+    });
   });
 
   describe("placeOf(row)", () => {
