@@ -1545,12 +1545,28 @@ describe("Connecting to a demo hospital · ConnectionBox, HospitalsPage", () => 
       assert.ok(words.includes("What Cascade North has: 2 conditions."));
     });
 
-    it("offers to bring it into the pod, named by its person", () => {
-      assert.ok(words.includes("Alex Rivera's pod has nothing from here yet."));
+    it("offers to bring it into the pod, named by its person on the button only", () => {
+      assert.ok(words.includes("This pod has nothing from here yet."));
+      assert.ok(!words.includes("Alex Rivera's pod has"));
       assert.equal(
         textOf(/<button[^>]*>([^<]*)<\/button>/.exec(box)?.[1] ?? ""),
         "Bring it into Alex Rivera's pod",
       );
+    });
+
+    it("says `This pod already has records from here` when the pod holds the subject's records", () => {
+      const held = textOf(
+        drawn.connectionBox({
+          pod: "alex-rivera",
+          back: "#",
+          connection: at("pulled", {
+            sources: [{ records: { Condition: 2 }, holdsSubjectsRecords: true }],
+            pulled: { missing: [], denied: [] },
+          }),
+        }),
+      );
+      assert.ok(held.includes("This pod already has records from here."));
+      assert.ok(!held.includes("Alex Rivera's pod already"));
     });
   });
 
@@ -1585,6 +1601,21 @@ describe("Connecting to a demo hospital · ConnectionBox, HospitalsPage", () => 
     const maybe = box("Moss Avery", "Marsh");
     const other = box("Odalys", "Brandt");
     const untitled = box("Odalys", "Brandt", false);
+
+    it("names the pod's slug name on the button when no patient and no title are on file", () => {
+      const bare = textOf(
+        drawn.connectionBox({
+          pod: "alex-rivera",
+          back: "#",
+          connection: at("pulled", {
+            sources: [{ records: {}, holdsSubjectsRecords: false }],
+            pulled: { missing: [], denied: [] },
+          }),
+        }),
+      );
+      assert.ok(bare.includes("Bring it into Alex Rivera's pod"));
+      assert.ok(bare.includes("This pod has nothing from here yet."));
+    });
 
     it("offers \"Bring it into\" and the pod's person, with no word on whose record it is, when the record has the person's name", () => {
       assert.ok(!same.said.includes("This record is"));
