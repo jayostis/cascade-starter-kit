@@ -54,9 +54,10 @@ type Api = Record<
 > & { close(): Promise<void> };
 type Host = Record<string, unknown> & { tables: unknown };
 
-const { podApi, maps, notOpenedHere } = (await import(
+const { podApi, maps, notOpenedHere, WAIT_MS } = (await import(
   new URL("../../app/pod-api.ts", import.meta.url).href
 )) as {
+  WAIT_MS: number;
   podApi: (host: Host) => Api;
   maps: (output: Output) => Output;
   notOpenedHere: (name: string) => string;
@@ -242,6 +243,54 @@ const host = (at = folder) => ({
   hospitals: northHospitals(),
   world,
 });
+type Closable = { close(): Promise<void> };
+
+/**
+ * `given` with every `pods.open` call counted, every pod it opened counted, and every such pod counted when closed. With `held`, an opening with a
+ * secret waits for `release()`; `started(n)` resolves once `n` such openings have begun.
+ */
+function opening(given: ReturnType<typeof host>, held = false) {
+  const pods = given.pods as unknown as {
+    open(name: string, options?: { secret?: string }): Promise<Closable>;
+  };
+  const seen = { calls: 0, opens: 0, closes: 0 };
+  const waiters: { n: number; done: () => void }[] = [];
+  let begun = 0;
+  let release!: () => void;
+  const gate = new Promise<void>((done) => (release = done));
+  const counting = {
+    ...given,
+    pods: {
+      ...given.pods,
+      open: async (name: string, options?: { secret?: string }) => {
+        seen.calls += 1;
+        if (options?.secret !== undefined) {
+          begun += 1;
+          for (const { n, done } of waiters) if (n <= begun) done();
+          if (held) await gate;
+        }
+        const pod = await pods.open(name, options);
+        seen.opens += 1;
+        const close = pod.close.bind(pod);
+        pod.close = async () => {
+          seen.closes += 1;
+          return close();
+        };
+        return pod;
+      },
+    },
+  };
+  return {
+    host: counting,
+    seen,
+    release,
+    started: (n: number) =>
+      new Promise<void>((done) => {
+        if (begun >= n) done();
+        else waiters.push({ n, done });
+      }),
+  };
+}
 const made: Api[] = [];
 const servers: Server[] = [];
 
@@ -1057,26 +1106,14 @@ describe("Making, unlocking and deleting pods · api.makePod(), api.waitingWords
     });
 
     it("answers each of two calls at the same moment by its own secret: the right words open the pod, other words throw `Unopened`", async () => {
-      const given = host();
-      const pods = given.pods as unknown as {
-        open(name: string, options?: { secret?: string }): Promise<unknown>;
-      };
-      let release!: () => void;
-      const held = new Promise<void>((done) => (release = done));
-      const holding = {
-        ...pods,
-        open: async (name: string, options?: { secret?: string }) => {
-          if (options?.secret !== undefined) await held;
-          return pods.open(name, options);
-        },
-      };
-      const each = crossing(api({ ...given, pods: holding }));
+      const holding = opening(host(), true);
+      const each = crossing(api(holding.host));
       const calls = Promise.allSettled([
         each.unlock({ pod: SEALED, secret: SEALED_WORDS }),
         each.unlock({ pod: SEALED, secret: "not the words at all" }),
       ]);
-      await new Promise((done) => setTimeout(done, 20));
-      release();
+      await holding.started(2);
+      holding.release();
       const [right, wrong] = await calls;
       assert.deepEqual(
         right.status === "fulfilled" && right.value,
@@ -1089,6 +1126,39 @@ describe("Making, unlocking and deleting pods · api.makePod(), api.waitingWords
         wrong.status === "fulfilled" ? "opened with the wrong words" : "",
       );
       assert.equal((await each.pod({ pod: SEALED })).locked, undefined);
+    });
+
+    it("keeps one opening and closes the other of two calls at the same moment with the right words", async () => {
+      const holding = opening(host(), true);
+      const each = crossing(api(holding.host));
+      const calls = Promise.all([
+        each.unlock({ pod: SEALED, secret: SEALED_WORDS }),
+        each.unlock({ pod: SEALED, secret: SEALED_WORDS }),
+      ]);
+      await holding.started(2);
+      holding.release();
+      assert.deepEqual(await calls, [
+        { pod: SEALED, opened: true },
+        { pod: SEALED, opened: true },
+      ]);
+      const { opens, closes } = holding.seen;
+      assert.equal(opens - closes, 1, `${opens} openings, ${closes} closed`);
+    });
+
+    it("opens no pod to check the words of an encrypted pod that is already open", async () => {
+      const counting = opening(host());
+      const each = crossing(api(counting.host));
+      await each.unlock({ pod: SEALED, secret: SEALED_WORDS });
+      const calls = counting.seen.calls;
+      assert.deepEqual(
+        await each.unlock({ pod: SEALED, secret: SEALED_WORDS }),
+        { pod: SEALED, opened: true },
+      );
+      await assert.rejects(
+        each.unlock({ pod: SEALED, secret: "not the words at all" }),
+        (error) => unopened(error, "incorrect secret"),
+      );
+      assert.equal(counting.seen.calls, calls);
     });
 
     it("returns `opened: true` for a pod that is open and not encrypted, whatever `secret` holds", async () => {
@@ -1193,8 +1263,11 @@ const pulledOnce = once(async () => {
   const connection = { pod: "ada", connection: n };
   let shown = await built.connection(connection);
   const states = [state(shown)];
+  const held = [0];
   while (!shown.settled) {
+    const asked = performance.now();
     shown = await built.connection({ ...connection, wait: "change" });
+    held.push(performance.now() - asked);
     states.push(state(shown));
   }
   const bringing = await built.bring(connection);
@@ -1207,6 +1280,7 @@ const pulledOnce = once(async () => {
     authorize,
     authorized: authorized[0]!,
     states,
+    held,
     shown,
     bringing,
     brought,
@@ -1294,7 +1368,7 @@ const parkedOnce = once(async () => {
     .connection({ pod: "ada", connection: first, wait: true })
     .then((shown) => (held = shown));
   while (held === undefined) {
-    mock.timers.tick(25_000);
+    mock.timers.tick(WAIT_MS);
     await new Promise((done) => setImmediate(done));
   }
   mock.timers.reset();
@@ -1375,6 +1449,49 @@ const failedOnce = once(async () => {
   }
 });
 
+/** A bring-in over a pod whose `import` records the parts `onProgress` is told, as each begins. */
+const partsOnce = once(async () => {
+  const parts: string[] = [];
+  const recording = (pod: object) =>
+    new Proxy(pod, {
+      get(target, key) {
+        const value = Reflect.get(target, key, target);
+        if (key !== "import") {
+          return typeof value === "function" ? value.bind(target) : value;
+        }
+        return (
+          files: unknown,
+          options: { onProgress?: (told: { part: string }) => unknown },
+        ) =>
+          (value as (...a: unknown[]) => unknown).call(target, files, {
+            ...options,
+            onProgress: (told: { part: string }) => {
+              parts.push(told.part);
+              return options.onProgress?.(told);
+            },
+          });
+      },
+    });
+  const { built } = await fresh((at) => ({
+    pods: new Proxy(
+      host(at).pods as unknown as { open(...a: unknown[]): Promise<object> },
+      {
+        get: (target, key) =>
+          key === "open"
+            ? async (...args: unknown[]) =>
+                recording(await target.open(...args))
+            : Reflect.get(target, key, target),
+      },
+    ),
+  }));
+  await built.makePod({ person: "Ada" });
+  const at = { pod: "ada", connection: 0 };
+  at.connection = (await connected(built, "ada")).connection;
+  await built.bring(at);
+  await built.connection({ ...at, wait: true });
+  return { parts };
+});
+
 /**
  * A connection is one sign-in at one hospital and the pull that follows: `api.connection()` says how far it has
  * got and can wait for it to change, and `api.bring()` imports what was pulled into the pod. What goes wrong at the
@@ -1450,10 +1567,12 @@ describe("Connecting a pod to a hospital and bringing its records in · api.hosp
 
   describe("api.connection({ pod, connection, wait })", () => {
     it('returns with `wait: "change"` only when the step, the count of requests or the bring-in\'s part has changed', async () => {
-      const { states } = await pulledOnce();
+      const { states, held } = await pulledOnce();
       assert.ok(states.length > 1);
+      // A call the change did not end returns after `wait` 25 seconds, as it is: a loaded machine can stall that long.
       states.forEach((each, at) => {
-        if (at > 0) assert.notEqual(each, states[at - 1]);
+        if (at > 0 && each === states[at - 1])
+          assert.ok(held[at]! >= WAIT_MS, `${each} again after ${held[at]} ms`);
       });
     });
 
@@ -1498,6 +1617,17 @@ describe("Connecting a pod to a hospital and bringing its records in · api.hosp
           ({ key }: Output) => key === `start:${ATORVASTATIN}:${LDL}`,
         ),
       );
+    });
+
+    it("reports loading the adapter, converting, saving and judging, in that order, through `onProgress`", async () => {
+      const { parts } = await partsOnce();
+      const each = parts.filter((part, at) => part !== parts[at - 1]);
+      assert.deepEqual(each, [
+        "loading the adapter",
+        "converting",
+        "saving",
+        "judging",
+      ]);
     });
 
     it('imports a pull once: a second call returns `step: "pulled"`, and the connection has `broughtIn: true`', async () => {

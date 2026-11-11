@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { URL } from "node:url";
 import { brandsBundle, demoRemapFetch } from "@the-cascade-protocol/sandbox";
 import {
+  checkSecret,
   directoryOf,
   openPod,
   tablesBeside,
@@ -43,6 +44,7 @@ export function nodeHost({
       title: (name) => podTitle(name, folder),
       retitle: (name, title) => retitlePod(name, title, folder),
       open: (name, options) => openPod(join(folder, name), options),
+      checkSecret: (name, secret) => checkSecret(join(folder, name), secret),
       async remove(names, { all = false } = {}) {
         for (const name of names) await deletePod(name, folder);
         if (all)
