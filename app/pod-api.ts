@@ -1144,9 +1144,11 @@ export function podApi(host: PodHost) {
       };
     const { pulled, files } = saved;
     const patient = patientName(pulled.bundle);
+    const pod = await podNamed(name);
     return {
       ...shown,
-      sources: await (await podNamed(name)).look(files),
+      sources: await pod.look(files),
+      titled: pod.titled,
       pulled: { denied: pulled.denied, missing: pulled.missing },
       ...(patient !== undefined && { patient }),
       patientNames: patientNames(pulled.bundle),

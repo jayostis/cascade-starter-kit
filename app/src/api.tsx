@@ -103,6 +103,8 @@ export interface ConnectionNow {
   };
   readonly patient?: string;
   readonly patientNames?: readonly { name?: string; family?: string }[];
+  /** Whether the pod keeps a name, which bringing the record in leaves; a pod with none is named for the record's person. */
+  readonly titled?: boolean;
   /** Why the pod holds no record of the connect, when it does not. */
   readonly notRecorded?: string;
   readonly broughtIn?: boolean;
