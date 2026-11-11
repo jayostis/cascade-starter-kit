@@ -33,8 +33,12 @@ const ADDRESS = { pod: podPath, trend: trendPath, entry: addresses().entry };
 
 const isRefusal = (error: unknown): error is Error =>
   error instanceof Error && error.name === "Refusal";
+/** A refusal that carries an `outcome` is the runtime's `Unopened`, which is a `Refusal` by name. */
+const isUnopened = (error: unknown): error is Error & { outcome: string } =>
+  isRefusal(error) &&
+  typeof (error as { outcome?: unknown }).outcome === "string";
 
-/** The routes over `api`: 200 with the tool's answer; 400 `{ refused }` for input the tool's schema or the rules refuse; 404 for a name that is no read; 500 with a fixed sentence for anything else. */
+/** The routes over `api`: 200 with the tool's answer; 400 `{ refused }` for input the tool's schema or the rules refuse; 404 for a name that is no read; 423 `{ unopened, refused }` for a pod that is locked, as `/api/` answers; 500 with a fixed sentence for anything else. */
 export function toolRoutes(api: Operations) {
   return new Hono()
     .get("/tools", (c) =>
@@ -72,6 +76,11 @@ export function toolRoutes(api: Operations) {
             })) as never,
           );
         } catch (error) {
+          if (isUnopened(error))
+            return c.json(
+              { unopened: error.outcome, refused: error.message },
+              423,
+            );
           if (isRefusal(error)) return c.json({ refused: error.message }, 400);
           console.error(error);
           return c.json({ error: FAILED }, 500);

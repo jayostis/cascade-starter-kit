@@ -773,6 +773,10 @@ export function podApi(host: PodHost) {
     if ((await host.pods.names()).includes(name))
       return { pod: name, made: false };
     if (host.samples?.includes(name)) {
+      if (encrypt)
+        throw new Refusal(
+          `${name} is a sample, and a sample is not encrypted: make it without encryption, or give another name for an encrypted pod.`,
+        );
       await sampleFor(name);
       return { pod: name, loaded: true };
     }
@@ -813,16 +817,25 @@ export function podApi(host: PodHost) {
     return { pod, made: true };
   }
 
+  /** Opens the pod again with `secret` on its own, so the pod's header says whether the secret is its; `Unopened` when it is not. */
+  async function checkSecret(name: string, secret: string) {
+    if (secret.trim() === "")
+      throw new Unopened("incorrect secret", "no secret was given");
+    await (await host.pods.open(name, { secret })).close();
+  }
+
   async function unlock({ pod: given, secret = "" }: Input<"unlock">) {
     const name = await known(given);
+    let pod: Pod | undefined;
     try {
-      await openOnce(name);
+      pod = await openOnce(name);
     } catch (error) {
       if (!(error instanceof Unopened)) throw error;
       if (secret.trim() === "")
         throw new Unopened("incorrect secret", "no secret was given");
       await openOnce(name, { secret });
     }
+    if (pod?.encrypted) await checkSecret(name, secret);
     return { pod: name, opened: true };
   }
 
