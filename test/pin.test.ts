@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { once } from "node:events";
 import {
   chmod,
@@ -82,14 +82,16 @@ describe("Moving the runtime pin · scripts/pin.mjs", () => {
         await writeFile(join(root, "app", "package.json"), manifest);
         await writeFile(join(root, "package-lock.json"), lock);
         if (lockReadOnly) await chmod(join(root, "package-lock.json"), 0o444);
-        const ran = spawnSync(
+        // Asynchronously: this process's server must answer the script's request.
+        const child = spawn(
           process.execPath,
           [join(root, "scripts", "pin.mjs"), NEW],
-          { cwd: root, encoding: "utf8" },
+          { cwd: root, stdio: "ignore" },
         );
+        const [status] = (await once(child, "close")) as [number | null];
         if (lockReadOnly) await chmod(join(root, "package-lock.json"), 0o644);
         return {
-          status: ran.status,
+          status,
           manifest: await readFile(join(root, "app", "package.json"), "utf8"),
           lock: await readFile(join(root, "package-lock.json"), "utf8"),
           wasManifest: manifest,
