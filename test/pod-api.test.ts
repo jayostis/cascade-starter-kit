@@ -1379,35 +1379,85 @@ const parkedOnce = once(async () => {
   return { held, deleted, closed: signals[1]!.aborted };
 });
 
-/** A pod with no name on file and a pod made under one, each brought a record of another person: their titles after. */
+/**
+ * A pod with no name on file and a pod made under one, each brought a record of another person, and a pod with no
+ * name on file whose import is refused or claims no profile: their titles after the app is closed and opened again.
+ */
 const namedAfterBringIn = once(async () => {
+  const importing = (result: object) => (pod: object) =>
+    new Proxy(pod, {
+      get(target, key) {
+        const value = Reflect.get(target, key, target);
+        if (key === "import")
+          return async (...args: unknown[]) => ({
+            ...(await (value as (...a: unknown[]) => Promise<object>).apply(
+              target,
+              args,
+            )),
+            ...result,
+          });
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
   const brought = async (
     pod: string,
     make: (local: Api, at: string) => Promise<unknown>,
+    result?: object,
   ) => {
     const at = await mkdtemp(join(tmpdir(), "pod-api-named-"));
     folders.push(at);
-    const local = api({ ...host(at), hospitals: northHospitals() });
+    const base = host(at);
+    const local = api({
+      ...base,
+      ...(result !== undefined && {
+        pods: new Proxy(
+          base.pods as unknown as { open(...a: unknown[]): Promise<object> },
+          {
+            get: (target, key) =>
+              key === "open"
+                ? async (...args: unknown[]) =>
+                    importing(result)(await target.open(...args))
+                : Reflect.get(target, key, target),
+          },
+        ),
+      }),
+      hospitals: northHospitals(),
+    });
     await make(local, at);
     const { connection } = await connected(local, pod);
     const target = { pod, connection };
     await local.bring(target);
     await local.connection({ ...target, wait: true });
-    const { pods } = await local.pods({});
     await local.close();
+    const again = api({ ...host(at), hospitals: northHospitals() });
+    await (
+      await (
+        nodeHost({ folder: at }).pods as unknown as {
+          open(name: string): Promise<Closable>;
+        }
+      ).open(pod)
+    ).close();
+    const { pods } = await again.pods({});
+    await again.close();
     return pods.find(({ name }: Output) => name === pod).title;
   };
+  const untitled = async (_: Api, at: string) =>
+    (
+      await (
+        nodeHost({ folder: at }).pods as unknown as {
+          open(name: string): Promise<{ close(): Promise<void> }>;
+        }
+      ).open("rowan-ellery-marsh")
+    ).close();
   return {
-    untitled: await brought("rowan-ellery-marsh", async (_, at) =>
-      (
-        await (
-          nodeHost({ folder: at }).pods as unknown as {
-            open(name: string): Promise<{ close(): Promise<void> }>;
-          }
-        ).open("rowan-ellery-marsh")
-      ).close(),
-    ),
+    untitled: await brought("rowan-ellery-marsh", untitled),
     titled: await brought("ada", (local) => local.makePod({ person: "Ada" })),
+    refused: await brought("rowan-ellery-marsh", untitled, {
+      refused: "not a record",
+    }),
+    unclaimed: await brought("rowan-ellery-marsh", untitled, {
+      claimedProfiles: [],
+    }),
   };
 });
 
@@ -1639,10 +1689,16 @@ describe("Connecting a pod to a hospital and bringing its records in · api.hosp
       assert.ok(after.sources.length > 0);
     });
 
-    it("titles a pod with no name on file for the person of the record brought in, and leaves a name on file", async () => {
+    it("titles a pod with no name on file for the person of the record brought in, still so when it is opened again, and leaves a name on file", async () => {
       const { untitled, titled } = await namedAfterBringIn();
       assert.equal(untitled, "Ines Calloway");
       assert.equal(titled, "Ada");
+    });
+
+    it("leaves the title of a pod when the import is refused or claims no profile", async () => {
+      const { refused, unclaimed } = await namedAfterBringIn();
+      assert.equal(refused, "rowan-ellery-marsh");
+      assert.equal(unclaimed, "rowan-ellery-marsh");
     });
 
     it("says `Not brought in: …` in `failed`, with `retry: true`, when the import throws an error of the app's own", async () => {
