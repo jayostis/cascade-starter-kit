@@ -1551,6 +1551,7 @@ const unnamedPatientOnce = once(async () => {
       retitled,
       logged: logged.mock.callCount(),
       broughtIn: shown.broughtIn,
+      patient: shown.patient,
     };
   } finally {
     logged.mock.restore();
@@ -1802,6 +1803,11 @@ describe("Connecting a pod to a hospital and bringing its records in · api.hosp
       assert.equal(broughtIn, true);
       assert.equal(retitled, 0);
       assert.equal(logged, 0);
+    });
+
+    it("gives no `patient` when the person of the record has no name, so no screen says whose record it is", async () => {
+      const { patient } = await unnamedPatientOnce();
+      assert.equal(patient, undefined);
     });
 
     it("says `Not brought in: …` in `failed`, with `retry: true`, when the import throws an error of the app's own", async () => {
