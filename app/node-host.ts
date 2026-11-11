@@ -17,13 +17,7 @@ import type {
 } from "@the-cascade-protocol/sandbox/node";
 import { type SignedInAt, signIns, worldOf } from "./hospitals.ts";
 import type { Hospitals, PodHost, World } from "./pod-api.ts";
-import {
-  deletePod,
-  podNames,
-  podTitle,
-  restoreKits,
-  retitlePod,
-} from "./pods.ts";
+import { deletePod, podNames, podTitle, restoreKits } from "./pods.ts";
 
 /**
  * The pods in `folder` and their tables, for `podApi`. With `opensEncrypted` false, an encrypted pod is refused rather
@@ -42,7 +36,6 @@ export function nodeHost({
     pods: {
       names: () => podNames(folder),
       title: (name) => podTitle(name, folder),
-      retitle: (name, title) => retitlePod(name, title, folder),
       open: (name, options) => openPod(join(folder, name), options),
       checkSecret: (name, secret) => checkSecret(join(folder, name), secret),
       async remove(names, { all = false } = {}) {
