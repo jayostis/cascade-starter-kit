@@ -3,6 +3,7 @@
 // signed in at in a popup. Every address is the app's base's, never the screen's: a screen's address is a path.
 import {
   appTables,
+  checkSecret,
   checkTables,
   configureRuntime,
   configureTables,
@@ -105,6 +106,7 @@ const browser = {
     names: () => databases(DATABASE),
     title: (name: string) => podTitle(name),
     open: (name: string, options?: object) => openPod(name, options),
+    checkSecret: (name: string, secret: string) => checkSecret(name, secret),
     /** Deletes the pods and their answers, with `all` every answers database; never the tables. */
     async remove(names: string[], { all = false } = {}) {
       const gone = all

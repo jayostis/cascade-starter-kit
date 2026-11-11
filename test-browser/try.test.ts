@@ -1256,6 +1256,51 @@ describe("Keeping pods in the browser · indexedDB", () => {
     }
   });
 
+  test("with an encrypted pod made in this browser, when the page is loaded again and asks for its six words", async (t) => {
+    const context = await browser.newContext();
+    try {
+      const page = watched(await context.newPage());
+      await page.goto(`${served.url}${AT.home}`);
+      await settled(page);
+      await page.click('a[href="#new-pod"]');
+      await page.check('#new-pod input[type="checkbox"]');
+      await page.fill(
+        '#new-pod input[name="person"]:not([type="hidden"])',
+        "Ada Wren",
+      );
+      await page.click('#new-pod button:has-text("Make the pod")');
+      await settled(page);
+      const words = await page.locator(".words li").allTextContents();
+      await page.getByLabel("Word 2").fill(words[1]!);
+      await page.getByLabel("Word 5").fill(words[4]!);
+      await page.click('button:has-text("Make the encrypted pod")');
+      await settled(page);
+      const pod = new URL(page.url());
+      await page.goto(pod.href);
+      await settled(page);
+      await page
+        .getByLabel("Your six words")
+        .fill("one two three four five six");
+      await page.click('button:has-text("Open this pod")');
+      await settled(page);
+      await t.test("refuses six words that are not the pod's", async () => {
+        assert.match(
+          (await page.textContent("main")) ?? "",
+          /don't open this pod/,
+        );
+      });
+      await page.getByLabel("Your six words").fill(words.join(" "));
+      await page.click('button:has-text("Open this pod")');
+      await settled(page);
+      await t.test("opens the pod with its six words", async () => {
+        assert.equal(await page.getByLabel("Your six words").count(), 0);
+        assert.equal(await page.textContent("main h1"), "Ada Wren");
+      });
+    } finally {
+      await context.close();
+    }
+  });
+
   test("when a person names a pod Con", async (t) => {
     const context = await browser.newContext();
     try {

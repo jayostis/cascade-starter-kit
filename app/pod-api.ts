@@ -249,6 +249,8 @@ export interface PodHost {
       name: string,
       options?: { title?: string; secret?: string },
     ): Promise<Pod>;
+    /** Whether `secret` is the secret of the encrypted pod `name`, read from its header alone; opens no pod. */
+    checkSecret(name: string, secret: string): Promise<boolean>;
     /** Removes the pods and their answers, with `all` every answer kept; never the reference tables. */
     remove(
       names: readonly string[],
@@ -823,11 +825,12 @@ export function podApi(host: PodHost) {
     return { pod, made: true };
   }
 
-  /** Opens the pod again with `secret` on its own, so the pod's header says whether the secret is its; `Unopened` when it is not. */
+  /** Reads the pod's header for `secret`, opening no pod; `Unopened` when it is not the pod's. */
   async function checkSecret(name: string, secret: string) {
     if (secret.trim() === "")
       throw new Unopened("incorrect secret", "no secret was given");
-    await (await host.pods.open(name, { secret })).close();
+    if (!(await host.pods.checkSecret(name, secret)))
+      throw new Unopened("incorrect secret", "the secret is not this pod's");
   }
 
   /** Whether the pod there is by `name` opens with no secret and is not encrypted; a locked pod is encrypted. */
