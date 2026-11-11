@@ -1053,6 +1053,9 @@ export function seenAt(answers: Answers): Map<string, Seen> {
   return seen;
 }
 
+/** A date as a label carries it: an `xsd:gYear`, `gYearMonth`, `date` or `dateTime`, each with or without a zone. */
+const DISPLAY_DATE = /^\d{4}(-\d\d(-\d\d)?)?(Z|[+-]\d\d:\d\d|T\S*)?$/;
+
 /**
  * An entry the sections do not show, named from its label: `Allergy entry · Latex` is a latex allergy. The view labels
  * an entry with its kind, then its name if it has one, then its date if it has one, so `Allergy entry` and
@@ -1060,8 +1063,7 @@ export function seenAt(answers: Answers): Map<string, Seen> {
  */
 export function fromLabel(label = ""): Item {
   const [kind = "", second = "", ...rest] = label.split(" · ");
-  const name =
-    rest.length === 0 && /^\d{4}-\d\d-\d\d/.test(second) ? "" : second;
+  const name = rest.length === 0 && DISPLAY_DATE.test(second) ? "" : second;
   return {
     name: name || UNNAMED,
     one: kind.replace(/ entry$/, "").toLowerCase() || "entry",
