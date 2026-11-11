@@ -275,6 +275,24 @@ describe("What a pod's screen says is worth a look · worthALook()", () => {
       );
     });
 
+    it("names an entry from its label only by a name the label holds, never by `Allergy entry` or by its date", () => {
+      const UNNAMED = "An entry";
+      for (const [label, name, one] of [
+        ["Allergy entry · Latex · 2020-01-01", "Latex", "allergy"],
+        ["Allergy entry · Latex", "Latex", "allergy"],
+        ["Allergy entry · 2020-01-01", UNNAMED, "allergy"],
+        ["Allergy entry", UNNAMED, "allergy"],
+        ["Lab result entry", UNNAMED, "lab result"],
+        ["Patient entry", UNNAMED, "patient"],
+        ["", UNNAMED, "entry"],
+      ] as const)
+        assert.deepEqual(said.fromLabel(label), { name, one }, label);
+      assert.deepEqual(said.fromLabel(undefined), {
+        name: UNNAMED,
+        one: "entry",
+      });
+    });
+
     it("calls the other medication of a pair `another medication` when its `otherRecordLabel` holds no name", () => {
       assert.deepEqual(
         REVIEW_LINES.filter(({ entry }) => entry === "e8" || entry === "e11")
