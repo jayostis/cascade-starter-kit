@@ -232,6 +232,17 @@ describe("Reading a pod as a person's record · PodPage", () => {
     ],
     [REVIEW]: [{ entry: "i3", needs: "judged different, still joined" }],
   };
+  describe("given a pod titled for another person than its name says, as a record's person titles a pod made without a name", () => {
+    it("draws the title as the page's heading", () => {
+      const page = drawn.podPage({
+        shown: { pod: "walker-test", answers: {} },
+        titles: new Map([["walker-test", "Ines Calloway"]]),
+        held: [],
+      });
+      assert.match(page, /<h1>Ines Calloway[<][/]h1>/);
+    });
+  });
+
   describe("given a pod with allergies and lab results", () => {
     const page = podPage({
       answers: {
@@ -1586,16 +1597,23 @@ describe("Connecting to a demo hospital · ConnectionBox, HospitalsPage", () => 
 
   describe("given a pulled record and the pod's person", () => {
     const ROWAN = "Rowan Ellery Marsh";
-    const box = (given: string, family: string, titled = true) => {
+    const box = (
+      given: string,
+      family: string,
+      titled = true,
+      pod = "rowan-ellery-marsh",
+      more: object = {},
+    ) => {
       const markup = drawn.connectionBox({
-        pod: "rowan-ellery-marsh",
-        titles: titled ? new Map([["rowan-ellery-marsh", ROWAN]]) : undefined,
+        pod,
+        titles: titled ? new Map([[pod, ROWAN]]) : undefined,
         back: "#",
         connection: at("pulled", {
           ...PULLED,
           sources: [{ records: {}, holdsSubjectsRecords: false }],
           patient: `${given} ${family}`,
           patientNames: [{ name: `${given} ${family}`, family }],
+          ...more,
         }),
       });
       return {
@@ -1615,6 +1633,15 @@ describe("Connecting to a demo hospital · ConnectionBox, HospitalsPage", () => 
     const maybe = box("Moss Avery", "Marsh");
     const other = box("Odalys", "Brandt");
     const untitled = box("Odalys", "Brandt", false);
+    const KEEPS = "Bringing it in leaves this pod named";
+    /** A pod that keeps a name the page cannot read, as an encrypted pod's is sealed: the record says it is titled. */
+    const sealed = box("Ines", "Calloway", false, "cy-sealed", {
+      titled: true,
+    });
+    const sealedNoNames = box("Ines", "Calloway", false, "cy-sealed", {
+      titled: true,
+      patientNames: [],
+    });
 
     it("names the pod's slug name on the button when no patient and no title are on file", () => {
       const bare = textOf(
@@ -1638,6 +1665,7 @@ describe("Connecting to a demo hospital · ConnectionBox, HospitalsPage", () => 
 
     it("says whose record it is, and names both people on the button, when only the family name is shared", () => {
       assert.ok(maybe.said.includes("This record is Moss Avery Marsh's."));
+      assert.ok(maybe.said.includes(`${KEEPS} ${ROWAN}.`));
       assert.ok(maybe.note === undefined && !maybe.said.includes("not Rowan"));
       assert.equal(maybe.buttonClass, undefined);
       assert.equal(
@@ -1652,6 +1680,7 @@ describe("Connecting to a demo hospital · ConnectionBox, HospitalsPage", () => 
           "This record is Odalys Brandt's, not Rowan Ellery Marsh's.",
         ),
       );
+      assert.ok(other.said.includes(`${KEEPS} ${ROWAN}.`));
       assert.equal(other.note, "note warm", "the warning is the warm kind");
       assert.equal(
         other.buttonClass,
@@ -1673,8 +1702,32 @@ describe("Connecting to a demo hospital · ConnectionBox, HospitalsPage", () => 
       assert.ok(untitled.said.includes("This pod has nothing from here yet."));
       assert.ok(!untitled.said.includes("Odalys Brandt's pod has"));
       assert.ok(!untitled.said.includes("Rowan"));
+      assert.ok(!untitled.said.includes(KEEPS));
       assert.equal(untitled.button, "Bring it into Odalys Brandt's pod");
       assert.equal(untitled.note, "note", "an unknown pod's note stays plain");
+    });
+
+    it("says whose record it is and that the pod keeps its name, naming the pod's person on the button, when the pod is titled but its title cannot be read", () => {
+      assert.ok(
+        sealed.said.includes(
+          "This record is Ines Calloway's, not Cy Sealed's. Bringing it in leaves this pod named Cy Sealed.",
+        ),
+      );
+      assert.ok(!sealed.said.includes("makes this"));
+      assert.equal(
+        sealed.button,
+        "Bring Ines Calloway's records into Cy Sealed's pod anyway",
+      );
+    });
+
+    it("says whose record it is and that the pod keeps its name when the record names no one to grade, and never makes the pod the record's person's", () => {
+      assert.ok(
+        sealedNoNames.said.includes(
+          "This record is Ines Calloway's. Bringing it in leaves this pod named Cy Sealed.",
+        ),
+      );
+      assert.ok(!sealedNoNames.said.includes("makes this"));
+      assert.equal(sealedNoNames.button, "Bring it into Cy Sealed's pod");
     });
   });
 

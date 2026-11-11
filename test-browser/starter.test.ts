@@ -1,7 +1,7 @@
 // The starter's chat in Chromium, against a copy of the starter and a stub model on loopback: no real model, key or
 // network. The copy makes its own pods, so nothing under the repository is written.
 import assert from "node:assert/strict";
-import { type ChildProcess, spawn } from "node:child_process";
+import { type ChildProcess, execFile, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import {
   cp,
@@ -16,6 +16,7 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { promisify } from "node:util";
 import { after, before, describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { type Browser, chromium, type Locator, type Page } from "playwright";
@@ -264,16 +265,19 @@ const podNames = async (): Promise<string[]> =>
     }
   ).pods.map(({ name }) => name);
 
-/** Makes an encrypted pod for `person` and confirms its six words, as the page does; gives the pod's name. */
-async function encryptedPod(person: string): Promise<string> {
+/** Makes an encrypted pod for `person` on the app `on` and confirms its six words, as the page does; gives the pod's name. */
+async function encryptedPod(
+  person: string,
+  on: Started = modelled,
+): Promise<string> {
   const made = (await (
-    await post(modelled.origin, "/api/makePod", { person, encrypt: true })
+    await post(on.origin, "/api/makePod", { person, encrypt: true })
   ).json()) as { pod: string };
   const { words } = (await (
-    await post(modelled.origin, "/api/waitingWords", { pod: made.pod })
+    await post(on.origin, "/api/waitingWords", { pod: made.pod })
   ).json()) as { words: string };
   const six = words.split(" ");
-  const opened = await post(modelled.origin, "/api/confirmWords", {
+  const opened = await post(on.origin, "/api/confirmWords", {
     pod: made.pod,
     word2: six[1],
     word5: six[4],
@@ -1022,6 +1026,137 @@ describe("Connecting to a demo hospital · Sign in at", () => {
         );
       },
     );
+    await page.close();
+  });
+
+  /** Opens the pod's page, finds Cascade North, signs in as Ines Calloway and waits for the connection's box. */
+  const signedInAsInes = async (page: Page, origin: string, pod: string) => {
+    await page.goto(`${origin}/pods/${pod}/`);
+    await page.getByRole("link", { name: "Find a hospital" }).click();
+    await page
+      .getByRole("heading", { name: "Cascade North" })
+      .locator("xpath=..")
+      .getByRole("button", { name: "Sign in" })
+      .click();
+    await page.getByLabel("Calloway, Ines").check();
+    await page.getByRole("button", { name: "Allow" }).click();
+    const box = page.locator("#connection");
+    await box.getByRole("button", { name: /^Bring / }).waitFor();
+    return box;
+  };
+
+  test("with a pod made without a name, when a record is brought into it", async (t) => {
+    await promisify(execFile)(
+      process.execPath,
+      ["pod.ts", "new", "walker-test"],
+      {
+        cwd: bare.folder,
+      },
+    );
+    const page = await browser.newPage();
+    const box = await signedInAsInes(page, bare.origin, "walker-test");
+    await t.test(
+      "says the record is Ines Calloway's and bringing it in makes this her pod",
+      async () => {
+        assert.match(
+          (await box.textContent()) ?? "",
+          /This record is Ines Calloway's\. Bringing it in makes this Ines Calloway's pod\./,
+        );
+        assert.equal(
+          await box.getByRole("button", { name: /^Bring / }).textContent(),
+          "Bring it into Ines Calloway's pod",
+        );
+      },
+    );
+    await box.getByRole("button", { name: /^Bring / }).click();
+    await page
+      .locator("main .note", { hasText: /^Brought in the record from / })
+      .waitFor({ timeout: 60_000 });
+    /** What the page names the pod: its heading, its entry in the sidebar and its tab. */
+    const named = async (on: Page) => ({
+      heading: (await on.locator("main h1").first().textContent())?.trim(),
+      sidebar: (
+        await on.locator('aside nav a[href="/pods/walker-test/"]').textContent()
+      )?.trim(),
+      tab: await on.title(),
+    });
+    await t.test(
+      "names the pod for the record's person in its heading, sidebar and tab, with no reload",
+      async () => {
+        const { heading, sidebar, tab } = await named(page);
+        assert.equal(heading, "Ines Calloway");
+        assert.equal(sidebar, "Ines Calloway");
+        assert.match(tab, /Ines Calloway/);
+      },
+    );
+    await page.reload();
+    await page.locator("main h1", { hasText: /\S/ }).first().waitFor();
+    await t.test("names it so after a reload", async () => {
+      assert.deepEqual(
+        {
+          ...(await named(page)),
+          tab: /Ines Calloway/.test(await page.title()),
+        },
+        { heading: "Ines Calloway", sidebar: "Ines Calloway", tab: true },
+      );
+    });
+    await page.close();
+
+    await bare.stop(true);
+    bare = await startStarter({}, bare.folder);
+    const again = await browser.newPage();
+    await again.goto(`${bare.origin}/pods/walker-test/`);
+    await again.locator("main h1", { hasText: /\S/ }).first().waitFor();
+    await t.test(
+      "names it so after the app is stopped and started",
+      async () => {
+        assert.deepEqual(
+          {
+            ...(await named(again)),
+            tab: /Ines Calloway/.test(await again.title()),
+          },
+          { heading: "Ines Calloway", sidebar: "Ines Calloway", tab: true },
+        );
+      },
+    );
+    await again.close();
+  });
+
+  test("with an encrypted pod made with a name, when another person's record is brought into it", async (t) => {
+    const pod = await encryptedPod("Cy Sealed", bare);
+    const page = await browser.newPage();
+    const box = await signedInAsInes(page, bare.origin, pod);
+    await t.test(
+      "says whose record it is and that the pod keeps its name, and names no one else as the pod's owner",
+      async () => {
+        const said = (await box.textContent()) ?? "";
+        assert.match(
+          said,
+          /This record is Ines Calloway's, not Cy Sealed's\. Bringing it in leaves this pod named Cy Sealed\./,
+        );
+        assert.doesNotMatch(said, /makes this/);
+        assert.equal(
+          await box.getByRole("button", { name: /^Bring / }).textContent(),
+          "Bring Ines Calloway's records into Cy Sealed's pod anyway",
+        );
+      },
+    );
+    await box.getByRole("button", { name: /^Bring / }).click();
+    await page
+      .locator("main .note", { hasText: /^Brought in the record from / })
+      .waitFor({ timeout: 60_000 });
+    await t.test("keeps the name in its heading and sidebar", async () => {
+      assert.equal(
+        (await page.locator("main h1").first().textContent())?.trim(),
+        "Cy Sealed",
+      );
+      assert.equal(
+        (
+          await page.locator(`aside nav a[href="/pods/${pod}/"]`).textContent()
+        )?.trim(),
+        "Cy Sealed",
+      );
+    });
     await page.close();
   });
 
