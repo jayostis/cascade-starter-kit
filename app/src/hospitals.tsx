@@ -247,11 +247,9 @@ export function ConnectionBox({
               {counted(source.records) || "nothing"}.
             </p>
             <p className={muted}>
-              {whose}'s pod{" "}
               {source.holdsSubjectsRecords
-                ? "already has records from here"
-                : "has nothing from here yet"}
-              .
+                ? "This pod already has records from here."
+                : "This pod has nothing from here yet."}
             </p>
           </div>
         ))}

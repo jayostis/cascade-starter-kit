@@ -1560,7 +1560,9 @@ describe("Connecting to a demo hospital · ConnectionBox, HospitalsPage", () => 
           pod: "alex-rivera",
           back: "#",
           connection: at("pulled", {
-            sources: [{ records: { Condition: 2 }, holdsSubjectsRecords: true }],
+            sources: [
+              { records: { Condition: 2 }, holdsSubjectsRecords: true },
+            ],
             pulled: { missing: [], denied: [] },
           }),
         }),
@@ -1656,7 +1658,8 @@ describe("Connecting to a demo hospital · ConnectionBox, HospitalsPage", () => 
           "This record is Odalys Brandt's. Bringing it in makes this Odalys Brandt's pod.",
         ),
       );
-      assert.ok(untitled.said.includes("Odalys Brandt's pod has nothing"));
+      assert.ok(untitled.said.includes("This pod has nothing from here yet."));
+      assert.ok(!untitled.said.includes("Odalys Brandt's pod has"));
       assert.ok(!untitled.said.includes("Rowan"));
       assert.equal(untitled.button, "Bring it into Odalys Brandt's pod");
       assert.equal(untitled.note, "note", "an unknown pod's note stays plain");
