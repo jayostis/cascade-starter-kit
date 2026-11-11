@@ -1340,7 +1340,7 @@ function whenOf(
   if (date === undefined) return undefined;
   const year = String(date).slice(0, 4);
   return dates.filter((each) => String(each).slice(0, 4) === year).length > 1
-    ? day(date)
+    ? dayOrAsWritten(date)
     : year;
 }
 
@@ -1941,8 +1941,8 @@ const fieldSaid = (field: string) =>
 /** A statement's value as a person reads it in a sentence: a day in words, a thing by its label, an address by its last part. */
 function valueSaid({ value, valueLabel }: Row): string {
   if (valueLabel !== undefined) return valueLabel;
-  if (/^\d{4}-\d\d-\d\d/.test(value) && isDay(value.slice(0, 10)))
-    return dayInWords(value.slice(0, 10));
+  const said = dayOrAsWritten(value);
+  if (said !== value) return said;
   return isCode(value) ? value.split(/[#/:]/).at(-1)! : value;
 }
 
@@ -2744,7 +2744,8 @@ export function freshness(
     checked === undefined
       ? "This app has not read the feed yet."
       : `This app last read the feed ${ago(checked, now)}.`,
-    modified !== undefined && `The feed last changed on ${day(modified)}.`,
+    modified !== undefined &&
+      `The feed last changed on ${dayOrAsWritten(modified)}.`,
   ]
     .filter(Boolean)
     .join(" ");
@@ -3005,6 +3006,22 @@ export function stepWhenSaid({
 export function onDaySaid(time: string): string {
   return `on ${localDayInWords(time)}`;
 }
+
+/**
+ * A date or a time said as a sentence says a day, in words: `1 February 2024`; the text as written when it does not
+ * begin with a real day, as `2024-13-45` does not.
+ */
+export function dayOrAsWritten(text: string | undefined): string {
+  if (text === undefined) return "";
+  const given = String(text);
+  return /^\d{4}-\d\d-\d\d/.test(given) && isDay(given.slice(0, 10))
+    ? dayInWords(given.slice(0, 10))
+    : given;
+}
+
+/** A time of the app's clock, as `dayOrAsWritten` says its UTC day, for a sentence. */
+export const dayAtInWords = (time: number) =>
+  dayOrAsWritten(new Date(time).toISOString());
 
 /** The UTC day of an instant, in words: `1 February 2024`. */
 export function dayInWords(asOf: string): string {

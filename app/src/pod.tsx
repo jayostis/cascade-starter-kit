@@ -13,8 +13,8 @@ import {
   capitalised,
   changeNames,
   compare,
-  day,
-  dayAt,
+  dayAtInWords,
+  dayOrAsWritten,
   entryId,
   type Finding,
   HISTORY,
@@ -357,7 +357,7 @@ function Change({
         marks={marks}
         unit={unit}
         title={names.test}
-        desc={`${resultsSaid(points.length)} from ${dayAt(Math.min(...times))} to ${dayAt(Math.max(...times))}. ${names.medication} ${medicationDay(finding).said} ${day(finding.medication.date)}.`}
+        desc={`${resultsSaid(points.length)} from ${dayAtInWords(Math.min(...times))} to ${dayAtInWords(Math.max(...times))}. ${names.medication} ${medicationDay(finding).said} ${dayOrAsWritten(finding.medication.date)}.`}
       />
       <p className={row}>
         <a href={`#${id}`}>Show the {resultsSaid(shown)}</a>{" "}
@@ -480,7 +480,7 @@ function Changed({
               const names = changeNames(finding, about);
               return (
                 <li key={finding.key}>
-                  {`${capitalised(names.test)}: ${names.medication} ${medicationDay(finding).said} ${day(finding.medication.date)}, with ${resultsSaid(finding.before.count)} before and ${finding.after.count} after.`}{" "}
+                  {`${capitalised(names.test)}: ${names.medication} ${medicationDay(finding).said} ${dayOrAsWritten(finding.medication.date)}, with ${resultsSaid(finding.before.count)} before and ${finding.after.count} after.`}{" "}
                   <a href={trendHref(finding)}>Open the trend</a>
                 </li>
               );

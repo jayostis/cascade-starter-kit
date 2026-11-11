@@ -940,12 +940,12 @@ describe("Saying what ClinVar says of a variant and of each report · variantSai
     it("names a report by its year, and by its day when two reports are of one year", () => {
       assert.deepEqual(
         variantOf("days").reports.map(({ when }) => when),
-        ["2020", "Mar 21, 2024", "Nov 2, 2024", undefined],
+        ["2020", "21 March 2024", "2 November 2024", undefined],
       );
       assert.deepEqual(sentencesOf("days").slice(0, 3), [
         "Your 2020 report gives no ACMG classification.",
-        "Your Mar 21, 2024 report said pathogenic.",
-        "Your Nov 2, 2024 report said uncertain significance.",
+        "Your 21 March 2024 report said pathogenic.",
+        "Your 2 November 2024 report said uncertain significance.",
       ]);
     });
 

@@ -1173,6 +1173,18 @@ describe("Reading one entry of a pod · EntryPage, entryOf(), entryId()", () => 
       holds(words, `${COLUMBA} report of 21 March 2024;`);
     });
 
+    it("says a malformed report date as written", () => {
+      const malformed = {
+        ...entry,
+        where: [{ place: HARBOURLINE, issued: "2024-13-45", records: 1 }],
+      };
+      const text = wordsOf(
+        entryPage({ entry: malformed, panels: [] }, [CLINVAR], "martin-okafor"),
+      );
+      holds(text, `${HARBOURLINE} report of 2024-13-45`);
+      assert.doesNotMatch(text, /NaN|undefined/);
+    });
+
     it("says what Cascade did, each report with its lab and year, what ClinVar says today, then the counsellor sentence", () => {
       assert.deepEqual(
         entry.known.map(({ sentence }: Known) => sentence),
@@ -2868,7 +2880,7 @@ describe("Seeing what changed after a medication · PodPage, TrendPage, withImpo
       );
       assert.match(
         textOf(thin),
-        /[A-Z][^.:]*: [^.]+ was prescribed May 6, 2024, with 3 results before and 1 after\./,
+        /[A-Z][^.:]*: [^.]+ was prescribed 6 May 2024, with 3 results before and 1 after\./,
       );
     });
 
@@ -3184,14 +3196,14 @@ describe("Seeing what changed after a medication · PodPage, TrendPage, withImpo
       });
       assert.match(
         textAt(page, "trend-chart-desc") ?? "",
-        /^6 results from Sep 1, 2023 to Dec 2, 2024/,
+        /^6 results from 1 September 2023 to 2 December 2024/,
       );
     });
 
     it("names the test and the medication by the record's own text, with nothing busy, until the tables name them", () => {
       assert.match(textOf(own), /LDL/);
       assert.match(textOf(own), /Atorvastatin/);
-      assert.match(own, /Atorvastatin started Jan 5, 2024./);
+      assert.match(own, /Atorvastatin started 5 January 2024./);
       assert.doesNotMatch(own, /aria-busy/);
     });
 
@@ -3221,7 +3233,7 @@ describe("Seeing what changed after a medication · PodPage, TrendPage, withImpo
     it("describes the chart with the medication's days", () => {
       assert.match(
         textAt(mixed, "trend-chart-desc") ?? "",
-        /Atorvastatin prescribed Jan 1, 2024\. Atorvastatin started Mar 4, 2024\.$/,
+        /Atorvastatin prescribed 1 January 2024\. Atorvastatin started 4 March 2024\.$/,
       );
     });
 

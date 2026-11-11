@@ -5,7 +5,7 @@ import { Fragment } from "react";
 import type { LoaderFunctionArgs } from "react-router";
 import {
   capitalised,
-  dayInWords,
+  dayOrAsWritten,
   entryId,
   entryOf,
   maps,
@@ -162,7 +162,7 @@ export function EntryPage({
                 <span className={muted}>
                   {[
                     issued !== undefined &&
-                      `report of ${dayInWords(issued.slice(0, 10))}`,
+                      `report of ${dayOrAsWritten(issued)}`,
                     retrieved !== undefined &&
                       `retrieved ${onDaySaid(retrieved)}`,
                     arrived !== undefined &&
