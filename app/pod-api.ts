@@ -393,6 +393,21 @@ export function podApi(host: PodHost) {
     return titles.get(name) ?? name;
   }
 
+  /** A pod with no name on file takes the name of the person whose profile it has claimed; a name on file is kept. */
+  async function titledAfter(
+    name: string,
+    pod: Pod,
+    person: string | undefined,
+  ) {
+    if (person === undefined || pod.titled) return;
+    try {
+      await pod.retitle(person);
+      titles.set(name, person);
+    } catch (error) {
+      globalThis.console.error(error);
+    }
+  }
+
   async function held(tables = host.tables()) {
     return (await tables).held();
   }
@@ -1140,7 +1155,7 @@ export function podApi(host: PodHost) {
     const name = await known(given);
     const connection = connectionOf(name, n);
     if (connection.bringing !== undefined) return { step: "bringing in" };
-    const { files } =
+    const { files, pulled } =
       connection.step === "pulled" ? await filesOf(connection) : {};
     if (files === undefined) throw new Refusal("nothing pulled to bring in");
     const pod = await podNamed(name);
@@ -1159,10 +1174,13 @@ export function podApi(host: PodHost) {
         },
       })
       .then(
-        (done) => {
+        async (done) => {
           connection.imported = true;
-          if (done.refused === undefined) connection.broughtIn = true;
-          else connection.failed = `Refused: ${done.refused}`;
+          if (done.refused === undefined) {
+            connection.broughtIn = true;
+            if (done.claimedProfiles.length > 0)
+              await titledAfter(name, pod, patientName(pulled!.bundle));
+          } else connection.failed = `Refused: ${done.refused}`;
           last.delete(name);
         },
         (error: unknown) => {
