@@ -6,7 +6,6 @@ import {
   type Abouts,
   type Coded,
   day,
-  dayAt,
   dayAtInWords,
   LARGE,
   type Left,
@@ -160,7 +159,7 @@ export function TrendPage({
                 : drugs
                     .map(
                       (drug) =>
-                        `${drug.name}: ${therapySpan(drug, (on) => dayAt(timeOf(on)))}.`,
+                        `${drug.name}: ${therapySpan(drug, (on) => dayAtInWords(timeOf(on)))}.`,
                     )
                     .join(" ")
             }

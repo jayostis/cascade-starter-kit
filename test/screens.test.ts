@@ -3239,8 +3239,8 @@ describe("Seeing what changed after a medication · PodPage, TrendPage, withImpo
 
     it("says each medication's days in its lane", () => {
       for (const sentence of [
-        "Atorvastatin: prescribed Jan 1, 2024, from Mar 4, 2024, not stopped.",
-        "Metformin: prescribed May 1, 2023, from Jun 1, 2023 to Feb 1, 2024.",
+        "Atorvastatin: prescribed 1 January 2024, from 4 March 2024, not stopped.",
+        "Metformin: prescribed 1 May 2023, from 1 June 2023 to 1 February 2024.",
       ])
         assert.ok(lane.includes(sentence), lane);
     });
@@ -3315,7 +3315,7 @@ describe("Seeing what changed after a medication · PodPage, TrendPage, withImpo
       const lane = textAt(page, "trend-lane-desc");
       assert.ok(
         lane?.includes(
-          `${story.changes[0]!.medication.name}: prescribed Mar 4, 2024, start of use not known, not stopped.`,
+          `${story.changes[0]!.medication.name}: prescribed 4 March 2024, start of use not known, not stopped.`,
         ),
         lane,
       );
