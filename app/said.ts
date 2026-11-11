@@ -1053,9 +1053,15 @@ export function seenAt(answers: Answers): Map<string, Seen> {
   return seen;
 }
 
-/** An entry the sections do not show, named from its label: `Allergy entry · Latex` is a latex allergy. */
+/**
+ * An entry the sections do not show, named from its label: `Allergy entry · Latex` is a latex allergy. The view labels
+ * an entry with its kind, then its name if it has one, then its date if it has one, so `Allergy entry` and
+ * `Allergy entry · 2020-01-01` are allergies with no name.
+ */
 export function fromLabel(label = ""): Item {
-  const [kind = "", name = label] = label.split(" · ");
+  const [kind = "", second = "", ...rest] = label.split(" · ");
+  const name =
+    rest.length === 0 && /^\d{4}-\d\d-\d\d/.test(second) ? "" : second;
   return {
     name: name || UNNAMED,
     one: kind.replace(/ entry$/, "").toLowerCase() || "entry",
