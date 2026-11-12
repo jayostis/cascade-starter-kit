@@ -21,11 +21,15 @@ import { after, before, describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { type Browser, chromium, type Locator, type Page } from "playwright";
 import {
+  ANSWERS_KEPT,
   called,
+  drawn,
   inPlace,
   inputOf,
+  KEPT_PLAIN,
   listed,
   offered,
+  pathsThatShow,
   recordTools,
   type Registered,
   saysWhatEncryptionHides,
@@ -313,11 +317,86 @@ const podNames = async (): Promise<string[]> =>
     }
   ).pods.map(({ name }) => name);
 
+/** Opens the pod's page, finds Cascade North, signs in as Ines Calloway and waits for the connection's box. */
+async function signedInAsInes(page: Page, origin: string, pod: string) {
+  await page.goto(`${origin}/pods/${pod}/`);
+  await page.getByRole("link", { name: "Find a hospital" }).click();
+  await page
+    .getByRole("heading", { name: "Cascade North" })
+    .locator("xpath=..")
+    .getByRole("button", { name: "Sign in" })
+    .click();
+  await page.getByLabel("Calloway, Ines").check();
+  await page.getByRole("button", { name: "Allow" }).click();
+  const box = page.locator("#connection");
+  await box.getByRole("button", { name: /^Bring / }).waitFor();
+  return box;
+}
+
+/** Brings Ines Calloway's record from Cascade North into the pod `pod` of the app at `origin`, as a person does, and waits for the page to say it is in. */
+async function broughtInto(page: Page, origin: string, pod: string) {
+  const box = await signedInAsInes(page, origin, pod);
+  await box.getByRole("button", { name: /^Bring / }).click();
+  await page
+    .locator("main .note", { hasText: /^Brought in the record from / })
+    .waitFor({ timeout: 120_000 });
+}
+
+/**
+ * What the pod's page says and what each page it links to inside the pod says, in the order linked and at most `most`
+ * of them, with the pod's name and address replaced by `<pod>` so that two pods can be compared.
+ */
+async function pagesOf(
+  page: Page,
+  origin: string,
+  pod: string,
+  title: string,
+  most = 6,
+): Promise<{ at: string; said: string }[]> {
+  const named = (text: string) =>
+    text.replaceAll(title, "<pod>").replaceAll(pod, "<pod>");
+  const read = async (at: string) => {
+    await page.goto(`${origin}${at}`);
+    await drawn(page);
+    return {
+      at: named(at),
+      said: named(
+        (await page.locator("main").innerText()).replace(/\s+/g, " "),
+      ),
+    };
+  };
+  const home = `/pods/${pod}/`;
+  const first = await read(home);
+  const linked = await page
+    .locator("main a")
+    .evaluateAll((anchors) =>
+      anchors.map((anchor) => anchor.getAttribute("href") ?? ""),
+    );
+  const inside = [
+    ...new Set(
+      linked.filter(
+        (href) => href.startsWith(home) && href.length > home.length,
+      ),
+    ),
+  ].slice(0, most);
+  const pages = [first];
+  for (const href of inside) pages.push(await read(href));
+  return pages;
+}
+
 /** Makes an encrypted pod for `person` on the app `on` and confirms its six words, as the page does; gives the pod's name. */
 async function encryptedPod(
   person: string,
   on: Started = modelled,
 ): Promise<string> {
+  return (await encryptedPodWithWords(person, on)).pod;
+}
+
+/** Makes an encrypted pod as `encryptedPod` does; gives the pod's name and its six words. */
+async function encryptedPodWithWords(
+  person: string,
+  on: Started,
+): Promise<{ pod: string; words: string }> {
   const made = (await (
     await post(on.origin, "/api/makePod", { person, encrypt: true })
   ).json()) as { pod: string };
@@ -333,7 +412,7 @@ async function encryptedPod(
     username: made.pod,
   });
   assert.equal(opened.status, 200);
-  return made.pod;
+  return { pod: made.pod, words };
 }
 
 /** The page's `POST /chat` answered with `chunks` as the AI SDK's UI message stream, as the app's server answers; the model is still named by the app. */
@@ -1128,22 +1207,6 @@ describe("Connecting to a demo hospital · Sign in at", () => {
     await page.close();
   });
 
-  /** Opens the pod's page, finds Cascade North, signs in as Ines Calloway and waits for the connection's box. */
-  const signedInAsInes = async (page: Page, origin: string, pod: string) => {
-    await page.goto(`${origin}/pods/${pod}/`);
-    await page.getByRole("link", { name: "Find a hospital" }).click();
-    await page
-      .getByRole("heading", { name: "Cascade North" })
-      .locator("xpath=..")
-      .getByRole("button", { name: "Sign in" })
-      .click();
-    await page.getByLabel("Calloway, Ines").check();
-    await page.getByRole("button", { name: "Allow" }).click();
-    const box = page.locator("#connection");
-    await box.getByRole("button", { name: /^Bring / }).waitFor();
-    return box;
-  };
-
   test("with a pod made without a name, when a record is brought into it", async (t) => {
     // An app of its own: a pod titled "Ines Calloway" in the shared one (made above) would share the title.
     let own = await startStarter({});
@@ -1523,7 +1586,7 @@ describe("Encrypting a pod with six words · Encrypt this pod with six words", (
 
       await sealed.stop(true);
       await t.test(
-        "leaves no readable Turtle, name, title or kept answer in the pod's files once the app is stopped",
+        "leaves no readable Turtle, name, title or kept answer in the pod's files, and no kind or place in their names, once the app is stopped",
         async () => {
           const answersFolder = join(
             folder,
@@ -1536,6 +1599,14 @@ describe("Encrypting a pod with six words · Encrypt this pod with six words", (
           for (const sealedFolder of sealedFolders) {
             const files = await filesUnder(sealedFolder);
             assert.ok(files.length > 0, `${sealedFolder} holds files`);
+            assert.deepEqual(
+              pathsThatShow(
+                files,
+                sealedFolder === answersFolder ? ANSWERS_KEPT : KEPT_PLAIN,
+              ),
+              [],
+              `${sealedFolder} names a file by what it holds`,
+            );
             for (const file of files) {
               if (file.replaceAll("\\", "/") === "settings/encryption.json")
                 continue;
@@ -1587,6 +1658,93 @@ describe("Encrypting a pod with six words · Encrypt this pod with six words", (
       await again.close();
     } finally {
       await sealed.stop();
+    }
+  });
+
+  test("with an encrypted pod and a plain one, each holding Ines Calloway's record brought in", async (t) => {
+    let own = await startStarter({});
+    try {
+      const { pod, words } = await encryptedPodWithWords("Wren Sealed", own);
+      assert.equal(
+        (await post(own.origin, "/api/makePod", { person: "Wren Plain" }))
+          .status,
+        200,
+      );
+      const sealedPage = await newPage();
+      const plainPage = await newPage();
+      await Promise.all([
+        broughtInto(sealedPage, own.origin, pod),
+        broughtInto(plainPage, own.origin, "wren-plain"),
+      ]);
+      const sealedPages = await pagesOf(
+        sealedPage,
+        own.origin,
+        pod,
+        "Wren Sealed",
+      );
+      const plainPages = await pagesOf(
+        plainPage,
+        own.origin,
+        "wren-plain",
+        "Wren Plain",
+      );
+      await t.test("shows the same pages as the plain pod", () => {
+        assert.ok(sealedPages.length > 1, "the pod's page links to no page");
+        assert.deepEqual(sealedPages, plainPages);
+      });
+      await sealedPage.close();
+      await plainPage.close();
+
+      await own.stop(true);
+      const stored = join(own.folder, "pods", pod);
+      const files = await filesUnder(stored);
+      await t.test(
+        "keeps no kind, title or place in any file's name, and no record in any file",
+        async () => {
+          assert.ok(files.length > 5, `${files.length} files hold the record`);
+          assert.deepEqual(pathsThatShow(files), []);
+          for (const file of files) {
+            if (KEPT_PLAIN.includes(file.replaceAll("\\", "/"))) continue;
+            const text = await readFile(join(stored, file), "latin1");
+            for (const readable of ["@prefix", "Calloway", "Ines"])
+              assert.equal(text.includes(readable), false, `${file}`);
+          }
+        },
+      );
+
+      const [gone] = files.filter(
+        (file) => !KEPT_PLAIN.includes(file.replaceAll("\\", "/")),
+      );
+      await rm(join(stored, gone!));
+      own = await startStarter({}, own.folder);
+      const again = await newPage();
+      await again.goto(`${own.origin}/pods/${pod}/`);
+      await again.getByLabel("Your six words").fill(words);
+      await again.getByRole("button", { name: "Open this pod" }).click();
+      await again.locator("main", { hasText: /changed outside/ }).waitFor();
+      const said = (await again.locator("main").innerText()).replace(
+        /\s+/g,
+        " ",
+      );
+      await t.test(
+        "says in words that the pod was changed outside the app and to restore it from a copy, when a file of it is gone",
+        () => {
+          assert.match(
+            said,
+            /changed outside the app.*Restore the pod from a copy/,
+          );
+        },
+      );
+      await t.test(
+        "shows no outcome string and no stack, and asks for no words again",
+        async () => {
+          assert.doesNotMatch(said, /outside the runtime|Unopened|\bat .*:\d+/);
+          assert.equal(await again.getByLabel("Your six words").count(), 0);
+        },
+      );
+      await again.close();
+    } finally {
+      await own.stop();
     }
   });
 

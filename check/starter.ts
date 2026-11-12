@@ -8,10 +8,17 @@ import assert from "node:assert/strict";
 import { Buffer } from "node:buffer";
 import { execFileSync, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { request } from "node:http";
 import { createRequire } from "node:module";
-import { dirname, join, relative, resolve } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import { argv, cwd, env, execPath, kill, platform, stdout } from "node:process";
 import { pathToFileURL, URL } from "node:url";
 import { setTimeout } from "node:timers";
@@ -2407,6 +2414,67 @@ if (release === undefined) {
           await page.locator(".words li").nth(5).waitFor();
           saysWhatEncryptionHides(await page.locator("main").innerText());
           await page.close();
+        },
+      );
+
+      await behaviour(
+        "an encrypted pod with a file gone says in words that it was changed outside the app",
+        async () => {
+          const { pod } = await api(server, "makePod", {
+            person: "Annie Easley",
+            encrypt: true,
+          });
+          const { words } = await api(server, "waitingWords", { pod });
+          const six = words.split(" ");
+          await api(server, "confirmWords", {
+            pod,
+            word2: six[1],
+            word5: six[4],
+            password: words,
+            username: pod,
+          });
+          const stored = join(app, "pods", pod);
+          const kept = new Set([
+            "settings/encryption.json",
+            "README.md",
+            "provenance/egress-log.jsonl",
+          ]);
+          const gone = (
+            await readdir(stored, { withFileTypes: true, recursive: true })
+          )
+            .filter((entry) => entry.isFile())
+            .map((entry) =>
+              relative(stored, join(entry.parentPath, entry.name))
+                .split(sep)
+                .join("/"),
+            )
+            .find((file) => !kept.has(file));
+          assert.ok(gone, "the encrypted pod holds no file but the header");
+          await rm(join(stored, gone));
+          const restarted = await started();
+          try {
+            const page = await opened(await tab(), restarted, `/pods/${pod}/`);
+            await page.getByLabel("Your six words").fill(words);
+            await page.getByRole("button", { name: "Open this pod" }).click();
+            await page
+              .locator("main", { hasText: /changed outside/ })
+              .waitFor();
+            const said = (await readable(page)).replace(/\s+/g, " ");
+            assert.match(
+              said,
+              /changed outside the app.*Restore the pod from a copy/,
+            );
+            assert.doesNotMatch(said, /outside the runtime|Unopened/);
+            assert.equal(await page.getByLabel("Your six words").count(), 0);
+            await page.close();
+          } finally {
+            await restarted.stop();
+            await rm(stored, { recursive: true, force: true });
+            await rm(join(app, "pods", ".answers", pod), {
+              recursive: true,
+              force: true,
+            });
+          }
         },
       );
 

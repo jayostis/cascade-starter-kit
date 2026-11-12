@@ -185,6 +185,32 @@ export function saysWhatEncryptionHides(text: string): void {
     assert.match(said, words, `the six words do not say ${claim}`);
 }
 
+/** What a stored encrypted pod keeps in the clear, by path: its header, its README and its egress log. */
+export const KEPT_PLAIN: readonly string[] = [
+  "settings/encryption.json",
+  "README.md",
+  "provenance/egress-log.jsonl",
+];
+
+/** Every other path of a stored encrypted pod: the sealed index, or a sealed file named by a keyed hash, in a folder of its first two letters. */
+const SEALED_PATH = /^sealed\/(?:index|[0-9a-f]{2}\/[0-9a-f]{62})$/;
+
+/** The two files the runtime keeps a pod's answers and title in, beside the pod, under these names whatever the pod holds. */
+export const ANSWERS_KEPT: readonly string[] = ["answers.json", "pod.json"];
+
+/**
+ * The paths of a stored encrypted pod that are neither kept in the clear (`plain`, the pod's own by default) nor
+ * sealed: any that says a record's kind, title or place.
+ */
+export function pathsThatShow(
+  paths: readonly string[],
+  plain: readonly string[] = KEPT_PLAIN,
+): string[] {
+  return paths
+    .map((path) => path.replaceAll("\\", "/"))
+    .filter((path) => !plain.includes(path) && !SEALED_PATH.test(path));
+}
+
 /** What a person reads of the page: the text of its body, its scripts and styles left out, its closed boxes kept. */
 export function readable(page: Page): Promise<string> {
   return page.evaluate(() => {

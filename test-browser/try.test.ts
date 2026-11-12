@@ -40,13 +40,16 @@ import { openPodWith } from "cascade-runtime/published";
 import { type Served, servePages } from "../try/build/serve.js";
 import {
   allowAs,
+  ANSWERS_KEPT,
   bringIn,
   called,
   inPlace,
   inputOf,
+  KEPT_PLAIN,
   listed,
   newPod,
   offered,
+  pathsThatShow,
   recordTools,
   type Registered,
   saysWhatEncryptionHides,
@@ -656,6 +659,96 @@ async function storedIn(
     database.close();
     return found;
   }, name);
+}
+
+/** Removes the value kept under `key` in the database `name`, in whichever of its object stores holds one. */
+async function forgetKey(page: Page, name: string, key: string): Promise<void> {
+  await page.evaluate(
+    async ({ name, key }) => {
+      const database = await new Promise<IDBDatabase>((done, failed) => {
+        const opening = indexedDB.open(name);
+        opening.onerror = () => failed(opening.error);
+        opening.onsuccess = () => done(opening.result);
+      });
+      const stores = [...database.objectStoreNames];
+      const transaction = database.transaction(stores, "readwrite");
+      for (const store of stores) transaction.objectStore(store).delete(key);
+      await new Promise<void>((done, failed) => {
+        transaction.onerror = () => failed(transaction.error);
+        transaction.oncomplete = () => done();
+      });
+      database.close();
+    },
+    { name, key },
+  );
+}
+
+/** Makes the encrypted pod for `person` from try/'s home, as the page asks, and gives its six words. */
+async function madeEncrypted(page: Page, person: string): Promise<string[]> {
+  await page.goto(`${served.url}${AT.home}`);
+  await settled(page);
+  await page.click('a[href="#new-pod"]');
+  await page.check("#encrypt-pod");
+  await page.fill('#new-pod input[aria-label="A person\'s name"]', person);
+  await inPlace(page, () =>
+    page.click('#new-pod button:has-text("Make the pod")'),
+  );
+  const words = await page.locator(".words li").allTextContents();
+  await page.fill('input[name="word2"]', words[1]!);
+  await page.fill('input[name="word5"]', words[4]!);
+  await inPlace(page, () =>
+    page.click('button:has-text("Make the encrypted pod")'),
+  );
+  return words;
+}
+
+/** Makes the plain pod for `person` from try/'s home. */
+async function madePlain(page: Page, person: string): Promise<void> {
+  await page.goto(`${served.url}${AT.home}`);
+  await settled(page);
+  await page.click('a[href="#new-pod"]');
+  await page.fill('#new-pod input[aria-label="A person\'s name"]', person);
+  await inPlace(page, () =>
+    page.click('#new-pod button:has-text("Make the pod")'),
+  );
+}
+
+/**
+ * What the pod's page says and what each page it links to inside the pod says, in the order linked and at most `most`
+ * of them, each reached by a click in the page and the pod's page reached again from the sidebar.
+ */
+async function pagesOf(
+  page: Page,
+  pod: string,
+  most = 6,
+): Promise<{ at: string; said: string }[]> {
+  const read = async () => {
+    const { pathname, search } = new URL(page.url());
+    return {
+      at: pathname + search,
+      said: (await page.locator("main").innerText()).replace(/\s+/g, " "),
+    };
+  };
+  const home = `/${AT.pod(pod)}`;
+  const pages = [await read()];
+  const linked = await page
+    .locator("main a:visible")
+    .evaluateAll((anchors) =>
+      anchors.map((anchor) => anchor.getAttribute("href") ?? ""),
+    );
+  const inside = [
+    ...new Set(
+      linked.filter(
+        (href) => href.startsWith(home) && href.length > home.length,
+      ),
+    ),
+  ].slice(0, most);
+  for (const href of inside) {
+    await inPlace(page, () => page.click(`main a[href="${href}"]:visible`));
+    pages.push(await read());
+    await inPlace(page, () => page.click('aside nav a[aria-current="page"]'));
+  }
+  return pages;
 }
 
 /** The words of `words` that the page's local or session storage holds. */
@@ -4292,9 +4385,19 @@ describe("Encrypting a pod with six words · Encrypt this pod with six words", (
         databases.push({ database, stored });
       }
       await t.test(
-        "keeps nothing readable in the pod's database or its answers'",
+        "keeps nothing readable, and no kind or place in a key, in the pod's database or its answers'",
         async () => {
-          for (const { stored } of databases)
+          for (const { database, stored } of databases) {
+            assert.deepEqual(
+              pathsThatShow(
+                stored.map(({ key }) => key),
+                database.startsWith("cascade-answers:")
+                  ? ANSWERS_KEPT
+                  : KEPT_PLAIN,
+              ),
+              [],
+              `${database} keys a value by what it holds`,
+            );
             for (const { key, text } of stored) {
               if (key === "settings/encryption.json") continue;
               assert.ok(text.length > 0, key);
@@ -4306,6 +4409,7 @@ describe("Encrypting a pod with six words · Encrypt this pod with six words", (
                 );
               assert.throws(() => JSON.parse(text), `${key} parses as JSON`);
             }
+          }
         },
       );
 
@@ -4373,6 +4477,102 @@ describe("Encrypting a pod with six words · Encrypt this pod with six words", (
       );
     } finally {
       await context.close();
+    }
+  });
+
+  test("with an encrypted pod and a plain one, each holding Ines Calloway's record brought in", async (t) => {
+    const { hospital: north, patient } = await demoPatient("Ines Calloway");
+    const sealedContext = await browser.newContext();
+    const plainContext = await browser.newContext();
+    try {
+      const sealed = watched(await sealedContext.newPage());
+      const plain = watched(await plainContext.newPage());
+      const words = await madeEncrypted(sealed, "Ines Calloway");
+      await madePlain(plain, "Ines Calloway");
+      await Promise.all(
+        [sealed, plain].map(async (page) => {
+          await page.waitForFunction(
+            () => navigator.serviceWorker.controller !== null,
+          );
+          await allowAs(
+            page,
+            await signInAt(page, view.hospitalName(north.name)),
+            patient,
+          );
+          await bringIn(page);
+        }),
+      );
+
+      const sealedPages = await pagesOf(sealed, "ines-calloway");
+      await t.test("shows the same pages as the plain pod", async () => {
+        assert.ok(sealedPages.length > 1, "the pod's page links to no page");
+        assert.deepEqual(sealedPages, await pagesOf(plain, "ines-calloway"));
+      });
+
+      const databases = new Map<string, { key: string; text: string }[]>();
+      for (const database of [
+        "cascade-pod:ines-calloway",
+        "cascade-answers:ines-calloway",
+      ])
+        databases.set(database, await storedIn(sealed, database));
+      await t.test(
+        "keeps no kind, title or place in any key, and no record in any value",
+        () => {
+          for (const [database, stored] of databases) {
+            const keys = stored.map(({ key }) => key);
+            const pod = database.startsWith("cascade-pod:");
+            if (pod)
+              assert.ok(keys.length > 5, `${keys.length} keys hold the record`);
+            assert.deepEqual(
+              pathsThatShow(keys, pod ? KEPT_PLAIN : ANSWERS_KEPT),
+              [],
+              `${database} keys a value by what it holds`,
+            );
+            for (const { key, text } of stored) {
+              if (KEPT_PLAIN.includes(key)) continue;
+              for (const readable of ["@prefix", "Calloway", "Ines"])
+                assert.equal(text.includes(readable), false, `${key}`);
+            }
+          }
+        },
+      );
+
+      const [gone] = (databases.get("cascade-pod:ines-calloway") ?? [])
+        .map(({ key }) => key)
+        .filter((key) => !KEPT_PLAIN.includes(key));
+      await forgetKey(sealed, "cascade-pod:ines-calloway", gone!);
+      await sealed.goto(`${served.url}${AT.pod("ines-calloway")}`);
+      await settled(sealed);
+      await sealed.fill('input[name="password"]', words.join(" "));
+      await inPlace(sealed, () =>
+        sealed.click('button:has-text("Open this pod")'),
+      );
+      const said = ((await sealed.textContent("main")) ?? "").replace(
+        /\s+/g,
+        " ",
+      );
+      await t.test(
+        "says in words that the pod was changed outside the app and to restore it from a copy, when a value of it is gone",
+        () => {
+          assert.match(
+            said,
+            /changed outside the app.*Restore the pod from a copy/,
+          );
+        },
+      );
+      await t.test(
+        "shows no outcome string and no stack, and asks for no words again",
+        async () => {
+          assert.doesNotMatch(said, /outside the runtime|Unopened|\bat .*:\d+/);
+          assert.equal(
+            await sealed.locator('input[name="password"]').count(),
+            0,
+          );
+        },
+      );
+    } finally {
+      await sealedContext.close();
+      await plainContext.close();
     }
   });
 });
