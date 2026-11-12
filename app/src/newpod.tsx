@@ -379,8 +379,9 @@ export function SixWords({
       <p className={muted}>
         Encryption hides what the records say and the names of the files they
         are kept in. It does not hide that this pod exists, its name, how many
-        files it has, how big they are or when they were written. Nor can it
-        tell when the whole pod is swapped for an older copy of itself.
+        files it has, how big they are or when they were written. If someone
+        puts back an older copy of the pod, or of some of its files saved at the
+        same moment, the app cannot tell.
       </p>
       {did?.problem !== undefined && (
         <p className={note} role="alert">

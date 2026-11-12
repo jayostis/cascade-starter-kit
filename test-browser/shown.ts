@@ -174,8 +174,8 @@ const SIX_WORDS_SAY: Readonly<Record<string, RegExp>> = {
   "that the number of files shows": /how many files it has/,
   "that the files' sizes show": /how big they are/,
   "that when the files were written shows": /when they were written/,
-  "that a whole pod put back from an older copy goes unseen":
-    /whole pod.*older copy/,
+  "that an older copy of the pod, or of some of its files, put back goes unseen":
+    /older copy of the pod, or of some of its files saved at the same moment, the app cannot tell/,
 };
 
 /** Fails unless `text`, the six-words screen as a person reads it, says each thing `SIX_WORDS_SAY` lists. */
