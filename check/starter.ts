@@ -31,6 +31,7 @@ import {
 import {
   drawn,
   readable,
+  saysWhatEncryptionHides,
   settled,
   tiles,
   watched,
@@ -2395,6 +2396,19 @@ if (release === undefined) {
           );
         }
       });
+
+      await behaviour(
+        "an encrypted pod's six words say what encryption hides and what it does not",
+        async () => {
+          const page = await opened(await tab(), server, "/#new-pod");
+          await page.getByLabel("Encrypt this pod with six words").check();
+          await page.getByLabel("A person's name").fill("Edith Clarke");
+          await page.getByRole("button", { name: "Make the pod" }).click();
+          await page.locator(".words li").nth(5).waitFor();
+          saysWhatEncryptionHides(await page.locator("main").innerText());
+          await page.close();
+        },
+      );
 
       /** Whether the new-pod box over the pod's page, open in `page`, offers the demo person listed as `choice`. */
       const offers = async (page, choice) =>

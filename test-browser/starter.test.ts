@@ -28,6 +28,7 @@ import {
   offered,
   recordTools,
   type Registered,
+  saysWhatEncryptionHides,
 } from "./shown.js";
 
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
@@ -1350,6 +1351,12 @@ describe("Encrypting a pod with six words · Encrypt this pod with six words", (
       await t.test("shows six words", async () => {
         assert.equal(words.length, 6);
       });
+      await t.test(
+        "says what encryption hides and what it does not",
+        async () => {
+          saysWhatEncryptionHides(await page.locator("main").innerText());
+        },
+      );
 
       const confirm = page.locator("form", {
         has: page.locator('input[name="word2"]'),

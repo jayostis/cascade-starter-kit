@@ -165,6 +165,26 @@ export async function drawn(page: Page, timeout = 120_000): Promise<void> {
     );
 }
 
+/** What the six-words screen must say of what encryption hides and what it does not, each as the words it is said in. */
+const SIX_WORDS_SAY: Readonly<Record<string, RegExp>> = {
+  "that the records' contents are hidden": /hides what the records say/,
+  "that the files' names are hidden": /names of the files/,
+  "that the pod's existence shows": /not hide that this pod exists/,
+  "that the pod's name shows": /exists, its name/,
+  "that the number of files shows": /how many files it has/,
+  "that the files' sizes show": /how big they are/,
+  "that when the files were written shows": /when they were written/,
+  "that a whole pod put back from an older copy goes unseen":
+    /whole pod.*older copy/,
+};
+
+/** Fails unless `text`, the six-words screen as a person reads it, says each thing `SIX_WORDS_SAY` lists. */
+export function saysWhatEncryptionHides(text: string): void {
+  const said = text.replace(/\s+/g, " ");
+  for (const [claim, words] of Object.entries(SIX_WORDS_SAY))
+    assert.match(said, words, `the six words do not say ${claim}`);
+}
+
 /** What a person reads of the page: the text of its body, its scripts and styles left out, its closed boxes kept. */
 export function readable(page: Page): Promise<string> {
   return page.evaluate(() => {
