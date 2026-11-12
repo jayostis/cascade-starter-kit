@@ -377,8 +377,10 @@ export function SixWords({
         pod's records are gone for good.
       </p>
       <p className={muted}>
-        Encryption hides what the records say. It does not hide that this pod
-        exists, its name, how many files it has or their sizes.
+        Encryption hides what the records say and the names of the files they
+        are kept in. It does not hide that this pod exists, its name, how many
+        files it has, how big they are or when they were written. Nor can it
+        tell when the whole pod is swapped for an older copy of itself.
       </p>
       {did?.problem !== undefined && (
         <p className={note} role="alert">
