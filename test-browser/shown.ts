@@ -192,8 +192,8 @@ export const KEPT_PLAIN: readonly string[] = [
   "provenance/egress-log.jsonl",
 ];
 
-/** Every other path of a stored encrypted pod: the sealed index, or a sealed file named by a keyed hash, in a folder of its first two letters. */
-const SEALED_PATH = /^sealed\/(?:index|[0-9a-f]{2}\/[0-9a-f]{62})$/;
+/** Every other path of a stored encrypted pod: a generation of the sealed index, or a sealed file named by a keyed hash, in a folder of its first two letters. */
+const SEALED_PATH = /^sealed\/(?:index\/\d+|[0-9a-f]{2}\/[0-9a-f]{62})$/;
 
 /** The two files the runtime keeps a pod's answers and title in, beside the pod, under these names whatever the pod holds. */
 export const ANSWERS_KEPT: readonly string[] = ["answers.json", "pod.json"];
