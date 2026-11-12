@@ -28,9 +28,16 @@ puts the app back as it was made.
 npm start
 ```
 
-then open <http://127.0.0.1:3000/>. The first start builds the app's pages into
-`dist/`, and a start after you change one of its files builds them again. Or
-run the same app in your browser alone, with no server behind it:
+then open the address it prints, `http://127.0.0.1:3000/?launch=` and a code. The
+code is new at each start and opens the app once: the server trades it for a
+cookie that only that browser holds, and answers no pod's data to a request
+without the cookie, so another program on the machine cannot read your pods by
+naming the right address. To open the app again after closing the browser,
+stop `npm start` and start it again. The first start builds the app's pages into
+`dist/`, and a start after you change one of its files builds them again. An
+encrypted pod you opened is closed, and asks for its six words again, after 15
+minutes with no request from the page, or when you press Lock. Or run the same
+app in your browser alone, with no server behind it:
 
 ```sh
 npm run browser

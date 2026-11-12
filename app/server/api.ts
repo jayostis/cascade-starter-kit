@@ -88,6 +88,9 @@ export function apiRoutes(api: Operations) {
     .post("/api/makePod", checked("makePod"), async (c) =>
       c.json(await api.makePod(c.req.valid("json"))),
     )
+    .post("/api/waiting", checked("waiting"), async (c) =>
+      c.json(await api.waiting(c.req.valid("json"))),
+    )
     .post("/api/waitingWords", checked("waitingWords"), async (c) =>
       c.json(await api.waitingWords(c.req.valid("json"))),
     )
@@ -96,6 +99,9 @@ export function apiRoutes(api: Operations) {
     )
     .post("/api/unlock", checked("unlock"), async (c) =>
       c.json(await api.unlock(c.req.valid("json"))),
+    )
+    .post("/api/lock", checked("lock"), async (c) =>
+      c.json(await api.lock(c.req.valid("json"))),
     )
     .post("/api/deleteAll", checked("deleteAll"), async (c) =>
       c.json(await api.deleteAll(c.req.valid("json"))),

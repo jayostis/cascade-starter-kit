@@ -133,6 +133,8 @@ function builtOnce(): Promise<string> {
 
 type Started = {
   origin: string;
+  /** The address the server printed, whose token is traded once for the cookie. */
+  launch: string;
   folder: string;
   stop: (keep?: boolean) => Promise<void>;
 };
@@ -145,6 +147,7 @@ type Started = {
 async function startStarter(
   env: Record<string, string>,
   again?: string,
+  { trade = true } = {},
 ): Promise<Started> {
   const folder = again ?? (await mkdtemp(join(tmpdir(), "t273-")));
   if (again === undefined) {
@@ -181,15 +184,21 @@ async function startStarter(
   });
   let said = "";
   child.stderr!.on("data", (chunk: Buffer) => (said += chunk));
-  const origin = await new Promise<string>((found, failed) => {
-    child.stdout!.on("data", (chunk: Buffer) => {
-      const at = /http:\/\/127\.0\.0\.1:\d+/.exec(chunk.toString());
-      if (at) found(at[0]);
-    });
-    child.on("exit", () => failed(new Error(`the starter stopped: ${said}`)));
-  });
+  const [origin, launch] = await new Promise<[string, string]>(
+    (found, failed) => {
+      child.stdout!.on("data", (chunk: Buffer) => {
+        const at = /(http:\/\/127\.0\.0\.1:\d+)\/\?launch=[\w-]+/.exec(
+          chunk.toString(),
+        );
+        if (at) found([at[1]!, at[0]]);
+      });
+      child.on("exit", () => failed(new Error(`the starter stopped: ${said}`)));
+    },
+  );
+  if (trade) await tradeLaunch(origin, launch);
   return {
     origin,
+    launch,
     folder,
     async stop(keep = false) {
       const exited = new Promise((done) => child.on("exit", done));
@@ -202,10 +211,48 @@ async function startStarter(
   };
 }
 
+/** The cookie of each started copy, as a request carries it, by its origin; a cookie's name has the port in it. */
+const cookies = new Map<string, string>();
+
+/** Opens the address the server printed as a page does, and keeps the cookie it is given for `post()` and the browser's pages. */
+async function tradeLaunch(origin: string, launch: string) {
+  const answered = await fetch(launch, { redirect: "manual" });
+  assert.equal(
+    answered.status,
+    303,
+    "the printed address is traded for a cookie",
+  );
+  const [pair = ""] = (answered.headers.get("set-cookie") ?? "").split(";");
+  assert.match(pair, /^cascade-launch-\d+=/);
+  cookies.set(origin, pair);
+}
+
+/** A page whose browser holds the cookie of every copy started so far, and closes its context with it. */
+async function newPage(options: Parameters<Browser["newContext"]>[0] = {}) {
+  const context = await browser.newContext(options);
+  await jarred(context);
+  const page = await context.newPage();
+  page.on("close", () => void context.close());
+  return page;
+}
+
+/** Puts the cookie of every copy started so far into `context`. */
+const jarred = (context: Awaited<ReturnType<Browser["newContext"]>>) =>
+  context.addCookies(
+    [...cookies].map(([origin, pair]) => {
+      const [name = "", ...value] = pair.split("=");
+      return { name, value: value.join("="), url: origin };
+    }),
+  );
+
 const post = (origin: string, path: string, body: object) =>
   fetch(origin + path, {
     method: "POST",
-    headers: { origin, "content-type": "application/json" },
+    headers: {
+      origin,
+      "content-type": "application/json",
+      cookie: cookies.get(origin) ?? "",
+    },
     body: JSON.stringify(body),
   });
 
@@ -342,7 +389,7 @@ const isPost = (request: { url(): string; method(): string }) =>
 
 /** A page with the chat window open on a long answer about a long label, in a window of this size. */
 const openOnLongAnswer = async (width: number, height: number) => {
-  const page = await browser.newPage({ viewport: { width, height } });
+  const page = await newPage({ viewport: { width, height } });
   await answering(page, saying("A long answer. ".repeat(400)));
   await page.goto(`${modelled.origin}/pods/ines-calloway/`);
   const label = "A long label about one finding of the pod. ".repeat(6);
@@ -374,7 +421,7 @@ async function filesUnder(folder: string): Promise<string[]> {
  */
 describe("Chatting with a model about a pod · add-ons/chat", () => {
   test("when a model answers a question with a request to open another pod", async (t) => {
-    const page = await browser.newPage();
+    const page = await newPage();
     await page.goto(`${modelled.origin}/pods/ada-lovelace/`);
     await inPlace(page, async () => {
       await ask(page, ASKS);
@@ -440,7 +487,7 @@ describe("Chatting with a model about a pod · add-ons/chat", () => {
   });
 
   test("when a person clicks to another pod after a chat about the pod shown", async (t) => {
-    const page = await browser.newPage();
+    const page = await newPage();
     await page.goto(`${modelled.origin}/pods/ines-calloway/`);
     await ask(page, ASKS);
     await page.locator(".chat-log .model", { hasText: "Done." }).waitFor();
@@ -462,7 +509,7 @@ describe("Chatting with a model about a pod · add-ons/chat", () => {
   });
 
   test("when Stop is pressed while the model is answering", async (t) => {
-    const page = await browser.newPage();
+    const page = await newPage();
     await page.goto(`${modelled.origin}/pods/ada-lovelace/`);
     await ask(page, "tell me a long story");
     await page.locator(".chat-log .model", { hasText: "Once upon" }).waitFor();
@@ -480,7 +527,7 @@ describe("Chatting with a model about a pod · add-ons/chat", () => {
   });
 
   test("with no model set", async (t) => {
-    const page = await browser.newPage();
+    const page = await newPage();
     await page.goto(`${bare.origin}/`);
     await page.locator(".chat-off").waitFor();
     await t.test("says to run `npm run model`", async () => {
@@ -497,7 +544,7 @@ describe("Chatting with a model about a pod · add-ons/chat", () => {
 
   test("with a model set", async (t) => {
     const seen: Promise<string>[] = [];
-    const seeing = await browser.newPage();
+    const seeing = await newPage();
     seeing.on("request", (request) =>
       seen.push(
         Promise.resolve(`${request.url()} ${request.postData() ?? ""}`),
@@ -569,7 +616,7 @@ describe("Chatting with a model about a pod · add-ons/chat", () => {
         },
       ],
     };
-    const page = await browser.newPage();
+    const page = await newPage();
     await answering(page, [
       { type: "start-step" },
       {
@@ -630,7 +677,7 @@ describe("Chatting with a model about a pod · add-ons/chat", () => {
   });
 
   test("when a person clicks Ask about this on an entry", async (t) => {
-    const page = await browser.newPage();
+    const page = await newPage();
     await answering(page, saying("Here it is."));
     await page.goto(`${modelled.origin}/pods/ines-calloway/`);
     await page.getByLabel("Ask a question").waitFor();
@@ -696,7 +743,7 @@ describe("Chatting with a model about a pod · add-ons/chat", () => {
   });
 
   test("when Ask about this is double-clicked", async (t) => {
-    const page = await browser.newPage();
+    const page = await newPage();
     await answering(page, saying("Here it is."));
     await page.goto(`${modelled.origin}/pods/ines-calloway/`);
     await page.getByLabel("Ask a question").waitFor();
@@ -722,7 +769,7 @@ describe("Chatting with a model about a pod · add-ons/chat", () => {
  */
 describe("Confirming a write a model asks for · make_pod", () => {
   test("when the model asks to make a pod and the person presses Cancel", async (t) => {
-    const page = await browser.newPage();
+    const page = await newPage();
     await page.goto(`${modelled.origin}/pods/ada-lovelace/`);
     const asking = page.getByRole("alertdialog");
     await ask(page, "make a pod for Cora Diaz");
@@ -748,7 +795,7 @@ describe("Confirming a write a model asks for · make_pod", () => {
   });
 
   test("when the model asks to make a pod and the person presses Allow", async (t) => {
-    const page = await browser.newPage();
+    const page = await newPage();
     await page.goto(`${modelled.origin}/pods/ada-lovelace/`);
     await ask(page, "make a pod for Cora Diaz");
     await page
@@ -769,7 +816,7 @@ describe("Confirming a write a model asks for · make_pod", () => {
   });
 
   test("when the chat is closed while a write waits for its answer", async (t) => {
-    const page = await browser.newPage();
+    const page = await newPage();
     await page.goto(`${modelled.origin}/pods/ada-lovelace/`);
     const posts: string[] = [];
     page.on("request", (request) => {
@@ -885,7 +932,7 @@ describe("Fitting the chat window on a small screen · add-ons/chat", () => {
   });
 
   test("with a long answer open in a desktop window", async (t) => {
-    const page = await browser.newPage({
+    const page = await newPage({
       viewport: { width: 1100, height: 850 },
     });
     await answering(page, saying("A long answer. ".repeat(400)));
@@ -934,9 +981,61 @@ describe("Fitting the chat window on a small screen · add-ons/chat", () => {
   });
 });
 
+/** `npm start` prints an address with a token that is traded once for the cookie the pages' reads of a pod need. */
+describe("Opening the app from the address it printed · ?launch=<token>", () => {
+  test("with a copy that has not been opened yet", async (t) => {
+    const fresh = await startStarter({}, undefined, { trade: false });
+    try {
+      const context = await browser.newContext();
+      const page = await context.newPage();
+      await page.goto(fresh.launch);
+      await page.getByRole("heading", { name: "Pods" }).waitFor();
+      await t.test(
+        "leaves the app at its own address, with no token in it, and shows the pods",
+        async () => {
+          assert.equal(page.url(), `${fresh.origin}/`);
+          assert.equal((await page.locator("aside nav a").count()) > 0, true);
+        },
+      );
+      await t.test(
+        "holds a cookie that the page's own script cannot read, and that other sites do not send",
+        async () => {
+          const [cookie, ...rest] = await context.cookies(fresh.origin);
+          assert.equal(rest.length, 0);
+          assert.match(cookie!.name, /^cascade-launch-\d+$/);
+          assert.equal(cookie!.httpOnly, true);
+          assert.equal(cookie!.sameSite, "Strict");
+          assert.equal(cookie!.path, "/");
+          assert.equal(await page.evaluate(() => document.cookie), "");
+          assert.ok(!fresh.launch.includes(cookie!.value));
+        },
+      );
+      const again = await browser.newContext();
+      const second = await again.newPage();
+      const answered = await second.goto(fresh.launch);
+      await t.test(
+        "refuses the same address in another browser, which says to start the app again",
+        async () => {
+          assert.equal(answered?.status(), 403);
+          assert.match(
+            (await second.locator("body").textContent()) ?? "",
+            /Start the app again/,
+          );
+          assert.deepEqual(await again.cookies(fresh.origin), []);
+        },
+      );
+      await context.close();
+      await again.close();
+    } finally {
+      await fresh.stop();
+    }
+  });
+});
+
 describe("Offering the app's tools to a browser's agent · document.modelContext", () => {
   test("with the app served by Node", async (t) => {
     const context = await browser.newContext();
+    await jarred(context);
     await context.addInitScript(recordTools);
     try {
       const page = await context.newPage();
@@ -985,7 +1084,7 @@ describe("Connecting to a demo hospital · Sign in at", () => {
       person: "Ines Calloway",
     });
     assert.equal(made.status, 200);
-    const page = await browser.newPage();
+    const page = await newPage();
     await page.goto(`${bare.origin}/pods/ines-calloway/`);
     const signIn = page.getByRole("button", { name: /^Sign in at / }).first();
     await signIn.click();
@@ -1055,7 +1154,7 @@ describe("Connecting to a demo hospital · Sign in at", () => {
         cwd: own.folder,
       },
     );
-    const page = await browser.newPage();
+    const page = await newPage();
     const box = await signedInAsInes(page, own.origin, "walker-test");
     await t.test(
       "says the record is Ines Calloway's and bringing it in makes this her pod",
@@ -1106,7 +1205,7 @@ describe("Connecting to a demo hospital · Sign in at", () => {
 
     await own.stop(true);
     own = await startStarter({}, own.folder);
-    const again = await browser.newPage();
+    const again = await newPage();
     await again.goto(`${own.origin}/pods/walker-test/`);
     await again.locator("main h1", { hasText: /\S/ }).first().waitFor();
     await t.test(
@@ -1127,7 +1226,7 @@ describe("Connecting to a demo hospital · Sign in at", () => {
 
   test("with an encrypted pod made with a name, when another person's record is brought into it", async (t) => {
     const pod = await encryptedPod("Cy Sealed", bare);
-    const page = await browser.newPage();
+    const page = await newPage();
     const box = await signedInAsInes(page, bare.origin, pod);
     await t.test(
       "says whose record it is and that the pod keeps its name, and names no one else as the pod's owner",
@@ -1168,7 +1267,7 @@ describe("Connecting to a demo hospital · Sign in at", () => {
       person: "Ada Lovelace",
     });
     assert.equal(made.status, 200);
-    const page = await browser.newPage();
+    const page = await newPage();
     await page.goto(`${bare.origin}/pods/ada-lovelace/connections/999`);
     await page.locator("h1", { hasText: /^Ada Lovelace$/ }).waitFor();
     await t.test("opens no box for a connection the pod lacks", async () => {
@@ -1186,7 +1285,7 @@ describe("Connecting to a demo hospital · Sign in at", () => {
 describe("Encrypting a pod with six words · Encrypt this pod with six words", () => {
   test("with an encrypted pod's chat", async (t) => {
     const pod = await encryptedPod("Grace Hopper");
-    const page = await browser.newPage();
+    const page = await newPage();
     await page.goto(`${modelled.origin}/pods/${pod}/`);
     await ask(page, "tell me a long story about Grace");
     await page.locator(".chat-log .model", { hasText: "Once upon" }).waitFor();
@@ -1208,7 +1307,7 @@ describe("Encrypting a pod with six words · Encrypt this pod with six words", (
    */
   test("when an answer moves the chat to another pod before the app knows the pod is encrypted", async (t) => {
     const pod = await encryptedPod("Katherine Johnson");
-    const page = await browser.newPage();
+    const page = await newPage();
     let release = () => {};
     const held = new Promise<void>((done) => (release = done));
     await page.route("**/api/pod", async (route) => {
@@ -1242,7 +1341,7 @@ describe("Encrypting a pod with six words · Encrypt this pod with six words", (
     const made = async (): Promise<string[]> =>
       await readdir(join(folder, "pods"));
     try {
-      const page = await browser.newPage();
+      const page = await newPage();
       await page.goto(`${sealed.origin}/#new-pod`);
       await page.getByLabel("Encrypt this pod with six words").check();
       await page.getByLabel("A person's name").fill("Grace Hopper");
@@ -1399,6 +1498,21 @@ describe("Encrypting a pod with six words · Encrypt this pod with six words", (
           assert.ok((await made()).includes("grace-hopper"));
         },
       );
+      await page.getByRole("button", { name: "Lock" }).click();
+      await page.getByLabel("Your six words").waitFor();
+      await t.test(
+        "asks for the six words again once Lock is pressed, at the address it was on",
+        async () => {
+          assert.equal(page.url(), `${sealed.origin}/pods/grace-hopper/`);
+          assert.match(
+            (await page.locator("main").textContent()) ?? "",
+            /Open Grace Hopper's pod/,
+          );
+        },
+      );
+      await page.getByLabel("Your six words").fill(words.join(" "));
+      await page.getByRole("button", { name: "Open this pod" }).click();
+      await page.locator("main", { hasText: /Grace Hopper/ }).waitFor();
       await page.close();
 
       await sealed.stop(true);
@@ -1434,7 +1548,7 @@ describe("Encrypting a pod with six words · Encrypt this pod with six words", (
       );
 
       sealed = await startStarter({}, folder);
-      const again = await browser.newPage();
+      const again = await newPage();
       await again.goto(`${sealed.origin}/pods/grace-hopper/`);
       await again
         .getByLabel("Your six words")
@@ -1471,14 +1585,14 @@ describe("Encrypting a pod with six words · Encrypt this pod with six words", (
   });
 
   test("when a plain pod takes the name while an encrypted one waits for its words", async (t) => {
-    const racing = await browser.newPage();
+    const racing = await newPage();
     await racing.goto(`${modelled.origin}/#new-pod`);
     await racing.getByLabel("Encrypt this pod with six words").check();
     await racing.getByLabel("A person's name").fill("Alan Turing");
     await racing.getByRole("button", { name: "Make the pod" }).click();
     await racing.locator(".words li").nth(5).waitFor();
     const racingWords = await racing.locator(".words li").allTextContents();
-    const plain = await browser.newPage();
+    const plain = await newPage();
     await plain.goto(`${modelled.origin}/#new-pod`);
     await plain.getByLabel("A person's name").fill("Alan Turing");
     await plain.getByRole("button", { name: "Make the pod" }).click();
@@ -1511,5 +1625,81 @@ describe("Encrypting a pod with six words · Encrypt this pod with six words", (
     });
     await racing.close();
     await plain.close();
+  });
+
+  /** Makes an encrypted pod for `person` in `page`'s box and waits for its six words; gives them. */
+  const sixWordsOf = async (page: Page, on: Started, person: string) => {
+    await page.goto(`${on.origin}/#new-pod`);
+    await page.getByLabel("Encrypt this pod with six words").check();
+    await page.getByLabel("A person's name").fill(person);
+    await page.getByRole("button", { name: "Make the pod" }).click();
+    await page.locator(".words li").nth(5).waitFor();
+    return page.locator(".words li").allTextContents();
+  };
+
+  test("when the words screen is loaded again", async (t) => {
+    const page = await newPage();
+    const first = await sixWordsOf(page, modelled, "Mary Jackson");
+    await page.reload();
+    await page.locator("main", { hasText: /shown once/ }).waitFor();
+    await t.test("shows no word, and says they were shown once", async () => {
+      assert.equal(await page.locator(".words li").count(), 0);
+      assert.match(
+        (await page.locator("main").textContent()) ?? "",
+        /These six words were shown once, and are not shown again\. Make the pod again\./,
+      );
+    });
+    const next = await sixWordsOf(page, modelled, "Mary Jackson");
+    await t.test("makes the pod again, with six new words", async () => {
+      assert.equal(next.length, 6);
+      assert.notDeepEqual(next, first);
+    });
+    await page.close();
+  });
+
+  test("when Copy words is pressed", async (t) => {
+    const page = await newPage();
+    await page
+      .context()
+      .grantPermissions(["clipboard-read", "clipboard-write"]);
+    await page.clock.install();
+    const words = (await sixWordsOf(page, modelled, "Dorothy Vaughan")).join(
+      " ",
+    );
+    const held = () => page.evaluate(() => navigator.clipboard.readText());
+    await page.getByRole("button", { name: "Copy words" }).click();
+    await page.locator("[data-copied]", { hasText: /^Copied/ }).waitFor();
+    await t.test(
+      "warns that a clipboard history may keep the words",
+      async () => {
+        assert.match(
+          (await page.locator("main").textContent()) ?? "",
+          /clipboard history or sync/,
+        );
+      },
+    );
+    await t.test("puts the words on the clipboard", async () => {
+      assert.equal(await held(), words);
+    });
+    await page.clock.fastForward(60_000);
+    await page
+      .locator("[data-copied]", { hasText: /clipboard is cleared/ })
+      .waitFor();
+    await t.test("empties the clipboard a minute later", async () => {
+      assert.equal(await held(), "");
+    });
+    await page.getByRole("button", { name: "Copy words" }).click();
+    await page.evaluate(() => navigator.clipboard.writeText("something else"));
+    await page.clock.fastForward(60_000);
+    await page
+      .locator("[data-copied]", { hasText: /something else now/ })
+      .waitFor();
+    await t.test(
+      "leaves the clipboard alone when it holds something else",
+      async () => {
+        assert.equal(await held(), "something else");
+      },
+    );
+    await page.close();
   });
 });

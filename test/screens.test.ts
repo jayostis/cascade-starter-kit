@@ -1403,6 +1403,14 @@ describe("Encrypting a pod with six words · SixWords, Unlock", () => {
       assert.match(shown, /type="button"[^>]*data-copy-words/);
     });
 
+    it("says that copying leaves the words in the clipboard, where a history may keep them, and that the page tries to clear it", () => {
+      assert.match(textOf(shown), /clipboard history or sync/);
+      assert.match(
+        textOf(shown),
+        /tries to clear the clipboard a minute later/,
+      );
+    });
+
     it("asks for words 2 and 5", () => {
       assert.match(textOf(shown), /Word 2/);
       assert.match(textOf(shown), /Word 5/);

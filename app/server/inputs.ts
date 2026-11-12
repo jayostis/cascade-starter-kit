@@ -53,6 +53,7 @@ export const INPUT_SCHEMAS = {
   }),
   tool: input({ pod: string, tool: string, input: object }),
   makePod: input({ person: string, encrypt: boolean }),
+  waiting: input({ pod: string }),
   waitingWords: input({ pod: string }),
   confirmWords: input({
     pod: string,
@@ -62,6 +63,7 @@ export const INPUT_SCHEMAS = {
     username: string,
   }),
   unlock: input({ pod: string, secret: string }),
+  lock: input({}),
   deleteAll: input({}),
   resetAll: input({}),
   checkTables: input({}),

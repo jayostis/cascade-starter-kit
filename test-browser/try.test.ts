@@ -4320,6 +4320,50 @@ describe("Encrypting a pod with six words · Encrypt this pod with six words", (
           assert.match((await page.textContent("main")) ?? "", /Grace Hopper/);
         },
       );
+
+      const password = page.locator('input[name="password"]');
+      await inPlace(page, () => page.click("button.lock"));
+      await t.test(
+        "asks for the six words again once Lock is pressed, with no reload",
+        async () => {
+          assert.match(
+            (await page.textContent("main")) ?? "",
+            /Open Grace Hopper's pod/,
+          );
+          assert.equal(await password.count(), 1);
+        },
+      );
+      await page.goto(`${served.url}${AT.pod("grace-hopper")}`);
+      await settled(page);
+      await t.test("asks for them still after a reload", async () => {
+        assert.equal(await password.count(), 1);
+      });
+      await page.fill('input[name="password"]', words.join(" "));
+      await inPlace(page, () => page.click('button:has-text("Open this pod")'));
+
+      const away = async () => {
+        await inPlace(page, () => page.click('header a:has-text("Cascade")'));
+        await inPlace(page, () =>
+          page.click('aside nav a:has-text("Grace Hopper")'),
+        );
+      };
+      await page.clock.install();
+      await page.clock.fastForward(14 * 60 * 1000);
+      await away();
+      await t.test(
+        "keeps the pod open while requests come within 15 minutes of each other",
+        async () => {
+          assert.equal(await password.count(), 0);
+        },
+      );
+      await page.clock.fastForward(15 * 60 * 1000);
+      await away();
+      await t.test(
+        "asks for the six words again after 15 minutes with no request",
+        async () => {
+          assert.equal(await password.count(), 1);
+        },
+      );
     } finally {
       await context.close();
     }

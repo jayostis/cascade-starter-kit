@@ -918,7 +918,13 @@ const inesOnce = once(async () => {
   const asked = await over.waitingWords({ pod: "ines" });
   const { words } = asked;
   const [, word2, , , word5] = words.split(" ");
-  const typed = { pod: "ines", word2, word5, password: words, username: "ines" };
+  const typed = {
+    pod: "ines",
+    word2,
+    word5,
+    password: words,
+    username: "ines",
+  };
   const wrong = await caught(over.confirmWords({ ...typed, word2: "x" }));
   const waitingAfterWrong = await over.waiting({ pod: "ines" });
   const confirmed = await over.confirmWords(typed);
@@ -1334,7 +1340,10 @@ describe("Making, unlocking, locking and deleting pods · api.makePod(), api.wai
       await assert.rejects(over.answers({ pod: "lock-me" }), (error) =>
         unopened(error, "secret needed"),
       );
-      assert.equal((await over.pod({ pod: "lock-me" })).locked, "secret needed");
+      assert.equal(
+        (await over.pod({ pod: "lock-me" })).locked,
+        "secret needed",
+      );
       await over.unlock({ pod: "lock-me", secret: words });
       assert.ok((await over.answers({ pod: "lock-me" })).answers);
     });
@@ -1373,9 +1382,7 @@ describe("Making, unlocking, locking and deleting pods · api.makePod(), api.wai
       const at = await mkdtemp(join(tmpdir(), "pod-api-idle-"));
       folders.push(at);
       const watched = opening(host(at));
-      const over = crossing(
-        api(watched.host as Host, { clock: () => now }),
-      );
+      const over = crossing(api(watched.host as Host, { clock: () => now }));
       await over.makePod({ person: "Idle", encrypt: true });
       const { words } = await over.waitingWords({ pod: "idle" });
       const [, word2, , , word5] = words.split(" ");
@@ -2446,11 +2453,6 @@ const json = (base: string) => ({
   origin: base,
   cookie: cookies.get(base) ?? "",
 });
-/** The headers of a program on the machine that names the server's own `Host`, `Origin` and `Content-Type`, and holds no cookie. */
-const withoutCookie = (base: string) => ({
-  "content-type": "application/json",
-  origin: base,
-});
 
 /**
  * The Node server offers each PodApi operation at `POST /api/<operation>`, taking and returning JSON, and the app's
@@ -2791,7 +2793,11 @@ describe("Guarding the server · guard(), newLaunch(), GET /?launch=<token>", ()
       ) =>
         app.request(`${at}${path}`, {
           method,
-          headers: { origin: at, "content-type": "application/json", ...headers },
+          headers: {
+            origin: at,
+            "content-type": "application/json",
+            ...headers,
+          },
           ...(method === "POST" && { body: "{}" }),
         });
       return { app, at, calls, launch, session, ask };
@@ -2822,7 +2828,11 @@ describe("Guarding the server · guard(), newLaunch(), GET /?launch=<token>", ()
       const { ask, at } = guarded();
       const name = launchCookie(new URL(at));
       for (const cookie of [`${name}=wrong`, `${name}=`, `${name}`, "x=y"])
-        assert.equal((await ask("GET", "/tools", { cookie })).status, 403, cookie);
+        assert.equal(
+          (await ask("GET", "/tools", { cookie })).status,
+          403,
+          cookie,
+        );
     });
 
     it("responds 403 to the cookie of another port's launch, which a browser sends to every port of the same host", async () => {

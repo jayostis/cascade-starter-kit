@@ -155,14 +155,16 @@ describe("Tools a model may call, by consent tier · TOOLS, NEVER", () => {
   });
 
   describe("NEVER", () => {
-    it("lists what no tool calls: an encrypted pod's making, its words (`waitingWords`, `confirmWords`, `unlock`), `connect`, `bring`, `deleteAll` and `resetAll`", () => {
+    it("lists what no tool calls: an encrypted pod's making, its words (`waiting`, `waitingWords`, `confirmWords`, `unlock`), `lock`, `connect`, `bring`, `deleteAll` and `resetAll`", () => {
       assert.deepEqual(
         NEVER.map(({ op, with: given }) => [op, given]),
         [
           ["makePod", "encrypt"],
+          ["waiting", undefined],
           ["waitingWords", undefined],
           ["confirmWords", undefined],
           ["unlock", undefined],
+          ["lock", undefined],
           ["connect", undefined],
           ["bring", undefined],
           ["deleteAll", undefined],

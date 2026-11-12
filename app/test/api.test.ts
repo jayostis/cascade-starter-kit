@@ -6,8 +6,12 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { nodeHost } from "../node-host.ts";
 import { podApi } from "../pod-api.ts";
 import { appServer } from "../server/app.ts";
+import { launchCookie, newLaunch } from "../server/launch.ts";
 
 const ORIGIN = "http://app.test";
+const launch = newLaunch();
+/** The cookie the page holds once it has opened the address the server printed. */
+const COOKIE = `${launchCookie(new URL(ORIGIN))}=${launch.exchange(launch.token)}`;
 let folder: string;
 let api: ReturnType<typeof podApi>;
 let app: ReturnType<typeof appServer>;
@@ -16,7 +20,11 @@ let app: ReturnType<typeof appServer>;
 const post = (operation: string, input: unknown) =>
   app.request(`${ORIGIN}/api/${operation}`, {
     method: "POST",
-    headers: { origin: ORIGIN, "content-type": "application/json" },
+    headers: {
+      origin: ORIGIN,
+      "content-type": "application/json",
+      cookie: COOKIE,
+    },
     body: JSON.stringify(input),
   });
 
@@ -29,6 +37,7 @@ beforeAll(async () => {
   app = appServer({
     api,
     own: () => ({ hosts: new Set(["app.test"]), origins: new Set([ORIGIN]) }),
+    launch,
     back: () => undefined,
     pages: folder,
   });
@@ -75,7 +84,7 @@ describe("Serving PodApi to the app's pages · POST /api/<operation>", () => {
   describe("with no chat added", () => {
     it("answers 404 at /chat", async () => {
       const response = await app.request(`${ORIGIN}/chat`, {
-        headers: { accept: "text/html" },
+        headers: { accept: "text/html", cookie: COOKIE },
       });
       expect(response.status).toBe(404);
     });

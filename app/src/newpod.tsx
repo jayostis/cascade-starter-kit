@@ -180,17 +180,32 @@ type Waiting =
   | { readonly pod: string; readonly person: string; readonly words: string }
   | { readonly refused: string };
 
-/** Reads the words PodApi holds for the pod being made at `/encrypted-pods/<pod>`, or why it holds none. */
-export const wordsLoader = (api: PodApi) =>
-  screen<Waiting>(async ({ params }: LoaderFunctionArgs) => {
+/**
+ * Reads the pod being made at `/encrypted-pods/<pod>`, or why there is none. PodApi gives its words once, so the page
+ * keeps them for as long as it lives, through a step that was refused and the read after it; a page loaded again is
+ * given none, and the pod is made again.
+ */
+export const wordsLoader = (api: PodApi) => {
+  const given = new Map<string, Promise<string>>();
+  return screen<Waiting>(async ({ params }: LoaderFunctionArgs) => {
     const pod = params.pod ?? "";
     try {
-      const { person, words } = await api.waitingWords({ pod });
+      const { person } = await api.waiting({ pod });
+      let asked = given.get(pod);
+      if (asked === undefined) {
+        asked = api.waitingWords({ pod }).then(({ words }) => words);
+        given.set(pod, asked);
+      }
+      const words = await asked.catch((error: unknown) => {
+        given.delete(pod);
+        throw error;
+      });
       return {
         value: { pod, person, words } satisfies Waiting,
         title: "Your six words",
       };
     } catch (error) {
+      given.delete(pod);
       if (!(error instanceof Error) || error.name !== "Refusal") throw error;
       return {
         value: { refused: error.message } satisfies Waiting,
@@ -198,6 +213,41 @@ export const wordsLoader = (api: PodApi) =>
       };
     }
   });
+};
+
+/** How long the words stay on the clipboard before the page tries to clear them. */
+const CLIPBOARD_MS = 60_000;
+
+let clearing: ReturnType<typeof setTimeout> | undefined;
+
+/**
+ * Copies `words`, and after `CLIPBOARD_MS` empties the clipboard if it still holds them, saying through `say` what
+ * happened. Nothing is promised that the browser does not allow: reading the clipboard may be refused.
+ */
+async function copyWords(words: string, say: (said: string) => void) {
+  try {
+    await navigator.clipboard.writeText(words);
+  } catch {
+    say("Copy isn't available here; write the words down.");
+    return;
+  }
+  say("Copied. This page tries to clear the clipboard in a minute.");
+  clearTimeout(clearing);
+  clearing = setTimeout(() => {
+    void (async () => {
+      try {
+        if ((await navigator.clipboard.readText()) !== words)
+          return say("The clipboard holds something else now: left alone.");
+        await navigator.clipboard.writeText("");
+        say("The clipboard is cleared.");
+      } catch {
+        say(
+          "The browser did not let this page clear the clipboard: clear it yourself.",
+        );
+      }
+    })();
+  }, CLIPBOARD_MS);
+}
 
 export function WordsScreen() {
   const waiting = useRead<Waiting>();
@@ -230,14 +280,6 @@ export function SixWords({
 }) {
   const { did, n } = useAttempt();
   const [copied, setCopied] = useState("");
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(words);
-      setCopied("Copied");
-    } catch {
-      setCopied("Copy isn't available here; write the words down.");
-    }
-  };
   return (
     <>
       <h1>Your six words</h1>
@@ -290,12 +332,22 @@ export function SixWords({
         </label>
         <p className={muted}>
           Your password manager can save these as the pod's password.{" "}
-          <button type="button" data-copy-words onClick={() => void copy()}>
+          <button
+            type="button"
+            data-copy-words
+            onClick={() => void copyWords(words, setCopied)}
+          >
             Copy words
           </button>{" "}
           <span data-copied role="status">
             {copied}
           </span>
+        </p>
+        <p className={muted}>
+          Copying leaves the words on the clipboard, and a clipboard history or
+          sync, such as Win+V on Windows or a cloud clipboard, may keep them
+          even after it is cleared. This page tries to clear the clipboard a
+          minute later, if the browser lets it read what it holds.
         </p>
         <p>
           <strong>Check that you have them.</strong> Type the second and the

@@ -2,6 +2,7 @@
   "about": "try/ and the made app in Chromium: what only a browser shows.",
   "capabilities": [
     "Opening try/ for the first time · try/",
+    "Opening the app from the address it printed · ?launch=<token>",
     "Reading a pod as a person's record · try/pods/<pod>/",
     "Keeping pods in the browser · indexedDB",
     "Menus and the About box · File, Help, #about",

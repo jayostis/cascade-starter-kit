@@ -267,6 +267,13 @@ export function Layout({
         <span className="demo ml-auto text-[0.8rem] opacity-75 max-md:text-right max-md:text-[0.72rem]">
           Demo: every person here is made up
         </span>
+        <PostButton
+          intent="lock"
+          className="lock cursor-pointer rounded-[5px] border border-white/40 bg-transparent px-2 py-[0.1rem] text-[0.85rem] text-on-bar hover:bg-white/14"
+          doing="Locking…"
+        >
+          Lock
+        </PostButton>
       </header>
       <div className="layout grid min-h-[calc(100vh-2.7rem)] grid-cols-[15rem_1fr] max-md:min-h-0 max-md:grid-cols-1">
         <aside className="border-r border-line bg-panel px-4 py-5 max-md:border-r-0 max-md:border-b">

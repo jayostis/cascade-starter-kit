@@ -140,6 +140,7 @@ export interface WritesApi {
     checked: Checked[];
     held: Series[];
   }>;
+  waiting(input: { pod: string }): Promise<{ pod: string; person: string }>;
   waitingWords(input: {
     pod: string;
   }): Promise<{ pod: string; person: string; words: string }>;
@@ -154,6 +155,7 @@ export interface WritesApi {
     pod: string;
     secret: string;
   }): Promise<{ pod: string; opened: boolean }>;
+  lock(input?: object): Promise<{ locked: string[] }>;
   deleteAll(input?: object): Promise<{ deleted: string[] }>;
   resetAll(input?: object): Promise<{ pods: string[] }>;
 }

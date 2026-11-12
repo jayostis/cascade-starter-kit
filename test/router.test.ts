@@ -199,6 +199,98 @@ describe("Reading for a screen and running a step · routes(), watch()", () => {
     });
   });
 
+  describe("given any screen", () => {
+    it("offers a Lock button in the title bar that posts the `lock` step", async () => {
+      const markup = await routed.draw(api, "/pods/alex-rivera/");
+      assert.match(
+        markup,
+        /<header[\s\S]*name="intent" value="lock"[\s\S]*<button[^>]*>Lock<\/button>[\s\S]*<\/header>/,
+      );
+    });
+
+    it("locks, and reads the screen again, when the `lock` step is posted, so a pod that is closed asks for its words", async () => {
+      let locked = false;
+      const markup = await routed.draw(
+        {
+          ...api,
+          lock: async () => {
+            locked = true;
+            return { locked: ["alex-rivera"] };
+          },
+          answers: async () => {
+            if (!locked) return { answers: {}, changes: [] };
+            throw Object.assign(new Error("a secret is needed"), {
+              name: "Unopened",
+              outcome: "secret needed",
+            });
+          },
+        },
+        "/pods/alex-rivera/",
+        { intent: "lock" },
+      );
+      assert.equal(locked, true);
+      assert.match(textOf(markup), /Open Alex Rivera's pod/);
+    });
+  });
+
+  describe("given an encrypted pod waiting for its six words, which PodApi gives once", () => {
+    const WORDS = "abacus abdomen abide abnormal abrasion abrupt";
+    const waitingApi = () => {
+      const calls = { waiting: 0, words: 0 };
+      let shown = false;
+      return {
+        calls,
+        api: {
+          ...api,
+          waiting: async () => {
+            calls.waiting += 1;
+            return { pod: "grace", person: "Grace Hopper" };
+          },
+          waitingWords: async () => {
+            calls.words += 1;
+            if (shown) throw refused("These six words were shown once.");
+            shown = true;
+            return { pod: "grace", person: "Grace Hopper", words: WORDS };
+          },
+          confirmWords: async () => {
+            throw refused("Those aren't words 2 and 5.");
+          },
+        },
+      };
+    };
+    const wrong = {
+      intent: "confirm-words",
+      word2: "x",
+      word5: "y",
+      password: WORDS,
+      username: "grace",
+    };
+
+    it("draws the six words, asking for them once", async () => {
+      const { api: given, calls } = waitingApi();
+      const page = main(await routed.draw(given, "/encrypted-pods/grace"));
+      for (const word of WORDS.split(" ")) assert.match(page, new RegExp(word));
+      assert.equal(calls.words, 1);
+    });
+
+    it("draws the same six words again after a step PodApi refused, without asking for them again", async () => {
+      const { api: given, calls } = waitingApi();
+      const page = main(
+        await routed.draw(given, "/encrypted-pods/grace", wrong),
+      );
+      assert.match(page, /Those aren't words 2 and 5/);
+      for (const word of WORDS.split(" ")) assert.match(page, new RegExp(word));
+      assert.equal(calls.words, 1);
+    });
+
+    it("draws no word, and says why, when the page is loaded again", async () => {
+      const { api: given } = waitingApi();
+      await routed.draw(given, "/encrypted-pods/grace");
+      const again = main(await routed.draw(given, "/encrypted-pods/grace"));
+      assert.match(again, /^Not done These six words were shown once\.$/);
+    });
+  });
+
   describe("when a step is running", () => {
     before(async () => {
       resetPage();

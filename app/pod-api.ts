@@ -103,6 +103,14 @@ const DEVICES = /^(con|prn|aux|nul|com\d|lpt\d)$/;
 
 const NOT_WAITING =
   "These six words are not waiting any more. Make the pod again.";
+const SHOWN_ONCE =
+  "These six words were shown once, and are not shown again. Make the pod again.";
+
+/** How long an encrypted pod stays open with no request before it is closed and asks for its words again. */
+export const IDLE_LOCK_MS = 15 * 60 * 1000;
+
+/** How often a quiet instance looks at the clock; a request looks at it too, so the pod is closed no later than its next one. */
+export const IDLE_CHECK_MS = 30 * 1000;
 
 /** The pod as `said.ts` reads its rows: by the fields its queries give each, which `Row` leaves open. */
 const byFields = (pod: Pod) =>
@@ -182,6 +190,7 @@ export const INPUTS: Readonly<
   },
   tool: { pod: string, tool: string, input: object },
   makePod: { person: string, encrypt: boolean },
+  waiting: { pod: string },
   waitingWords: { pod: string },
   confirmWords: {
     pod: string,
@@ -191,6 +200,7 @@ export const INPUTS: Readonly<
     username: string,
   },
   unlock: { pod: string, secret: string },
+  lock: {},
   deleteAll: {},
   resetAll: {},
   checkTables: {},
@@ -313,8 +323,14 @@ function typed<K extends Operation, Output>(
   };
 }
 
-/** The operations over the pods and tables `host` gives; `host.hospitals` and `host.world` are read at each call. */
-export function podApi(host: PodHost) {
+/**
+ * The operations over the pods and tables `host` gives; `host.hospitals` and `host.world` are read at each call. An
+ * encrypted pod is closed, and asks for its words again, once `IDLE_LOCK_MS` of `clock`'s milliseconds pass with no call.
+ */
+export function podApi(
+  host: PodHost,
+  { clock = () => Date.now() }: { clock?: () => number } = {},
+) {
   /** Each pod this instance opened, by name, as the promise of its opening. */
   const opened = new Map<string, Promise<Pod>>();
   /** The title each pod keeps, by name, once read. */
@@ -324,7 +340,10 @@ export function podApi(host: PodHost) {
   /** The pods the folder was last seen to hold, so one page scans it once: a pod seen needs no second scan. */
   const seen = new Set<string>();
   /** The six words of each encrypted pod being made, and the person's name as typed, by the pod's name, until checked. */
-  const waiting = new Map<string, { words: string; person: string }>();
+  const waiting = new Map<
+    string,
+    { words: string; person: string; shown: boolean }
+  >();
   /** Each connection to a hospital, by its number; `count` numbers the next. */
   const connections = new Map<number, Underway>();
   let count = 0;
@@ -369,20 +388,61 @@ export function podApi(host: PodHost) {
     return copying;
   }
 
-  /** Closes the pods this instance opened, the encrypted ones too unless `plaintextOnly`, and forgets the last answers. */
-  async function closeOpened({ plaintextOnly = false } = {}) {
+  /**
+   * Closes the pods this instance opened, the encrypted ones too unless `plaintextOnly`, and forgets the last answers.
+   * With `encryptedOnly`, closes only the encrypted ones, and gives their names.
+   */
+  async function closeOpened({
+    plaintextOnly = false,
+    encryptedOnly = false,
+  } = {}) {
     const closing: Promise<void>[] = [];
+    const closed: string[] = [];
     for (const [name, opening] of [...opened]) {
       const pod = await opening.catch(() => undefined);
       if (plaintextOnly && pod?.encrypted) continue;
+      if (encryptedOnly && pod?.encrypted !== true) continue;
       opened.delete(name);
-      if (pod !== undefined) closing.push(pod.close());
+      if (pod !== undefined) {
+        closing.push(pod.close());
+        closed.push(name);
+      }
     }
     last.clear();
     seen.clear();
-    if (!plaintextOnly) titles.clear();
+    if (!plaintextOnly && !encryptedOnly) titles.clear();
     await Promise.allSettled(closing);
+    return closed;
   }
+
+  let lastCall = clock();
+
+  /** Closes every encrypted pod, and forgets the words of one still being made; the pods ask for their words again. */
+  async function lock() {
+    waiting.clear();
+    return { locked: await closeOpened({ encryptedOnly: true }) };
+  }
+
+  const idle = () => clock() - lastCall >= IDLE_LOCK_MS;
+
+  /** Looks at the clock on its own, so a pod nobody asks for is closed too; it keeps no process alive. */
+  const watching = globalThis.setInterval(() => {
+    if (idle()) void lock();
+  }, IDLE_CHECK_MS);
+  (watching as { unref?: () => void }).unref?.();
+
+  /** `operation` as a call that first closes the encrypted pods when none came for `IDLE_LOCK_MS`, and counts as a call when it starts and when it ends. */
+  const live =
+    <Output>(operation: (input?: object) => Promise<Output>) =>
+    async (input?: object) => {
+      if (idle()) await lock();
+      lastCall = clock();
+      try {
+        return await operation(input);
+      } finally {
+        lastCall = clock();
+      }
+    };
 
   /** The title the pod keeps, read once, else its name. */
   async function titleOf(name: string): Promise<string> {
@@ -807,7 +867,11 @@ export function podApi(host: PodHost) {
       return { pod: name, loaded: true };
     }
     if (encrypt) {
-      waiting.set(name, { words: sixWords(), person: person.trim() });
+      waiting.set(name, {
+        words: sixWords(),
+        person: person.trim(),
+        shown: false,
+      });
       return { pod: name, waiting: true };
     }
     await openOnce(name, { title: person.trim() });
@@ -818,6 +882,17 @@ export function podApi(host: PodHost) {
     const words = name === undefined ? undefined : waiting.get(name);
     if (words === undefined) throw new Refusal(NOT_WAITING);
     return words;
+  }
+
+  /** The six words of a waiting pod, once: asked a second time the pod stops waiting, and is made again for new words. */
+  function wordsOnce(name: string | undefined) {
+    const waits = waitingFor(name);
+    if (waits.shown) {
+      waiting.delete(name as string);
+      throw new Refusal(SHOWN_ONCE);
+    }
+    waits.shown = true;
+    return { person: waits.person, words: waits.words };
   }
 
   async function confirmWords(input: Input<"confirmWords">) {
@@ -1239,12 +1314,17 @@ export function podApi(host: PodHost) {
     ask,
     tool,
     makePod,
+    waiting: async ({ pod: name }: Input<"waiting">) => ({
+      pod: name as string,
+      person: waitingFor(name).person,
+    }),
     waitingWords: async ({ pod: name }: Input<"waitingWords">) => ({
       pod: name as string,
-      ...waitingFor(name),
+      ...wordsOnce(name),
     }),
     confirmWords,
     unlock,
+    lock: (_input: Input<"lock">) => lock(),
     deleteAll: (_input: Input<"deleteAll">) => deleteAll(),
     resetAll: (_input: Input<"resetAll">) => resetAll(),
     checkTables: (_input: Input<"checkTables">) => checkTables(),
@@ -1267,7 +1347,9 @@ export function podApi(host: PodHost) {
     ...(Object.fromEntries(
       OPERATIONS.map((name) => [
         name,
-        typed(name, operations[name] as (input: object) => Promise<unknown>),
+        live(
+          typed(name, operations[name] as (input: object) => Promise<unknown>),
+        ),
       ]),
     ) as {
       readonly [K in Operation]: (
@@ -1277,6 +1359,7 @@ export function podApi(host: PodHost) {
     /** Not an operation: it gives functions, which cross no wire, for the tools that run where the pods are. */
     tables: tablesFor,
     close: async () => {
+      globalThis.clearInterval(watching);
       forgetConnections();
       await closeOpened();
     },

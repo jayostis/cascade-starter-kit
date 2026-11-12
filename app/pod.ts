@@ -50,7 +50,7 @@ async function load() {
     );
   }
   stdout.write(
-    `\nLoaded the pod ${name}. Start the app with \`npm start\` and open http://127.0.0.1:3000/\n`,
+    `\nLoaded the pod ${name}. Start the app with \`npm start\` and open the address it prints\n`,
   );
 }
 
