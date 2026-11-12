@@ -46,9 +46,11 @@ type Api = Record<
   | "ask"
   | "tool"
   | "makePod"
+  | "waiting"
   | "waitingWords"
   | "confirmWords"
   | "unlock"
+  | "lock"
   | "deleteAll"
   | "resetAll"
   | "checkTables"
@@ -61,14 +63,19 @@ type Api = Record<
 > & { close(): Promise<void> };
 type Host = Record<string, unknown> & { tables: unknown };
 
-const { podApi, maps, notOpenedHere, WAIT_MS } = (await import(
-  new URL("../../app/pod-api.ts", import.meta.url).href
-)) as {
-  WAIT_MS: number;
-  podApi: (host: Host) => Api;
-  maps: (output: Output) => Output;
-  notOpenedHere: (name: string) => string;
-};
+/** What `podApi` takes besides the host: the clock the idle lock reads, in milliseconds. */
+interface Clocked {
+  clock?: () => number;
+}
+const { podApi, maps, notOpenedHere, WAIT_MS, IDLE_LOCK_MS, IDLE_CHECK_MS } =
+  (await import(new URL("../../app/pod-api.ts", import.meta.url).href)) as {
+    WAIT_MS: number;
+    IDLE_LOCK_MS: number;
+    IDLE_CHECK_MS: number;
+    podApi: (host: Host, options?: Clocked) => Api;
+    maps: (output: Output) => Output;
+    notOpenedHere: (name: string) => string;
+  };
 /** The Node target's server, as far as this test serves it, and what it answers as. */
 interface Own {
   hosts: Set<string>;
@@ -84,10 +91,23 @@ const { appServer } = (await import(
   appServer: (served: {
     api: Api;
     own: () => Own;
+    launch: Launch;
     chat: Hono;
     back: () => undefined;
     pages: string;
   }) => App;
+};
+/** What proves a request comes from the page the launch opened: the token the printed address carries, spent for a cookie. */
+interface Launch {
+  readonly token: string;
+  exchange(given: string | undefined): string | undefined;
+  holds(given: string | undefined): boolean;
+}
+const { newLaunch, launchCookie } = (await import(
+  new URL("../../app/server/launch.ts", import.meta.url).href
+)) as {
+  newLaunch: () => Launch;
+  launchCookie: (url: URL) => string;
 };
 /** PodApi at a server, through the app's own typed client. */
 const { remoteApi } = (await import(
@@ -308,7 +328,8 @@ const servers: Server[] = [];
 type Call = PromiseSettledResult<Output>;
 
 /** The Node target's server over `built`, answering as `own()` names it, and what `built` answered each call. */
-function served(built: Api, own: () => Own): [App, Call[]] {
+function served(built: Api, own: () => Own): [App, Call[], Launch] {
+  const launch = newLaunch();
   const calls: Call[] = [];
   const recording = { ...built } as Api;
   for (const name of Object.keys(built) as (keyof Api)[]) {
@@ -327,17 +348,29 @@ function served(built: Api, own: () => Own): [App, Call[]] {
   const app = appServer({
     api: recording,
     own,
+    launch,
     chat: new Hono(),
     back: () => undefined,
     pages: folder,
   });
-  return [app, calls];
+  return [app, calls, launch];
 }
 
+/** The cookie a page of the server at `origin` holds once it has opened the address the server printed. */
+function cookieOf(launch: Launch, origin: string): string {
+  const session = launch.exchange(launch.token);
+  assert.ok(session, "the token was spent already");
+  return `${launchCookie(new URL(origin))}=${session}`;
+}
+/** The cookie of each server `serve()` started, by its origin. */
+const cookies = new Map<string, string>();
+
 /** Serves `built` on an ephemeral port, as `npm start` does, and gives the address and what `built` answered each call. */
-async function serve(built: Api): Promise<[string, Call[]]> {
+async function serve(
+  built: Api,
+): Promise<[string, Call[], { launch: Launch; cookie: string }]> {
   let origin = "";
-  const [app, calls] = served(built, () => ({
+  const [app, calls, launch] = served(built, () => ({
     hosts: new Set([new URL(origin).host]),
     origins: new Set([origin]),
   }));
@@ -346,7 +379,9 @@ async function serve(built: Api): Promise<[string, Call[]]> {
   await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
   const { port } = server.address() as { port: number };
   origin = `http://127.0.0.1:${port}`;
-  return [origin, calls];
+  const cookie = cookieOf(launch, origin);
+  cookies.set(origin, cookie);
+  return [origin, calls, { launch, cookie }];
 }
 
 /** A refusal as the app tells it, by its name; an `Unopened` carries its `outcome`. */
@@ -364,14 +399,14 @@ const unopened = (error: unknown, outcome: string) =>
  */
 function crossing(built: Api): Api {
   const origin = "http://app.test";
-  const [app, calls] = served(built, () => ({
+  const [app, calls, launch] = served(built, () => ({
     hosts: new Set(["app.test"]),
     origins: new Set([origin]),
   }));
   const remote = remoteApi(`${origin}/`, {
     fetch: (input: RequestInfo | URL, init?: RequestInit) =>
       app.request(input, init),
-    headers: { origin },
+    headers: { origin, cookie: cookieOf(launch, origin) },
   });
   const over = {} as Api;
   for (const name of Object.keys(remote) as (keyof Api)[]) {
@@ -412,8 +447,8 @@ function crossing(built: Api): Api {
   over.close = async () => undefined;
   return over;
 }
-function api(given: Host = host()) {
-  const built = podApi(given);
+function api(given: Host = host(), options?: Clocked) {
+  const built = podApi(given, options);
   made.push(built);
   const checked = {} as Api;
   for (const [name, operation] of Object.entries(built))
@@ -456,11 +491,14 @@ before(async () => {
 const folders: string[] = [];
 
 /** A folder of its own, the host over it with `extra` given the folder, and its instance in the process and over HTTP. */
-async function fresh(extra: (at: string) => Input = () => ({})) {
+async function fresh(
+  extra: (at: string) => Input = () => ({}),
+  options?: Clocked,
+) {
   const at = await mkdtemp(join(tmpdir(), "pod-api-writes-"));
   folders.push(at);
   const given = { ...host(at), ...extra(at) };
-  const built = api(given);
+  const built = api(given, options);
   return { built, host: given, over: crossing(built) };
 }
 
@@ -501,17 +539,20 @@ async function connected(local: Api, pod: string) {
 /** `name` as a model runs it through `POST /tools/<name>` on the Node server over `built`. */
 function toolsOf(built: Api) {
   const origin = "http://app.test";
-  const [app] = served(built, () => ({
+  const [app, , launch] = served(built, () => ({
     hosts: new Set(["app.test"]),
     origins: new Set([origin]),
   }));
+  const cookie = cookieOf(launch, origin);
   return {
     app,
     origin,
+    cookie,
+    launch,
     run: (name: string, input: object) =>
       app.request(`${origin}/tools/${name}`, {
         method: "POST",
-        headers: { origin, "content-type": "application/json" },
+        headers: { origin, "content-type": "application/json", cookie },
         body: JSON.stringify(input),
       }),
   };
@@ -872,19 +913,18 @@ const madeOnce = once(async () => {
 /** An encrypted pod made through the wait, read after the host was closed and opened again. */
 const inesOnce = once(async () => {
   const { built, host: given, over } = await fresh();
-  const confirm = async (pod: string) => {
-    const { words } = await over.waitingWords({ pod });
-    const [, word2, , , word5] = words.split(" ");
-    const typed = { pod, word2, word5, password: words, username: pod };
-    return { words, made: over.confirmWords(typed) };
-  };
   const waiting = await over.makePod({ person: "Ines", encrypt: true });
   const listed = (await over.pods({})).pods.map(({ name }: Output) => name);
   const asked = await over.waitingWords({ pod: "ines" });
-  const { words, made } = await confirm("ines");
-  const confirmed = await made;
+  const { words } = asked;
+  const [, word2, , , word5] = words.split(" ");
+  const typed = { pod: "ines", word2, word5, password: words, username: "ines" };
+  const wrong = await caught(over.confirmWords({ ...typed, word2: "x" }));
+  const waitingAfterWrong = await over.waiting({ pod: "ines" });
+  const confirmed = await over.confirmWords(typed);
   const encrypted = (await over.pod({ pod: "ines" })).encrypted;
   const afterwards = await caught(over.waitingWords({ pod: "ines" }));
+  const waitingAfterMade = await caught(over.waiting({ pod: "ines" }));
   await built.close();
   const later = crossing(api(given));
   const locked = await caught(later.answers({ pod: "ines" }));
@@ -901,6 +941,9 @@ const inesOnce = once(async () => {
     againEmpty,
     againWrong,
     waiting,
+    waitingAfterWrong,
+    waitingAfterMade,
+    wrong,
     listed,
     asked,
     confirmed,
@@ -961,7 +1004,7 @@ const removedOnce = once(async () => {
  * back words 2 and 5 of its six words, which shows they kept them; until then the pod is waiting, and nothing is
  * written.
  */
-describe("Making, unlocking and deleting pods · api.makePod(), api.waitingWords(), api.confirmWords(), api.unlock(), api.deleteAll(), api.resetAll(), nodeHost()", () => {
+describe("Making, unlocking, locking and deleting pods · api.makePod(), api.waiting(), api.waitingWords(), api.confirmWords(), api.unlock(), api.lock(), api.deleteAll(), api.resetAll(), nodeHost()", () => {
   describe("api.makePod({ person })", () => {
     it("makes a pod named from the person's name, and returns `made: true`", async () => {
       const { first, pods } = await madeOnce();
@@ -1063,6 +1106,51 @@ describe("Making, unlocking and deleting pods · api.makePod(), api.waitingWords
 
     it("refuses once the pod is made", async () => {
       assert.match((await inesOnce()).afterwards.message, /not waiting/);
+    });
+
+    it("refuses a second call for the same pod, saying the words are shown once and not saying them, and the pod stops waiting", async () => {
+      const { over } = await fresh();
+      await over.makePod({ person: "Once", encrypt: true });
+      const first = await over.waitingWords({ pod: "once" });
+      assert.equal(first.words.split(" ").length, 6);
+      const second = await caught(over.waitingWords({ pod: "once" }));
+      assert.equal(second.name, "Refusal");
+      assert.match(second.message, /shown once/);
+      assert.ok(!second.message.includes(first.words.split(" ")[0]));
+      await assert.rejects(over.waiting({ pod: "once" }), /not waiting/);
+    });
+
+    it("gives new words when the pod is made again after that", async () => {
+      const { over } = await fresh();
+      await over.makePod({ person: "Once", encrypt: true });
+      const first = await over.waitingWords({ pod: "once" });
+      await caught(over.waitingWords({ pod: "once" }));
+      await over.makePod({ person: "Once", encrypt: true });
+      const next = await over.waitingWords({ pod: "once" });
+      assert.notEqual(next.words, first.words);
+    });
+  });
+
+  describe("api.waiting({ pod })", () => {
+    it("says a pod is waiting, with the person's name as typed and without its words, however often it is asked", async () => {
+      const { over } = await fresh();
+      await over.makePod({ person: "Peek", encrypt: true });
+      const asked = [
+        await over.waiting({ pod: "peek" }),
+        await over.waiting({ pod: "peek" }),
+      ];
+      assert.deepEqual(asked, [
+        { pod: "peek", person: "Peek" },
+        { pod: "peek", person: "Peek" },
+      ]);
+      assert.equal((await over.waitingWords({ pod: "peek" })).person, "Peek");
+    });
+
+    it("still says a pod is waiting after words 2 and 5 were typed back wrong, and refuses once the pod is made", async () => {
+      const { wrong, waitingAfterWrong, waitingAfterMade } = await inesOnce();
+      assert.match(wrong.message, /aren't words 2 and 5/);
+      assert.deepEqual(waitingAfterWrong, { pod: "ines", person: "Ines" });
+      assert.match(waitingAfterMade.message, /not waiting/);
     });
   });
 
@@ -1213,6 +1301,131 @@ describe("Making, unlocking and deleting pods · api.makePod(), api.waitingWords
           error.outcome === undefined &&
           error.message === notOpenedHere(SEALED),
       );
+    });
+  });
+
+  describe("api.lock()", () => {
+    /** An instance over a folder of its own whose host counts each pod it opens and closes, read by `clock`, and a pod of each kind made through it. */
+    async function sealedAndPlain(options?: Clocked) {
+      const at = await mkdtemp(join(tmpdir(), "pod-api-lock-"));
+      folders.push(at);
+      const watched = opening(host(at));
+      const built = api(watched.host as Host, options);
+      const over = crossing(built);
+      await over.makePod({ person: "Lock Me", encrypt: true });
+      const { words } = await over.waitingWords({ pod: "lock-me" });
+      const [, word2, , , word5] = words.split(" ");
+      await over.confirmWords({
+        pod: "lock-me",
+        word2,
+        word5,
+        password: words,
+        username: "lock-me",
+      });
+      await over.makePod({ person: "Plain" });
+      return { over, seen: watched.seen, words };
+    }
+
+    it("closes the encrypted pods this instance holds open and names them, so the pod asks for its words again", async () => {
+      const { over, seen, words } = await sealedAndPlain();
+      assert.ok((await over.answers({ pod: "lock-me" })).answers);
+      assert.deepEqual(await over.lock({}), { locked: ["lock-me"] });
+      assert.equal(seen.closes, 1);
+      await assert.rejects(over.answers({ pod: "lock-me" }), (error) =>
+        unopened(error, "secret needed"),
+      );
+      assert.equal((await over.pod({ pod: "lock-me" })).locked, "secret needed");
+      await over.unlock({ pod: "lock-me", secret: words });
+      assert.ok((await over.answers({ pod: "lock-me" })).answers);
+    });
+
+    it("leaves a pod that is not encrypted open", async () => {
+      const { over, seen } = await sealedAndPlain();
+      const opens = seen.opens;
+      await over.lock({});
+      assert.ok((await over.answers({ pod: "plain" })).answers);
+      assert.equal(seen.opens, opens, "the plain pod was not opened again");
+    });
+
+    it("closes nothing, and names nothing, when no encrypted pod is open", async () => {
+      const { over, seen } = await sealedAndPlain();
+      await over.lock({});
+      assert.deepEqual(await over.lock({}), { locked: [] });
+      assert.equal(seen.closes, 1);
+    });
+
+    it("forgets the six words of a pod that is still waiting for them to be typed back", async () => {
+      const { over } = await sealedAndPlain();
+      await over.makePod({ person: "Not Yet", encrypt: true });
+      await over.lock({});
+      await assert.rejects(over.waiting({ pod: "not-yet" }), /not waiting/);
+    });
+  });
+
+  describe("when no request comes for the idle time, `IDLE_LOCK_MS`, 15 minutes", () => {
+    const FIFTEEN_MINUTES = 15 * 60 * 1000;
+
+    it("is 15 minutes", () => assert.equal(IDLE_LOCK_MS, FIFTEEN_MINUTES));
+
+    /** The instance of `api.lock()`'s tests, read by a clock the test moves. */
+    async function clocked() {
+      let now = 1_000_000;
+      const at = await mkdtemp(join(tmpdir(), "pod-api-idle-"));
+      folders.push(at);
+      const watched = opening(host(at));
+      const over = crossing(
+        api(watched.host as Host, { clock: () => now }),
+      );
+      await over.makePod({ person: "Idle", encrypt: true });
+      const { words } = await over.waitingWords({ pod: "idle" });
+      const [, word2, , , word5] = words.split(" ");
+      await over.confirmWords({
+        pod: "idle",
+        word2,
+        word5,
+        password: words,
+        username: "idle",
+      });
+      return {
+        over,
+        seen: watched.seen,
+        words,
+        pass: (ms: number) => void (now += ms),
+      };
+    }
+
+    it("keeps an encrypted pod open while each request comes within the time of the one before", async () => {
+      const { over, seen, pass } = await clocked();
+      pass(IDLE_LOCK_MS - 1);
+      assert.ok((await over.answers({ pod: "idle" })).answers);
+      pass(IDLE_LOCK_MS - 1);
+      assert.ok((await over.answers({ pod: "idle" })).answers);
+      assert.equal(seen.closes, 0);
+    });
+
+    it("closes the pod when a request comes after the time, before it answers, so the pod asks for its words again", async () => {
+      const { over, seen, pass, words } = await clocked();
+      pass(IDLE_LOCK_MS);
+      await assert.rejects(over.answers({ pod: "idle" }), (error) =>
+        unopened(error, "secret needed"),
+      );
+      assert.equal(seen.closes, 1);
+      await over.unlock({ pod: "idle", secret: words });
+      assert.ok((await over.answers({ pod: "idle" })).answers);
+    });
+
+    it("closes the pod by itself, with no request, when the time has passed at one of its checks", async () => {
+      mock.timers.enable({ apis: ["setInterval"] });
+      try {
+        const { seen, pass } = await clocked();
+        pass(IDLE_LOCK_MS);
+        mock.timers.tick(IDLE_CHECK_MS);
+        for (let waited = 0; seen.closes === 0 && waited < 100; waited += 1)
+          await new Promise((done) => setImmediate(done));
+        assert.equal(seen.closes, 1);
+      } finally {
+        mock.timers.reset();
+      }
     });
   });
 
@@ -1913,6 +2126,7 @@ describe("Setting the day the demo hospitals answer as of · api.setWorldDate(),
       appServer({
         api: inProcess,
         own: () => ({ hosts: new Set(["localhost"]), origins: new Set() }),
+        launch: newLaunch(),
         chat: new Hono(),
         back: () => undefined,
         pages: tmpdir(),
@@ -2007,6 +2221,12 @@ const REFUSED: [keyof Api, string, () => Input, RegExp][] = [
   ],
   [
     "waitingWords",
+    "refuses a pod that is not waiting",
+    () => ({ pod: "nobody" }),
+    /not waiting any more/,
+  ],
+  [
+    "waiting",
     "refuses a pod that is not waiting",
     () => ({ pod: "nobody" }),
     /not waiting any more/,
@@ -2220,7 +2440,14 @@ const post = (
   headers: Record<string, string>,
   body = "{}",
 ) => fetch(`${base}${path}`, { method: "POST", headers, body });
+/** The headers of a page of the server at `base`: its own `Origin`, JSON, and the cookie its launch gave it. */
 const json = (base: string) => ({
+  "content-type": "application/json",
+  origin: base,
+  cookie: cookies.get(base) ?? "",
+});
+/** The headers of a program on the machine that names the server's own `Host`, `Origin` and `Content-Type`, and holds no cookie. */
+const withoutCookie = (base: string) => ({
   "content-type": "application/json",
   origin: base,
 });
@@ -2366,6 +2593,7 @@ describe("Answering an address a person opens with the app's page · appServer()
       const app = appServer({
         api: inProcess,
         own: () => ({ hosts: new Set(["localhost"]), origins: new Set() }),
+        launch: newLaunch(),
         chat: new Hono(),
         back: () => undefined,
         pages,
@@ -2509,11 +2737,15 @@ const checks = once(async () => {
   };
 });
 
-/** What the server refuses before it answers: a request that names another host, and a method it does not serve. */
-describe("Guarding the server · guard()", () => {
+/**
+ * What the server refuses before it answers: a request that names another host, a method it does not serve, and a
+ * request to a route that reads a pod that does not carry the cookie the launch's address gave the app's page.
+ */
+describe("Guarding the server · guard(), newLaunch(), GET /?launch=<token>", () => {
   let app: ReturnType<typeof toolsOf>["app"];
   let origin: string;
-  before(() => ({ app, origin } = toolsOf(inProcess)));
+  let cookie: string;
+  before(() => ({ app, origin, cookie } = toolsOf(inProcess)));
 
   it("responds 403 to a request whose `Host` is not the server's own address, on `/api/` in JSON and elsewhere as a page", async () => {
     const api = await app.request("http://rebound.example/api/pods", {
@@ -2537,8 +2769,140 @@ describe("Guarding the server · guard()", () => {
     }
   });
 
-  it("answers a GET on the server's own address", async () => {
-    assert.equal((await app.request(`${origin}/tools`)).status, 200);
+  it("answers a GET on the server's own address that holds the launch cookie", async () => {
+    const answered = await app.request(`${origin}/tools`, {
+      headers: { cookie },
+    });
+    assert.equal(answered.status, 200);
+  });
+
+  describe("given a program that names the server's own `Host`, `Origin` and `Content-Type` and holds no launch cookie", () => {
+    const guarded = () => {
+      const at = "http://app.test";
+      const [app, calls, launch] = served(inProcess, () => ({
+        hosts: new Set(["app.test"]),
+        origins: new Set([at]),
+      }));
+      const session = launch.exchange(launch.token)!;
+      const ask = (
+        method: string,
+        path: string,
+        headers: Record<string, string>,
+      ) =>
+        app.request(`${at}${path}`, {
+          method,
+          headers: { origin: at, "content-type": "application/json", ...headers },
+          ...(method === "POST" && { body: "{}" }),
+        });
+      return { app, at, calls, launch, session, ask };
+    };
+
+    for (const [method, path] of [
+      ["POST", "/api/pods"],
+      ["POST", "/api/answers"],
+      ["POST", "/api/waitingWords"],
+      ["POST", "/api/unlock"],
+      ["GET", "/tools"],
+      ["POST", "/tools/list_pods"],
+      ["GET", "/chat"],
+      ["POST", "/chat"],
+    ] as const)
+      it(`responds 403 to ${method} ${path}, in JSON, and runs no operation`, async () => {
+        const { ask, calls } = guarded();
+        const refused = await ask(method, path, {});
+        assert.equal(refused.status, 403);
+        assert.match(
+          ((await refused.json()) as { refused: string }).refused,
+          /address .* printed/,
+        );
+        assert.equal(calls.length, 0);
+      });
+
+    it("responds 403 to a cookie that is not the launch's", async () => {
+      const { ask, at } = guarded();
+      const name = launchCookie(new URL(at));
+      for (const cookie of [`${name}=wrong`, `${name}=`, `${name}`, "x=y"])
+        assert.equal((await ask("GET", "/tools", { cookie })).status, 403, cookie);
+    });
+
+    it("responds 403 to the cookie of another port's launch, which a browser sends to every port of the same host", async () => {
+      const { ask, session } = guarded();
+      const other = launchCookie(new URL("http://app.test:3001"));
+      assert.notEqual(other, launchCookie(new URL("http://app.test")));
+      const refused = await ask("GET", "/tools", {
+        cookie: `${other}=${session}`,
+      });
+      assert.equal(refused.status, 403);
+    });
+
+    it("does not ask for the cookie at `/callback`, which a hospital's redirect reaches with none", async () => {
+      const { app, at } = guarded();
+      const answered = await app.request(`${at}/callback?code=x`);
+      assert.equal(answered.status, 400);
+      assert.match(await answered.text(), /No sign-in is waiting/);
+    });
+  });
+
+  describe("when a person opens the address the server printed, `/?launch=<token>`", () => {
+    const fresh = () => {
+      const at = "http://app.test";
+      const [app, calls, launch] = served(inProcess, () => ({
+        hosts: new Set(["app.test"]),
+        origins: new Set([at]),
+      }));
+      return { app, calls, launch, at };
+    };
+
+    it("answers 303 to `/` with a cookie the page keeps: `HttpOnly`, `SameSite=Strict`, `Path=/`, named for the port and not the token", async () => {
+      const { app, at, launch } = fresh();
+      const answered = await app.request(`${at}/?launch=${launch.token}`);
+      assert.equal(answered.status, 303);
+      assert.equal(answered.headers.get("location"), "/");
+      const set = answered.headers.get("set-cookie") ?? "";
+      const name = launchCookie(new URL(at));
+      assert.match(set, new RegExp(`^${name}=[\\w-]{43};`));
+      assert.match(set, /HttpOnly/i);
+      assert.match(set, /SameSite=Strict/i);
+      assert.match(set, /Path=\//);
+      assert.ok(!set.includes(launch.token), "the token is not the cookie");
+      const [pair = ""] = set.split(";");
+      const read = await app.request(`${at}/tools`, {
+        headers: { cookie: pair },
+      });
+      assert.equal(read.status, 200);
+    });
+
+    it("keeps the rest of the address, and drops only the token", async () => {
+      const { app, at, launch } = fresh();
+      const answered = await app.request(
+        `${at}/?back=%2Fpods&launch=${launch.token}`,
+      );
+      assert.equal(answered.headers.get("location"), "/?back=%2Fpods");
+    });
+
+    it("answers 403 to the token a second time, and gives no cookie, as the token is spent", async () => {
+      const { app, at, launch } = fresh();
+      await app.request(`${at}/?launch=${launch.token}`);
+      const again = await app.request(`${at}/?launch=${launch.token}`);
+      assert.equal(again.status, 403);
+      assert.equal(again.headers.get("set-cookie"), null);
+      assert.match(await again.text(), /Start the app again/);
+    });
+
+    it("answers 403 to a token that is not the launch's, and to none", async () => {
+      const { app, at, launch } = fresh();
+      for (const query of [
+        "?launch=wrong",
+        "?launch=",
+        `?launch=${launch.token.slice(0, -1)}`,
+      ]) {
+        const refused = await app.request(`${at}/${query}`);
+        assert.equal(refused.status, 403, query);
+        assert.equal(refused.headers.get("set-cookie"), null, query);
+      }
+      const spent = await app.request(`${at}/?launch=${launch.token}`);
+      assert.equal(spent.status, 303, "a wrong token spends nothing");
+    });
   });
 });
 
@@ -2552,8 +2916,10 @@ describe("Running the read tools over HTTP · GET /tools, POST /tools/<name>", (
 
   describe("when a page asks `GET /tools`", () => {
     it("lists each `free` tool that opens no screen and is not the page's own, with its description and input schema", async () => {
-      const { app, origin } = server();
-      const listed = (await (await app.request(`${origin}/tools`)).json()) as {
+      const { app, origin, cookie } = server();
+      const listed = (await (
+        await app.request(`${origin}/tools`, { headers: { cookie } })
+      ).json()) as {
         name: string;
         description: unknown;
         inputSchema: unknown;
