@@ -347,7 +347,7 @@ async function tab() {
   const context = await browser.newContext();
   await context.addCookies(jar);
   const page = watched(await context.newPage());
-  page.on("close", () => void context.close());
+  page.on("close", () => void context.close().catch(() => undefined));
   page.setDefaultTimeout(2 * MINUTES);
   return page;
 }

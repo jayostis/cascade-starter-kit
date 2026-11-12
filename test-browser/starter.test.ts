@@ -232,7 +232,7 @@ async function newPage(options: Parameters<Browser["newContext"]>[0] = {}) {
   const context = await browser.newContext(options);
   await jarred(context);
   const page = await context.newPage();
-  page.on("close", () => void context.close());
+  page.on("close", () => void context.close().catch(() => undefined));
   return page;
 }
 
@@ -989,12 +989,12 @@ describe("Opening the app from the address it printed · ?launch=<token>", () =>
       const context = await browser.newContext();
       const page = await context.newPage();
       await page.goto(fresh.launch);
-      await page.getByRole("heading", { name: "Pods" }).waitFor();
+      await page.getByRole("heading", { name: "No pods yet" }).waitFor();
+      await page.waitForFunction(() => document.body.dataset.state === "ready");
       await t.test(
-        "leaves the app at its own address, with no token in it, and shows the pods",
+        "leaves the app at its own address, with no token in it, and reads the pods: the page holds the cookie",
         async () => {
           assert.equal(page.url(), `${fresh.origin}/`);
-          assert.equal((await page.locator("aside nav a").count()) > 0, true);
         },
       );
       await t.test(

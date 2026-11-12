@@ -2475,6 +2475,22 @@ describe("Calling PodApi over HTTP · /api/, INPUT_SCHEMAS, refusalOf()", () => 
       assert.equal(crossed.message, own.message);
     });
 
+    it("throws an error that says to open the address the app printed, and not a `Refusal`, when the page holds no launch cookie", async () => {
+      const origin = "http://app.test";
+      const [app] = served(inProcess, () => ({
+        hosts: new Set(["app.test"]),
+        origins: new Set([origin]),
+      }));
+      const bare = remoteApi(`${origin}/`, {
+        fetch: (input: RequestInfo | URL, init?: RequestInit) =>
+          app.request(input, init),
+        headers: { origin },
+      });
+      const crossed = await caught(bare.pods({}));
+      assert.equal(crossed.name, "Error");
+      assert.match(crossed.message, /open the address `npm start` printed/);
+    });
+
     it("throws `Unopened` with PodApi's `outcome` when a pod does not open", async () => {
       const crossed = await caught(overHttp.answers({ pod: SEALED }));
       assert.equal(crossed.name, "Unopened");
@@ -2888,6 +2904,18 @@ describe("Guarding the server · guard(), newLaunch(), GET /?launch=<token>", ()
         `${at}/?back=%2Fpods&launch=${launch.token}`,
       );
       assert.equal(answered.headers.get("location"), "/?back=%2Fpods");
+    });
+
+    it("sends on a page that holds the cookie already, whatever the spent token it carries, and gives no new cookie", async () => {
+      const { app, at, launch } = fresh();
+      const first = await app.request(`${at}/?launch=${launch.token}`);
+      const [cookie = ""] = (first.headers.get("set-cookie") ?? "").split(";");
+      const again = await app.request(`${at}/?launch=${launch.token}`, {
+        headers: { cookie },
+      });
+      assert.equal(again.status, 303);
+      assert.equal(again.headers.get("location"), "/");
+      assert.equal(again.headers.get("set-cookie"), null);
     });
 
     it("answers 403 to the token a second time, and gives no cookie, as the token is spent", async () => {
