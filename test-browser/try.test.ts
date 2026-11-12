@@ -4357,9 +4357,9 @@ describe("Encrypting a pod with six words · Encrypt this pod with six words", (
         },
       );
       await page.clock.fastForward(15 * 60 * 1000);
-      await away();
+      await password.waitFor();
       await t.test(
-        "asks for the six words again after 15 minutes with no request",
+        "asks for the six words again after 15 minutes with no request, with no click to ask it",
         async () => {
           assert.equal(await password.count(), 1);
         },

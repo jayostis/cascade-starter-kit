@@ -50,6 +50,7 @@ import {
   entryId,
   entryOf,
   HISTORY,
+  IDLE_LOCK_MS,
   joinedBy,
   LABS,
   maps,
@@ -105,9 +106,6 @@ const NOT_WAITING =
   "These six words are not waiting any more. Make the pod again.";
 const SHOWN_ONCE =
   "These six words were shown once, and are not shown again. Make the pod again.";
-
-/** How long an encrypted pod stays open with no request before it is closed and asks for its words again. */
-export const IDLE_LOCK_MS = 15 * 60 * 1000;
 
 /** How often a quiet instance looks at the clock; a request looks at it too, so the pod is closed no later than its next one. */
 export const IDLE_CHECK_MS = 30 * 1000;
@@ -417,10 +415,12 @@ export function podApi(
 
   let lastCall = clock();
 
-  /** Closes every encrypted pod, and forgets the words of one still being made; the pods ask for their words again. */
+  /** Closes every encrypted pod and stops its connections, and forgets the words of one still being made; the pods ask for their words again. */
   async function lock() {
     waiting.clear();
-    return { locked: await closeOpened({ encryptedOnly: true }) };
+    const locked = await closeOpened({ encryptedOnly: true });
+    forgetConnections(locked);
+    return { locked };
   }
 
   const idle = () => clock() - lastCall >= IDLE_LOCK_MS;
@@ -431,16 +431,23 @@ export function podApi(
   }, IDLE_CHECK_MS);
   (watching as { unref?: () => void }).unref?.();
 
-  /** `operation` as a call that first closes the encrypted pods when none came for `IDLE_LOCK_MS`, and counts as a call when it starts and when it ends. */
+  /**
+   * `operation` as a call that first closes the encrypted pods when none came for `IDLE_LOCK_MS`, and counts as a call
+   * when it starts and when it ends. A `connection` that waits is the page asking again by itself, so it is no call.
+   */
   const live =
-    <Output>(operation: (input?: object) => Promise<Output>) =>
+    <Output>(name: Operation, operation: (input?: object) => Promise<Output>) =>
     async (input?: object) => {
       if (idle()) await lock();
-      lastCall = clock();
+      const counts = !(
+        name === "connection" &&
+        (input as { wait?: unknown })?.wait !== undefined
+      );
+      if (counts) lastCall = clock();
       try {
         return await operation(input);
       } finally {
-        lastCall = clock();
+        if (counts) lastCall = clock();
       }
     };
 
@@ -1017,10 +1024,13 @@ export function podApi(
       connection.bringing,
     ]);
 
-  /** Stops every connection's sign-in and pull, and forgets them. */
-  function forgetConnections() {
-    for (const each of connections.values()) each.stop.abort();
-    connections.clear();
+  /** Stops the sign-in and pull of every connection, or of those of the pods named, and forgets them. */
+  function forgetConnections(pods?: readonly string[]) {
+    for (const [n, each] of connections) {
+      if (pods !== undefined && !pods.includes(each.pod)) continue;
+      each.stop.abort();
+      connections.delete(n);
+    }
   }
 
   /** Wakes whoever waits for the connection to change. */
@@ -1348,6 +1358,7 @@ export function podApi(
       OPERATIONS.map((name) => [
         name,
         live(
+          name,
           typed(name, operations[name] as (input: object) => Promise<unknown>),
         ),
       ]),

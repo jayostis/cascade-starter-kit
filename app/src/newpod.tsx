@@ -1,7 +1,7 @@
 // Making a pod and opening one: the new-pod box, the six words of an encrypted pod to keep and check, and the screen
 // that asks an encrypted pod for its words. The words live in these screens and the forms that post them alone: never
 // in an address, never in storage.
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
   useActionData,
   useLocation,
@@ -218,13 +218,66 @@ export const wordsLoader = (api: PodApi) => {
 /** How long the words stay on the clipboard before the page tries to clear them. */
 const CLIPBOARD_MS = 60_000;
 
+/**
+ * What was said of the clipboard, kept outside the words screen, which a confirmed pod takes away: `urgent` is a thing
+ * the person must do, which the page then says wherever it is.
+ */
+let clipboard: { readonly text: string; readonly urgent: boolean } = {
+  text: "",
+  urgent: false,
+};
+let wordsShown = 0;
 let clearing: ReturnType<typeof setTimeout> | undefined;
+let retrying: (() => void) | undefined;
+const watchers = new Set<() => void>();
+
+function say(text: string, urgent = false) {
+  clipboard = { text, urgent };
+  for (const watcher of watchers) watcher();
+}
+
+const shownBy = (by: number) => {
+  wordsShown += by;
+  for (const watcher of watchers) watcher();
+};
+
+const watch = (watcher: () => void) => {
+  watchers.add(watcher);
+  return () => void watchers.delete(watcher);
+};
+
+/** What the clipboard is said to hold, as a screen reads it. */
+const useClipboard = () =>
+  useSyncExternalStore(
+    watch,
+    () => clipboard,
+    () => clipboard,
+  );
+
+/** Whether `words` was found on the clipboard and cleared, found changed, or the browser refused to read or write it. */
+async function clearIfHeld(words: string) {
+  try {
+    if ((await navigator.clipboard.readText()) !== words) return "changed";
+    await navigator.clipboard.writeText("");
+    return "cleared";
+  } catch {
+    return "refused";
+  }
+}
+
+const CLEARED = {
+  changed: "The clipboard holds something else now: left alone.",
+  cleared: "The clipboard is cleared.",
+} as const;
+const NOT_CLEARED =
+  "The browser did not let this page clear the clipboard: clear it yourself.";
 
 /**
- * Copies `words`, and after `CLIPBOARD_MS` empties the clipboard if it still holds them, saying through `say` what
- * happened. Nothing is promised that the browser does not allow: reading the clipboard may be refused.
+ * Copies `words`, and after `CLIPBOARD_MS` empties the clipboard if it still holds them. Nothing is promised that the
+ * browser does not allow: reading the clipboard is refused while the page is not the window in front, so then the page
+ * tries once more when the window is next in front, and only if that is refused too asks the person to clear it.
  */
-async function copyWords(words: string, say: (said: string) => void) {
+async function copyWords(words: string) {
   try {
     await navigator.clipboard.writeText(words);
   } catch {
@@ -233,20 +286,37 @@ async function copyWords(words: string, say: (said: string) => void) {
   }
   say("Copied. This page tries to clear the clipboard in a minute.");
   clearTimeout(clearing);
-  clearing = setTimeout(() => {
-    void (async () => {
-      try {
-        if ((await navigator.clipboard.readText()) !== words)
-          return say("The clipboard holds something else now: left alone.");
-        await navigator.clipboard.writeText("");
-        say("The clipboard is cleared.");
-      } catch {
-        say(
-          "The browser did not let this page clear the clipboard: clear it yourself.",
-        );
-      }
-    })();
-  }, CLIPBOARD_MS);
+  if (retrying !== undefined) window.removeEventListener("focus", retrying);
+  retrying = undefined;
+  const attempt = async () => {
+    clearing = undefined;
+    retrying = undefined;
+    const done = await clearIfHeld(words);
+    if (done !== "refused") return say(CLEARED[done]);
+    if (document.hasFocus()) return say(NOT_CLEARED, true);
+    retrying = () => void attempt();
+    window.addEventListener("focus", retrying, { once: true });
+  };
+  clearing = setTimeout(() => void attempt(), CLIPBOARD_MS);
+}
+
+/** What the person must do about the clipboard, on any screen but the words screen, which says everything itself. */
+export function ClipboardNote() {
+  const { text, urgent } = useClipboard();
+  const here = useSyncExternalStore(
+    watch,
+    () => wordsShown,
+    () => wordsShown,
+  );
+  if (!urgent || here > 0) return null;
+  return (
+    <p className={note} role="alert" data-copied>
+      {text}{" "}
+      <button type="button" onClick={() => say("")}>
+        Dismiss
+      </button>
+    </p>
+  );
 }
 
 export function WordsScreen() {
@@ -279,7 +349,12 @@ export function SixWords({
   words: string;
 }) {
   const { did, n } = useAttempt();
-  const [copied, setCopied] = useState("");
+  const { text: copied } = useClipboard();
+  useEffect(() => {
+    if (clearing === undefined && retrying === undefined) say("");
+    shownBy(1);
+    return () => shownBy(-1);
+  }, []);
   return (
     <>
       <h1>Your six words</h1>
@@ -335,7 +410,7 @@ export function SixWords({
           <button
             type="button"
             data-copy-words
-            onClick={() => void copyWords(words, setCopied)}
+            onClick={() => void copyWords(words)}
           >
             Copy words
           </button>{" "}
@@ -347,7 +422,8 @@ export function SixWords({
           Copying leaves the words on the clipboard, and a clipboard history or
           sync, such as Win+V on Windows or a cloud clipboard, may keep them
           even after it is cleared. This page tries to clear the clipboard a
-          minute later, if the browser lets it read what it holds.
+          minute later, and again when you come back to this window if the
+          browser would not let it; if it cannot, clear it yourself.
         </p>
         <p>
           <strong>Check that you have them.</strong> Type the second and the

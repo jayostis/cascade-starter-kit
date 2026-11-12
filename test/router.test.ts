@@ -200,12 +200,13 @@ describe("Reading for a screen and running a step · routes(), watch()", () => {
   });
 
   describe("given any screen", () => {
-    it("offers a Lock button in the title bar that posts the `lock` step", async () => {
+    it("offers a Lock button in the title bar that posts the `lock` step, and says it is Locking… meanwhile", async () => {
       const markup = await routed.draw(api, "/pods/alex-rivera/");
       assert.match(
         markup,
         /<header[\s\S]*name="intent" value="lock"[\s\S]*<button[^>]*>Lock<\/button>[\s\S]*<\/header>/,
       );
+      assert.match(markup, /name="doing" value="Locking…"/);
     });
 
     it("locks, and reads the screen again, when the `lock` step is posted, so a pod that is closed asks for its words", async () => {

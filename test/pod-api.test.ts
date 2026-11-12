@@ -67,15 +67,15 @@ type Host = Record<string, unknown> & { tables: unknown };
 interface Clocked {
   clock?: () => number;
 }
-const { podApi, maps, notOpenedHere, WAIT_MS, IDLE_LOCK_MS, IDLE_CHECK_MS } =
-  (await import(new URL("../../app/pod-api.ts", import.meta.url).href)) as {
-    WAIT_MS: number;
-    IDLE_LOCK_MS: number;
-    IDLE_CHECK_MS: number;
-    podApi: (host: Host, options?: Clocked) => Api;
-    maps: (output: Output) => Output;
-    notOpenedHere: (name: string) => string;
-  };
+const { podApi, maps, notOpenedHere, WAIT_MS, IDLE_CHECK_MS } = (await import(
+  new URL("../../app/pod-api.ts", import.meta.url).href
+)) as {
+  WAIT_MS: number;
+  IDLE_CHECK_MS: number;
+  podApi: (host: Host, options?: Clocked) => Api;
+  maps: (output: Output) => Output;
+  notOpenedHere: (name: string) => string;
+};
 /** The Node target's server, as far as this test serves it, and what it answers as. */
 interface Own {
   hosts: Set<string>;
@@ -133,9 +133,10 @@ const { nodeHost } = (await import(
     };
   };
 };
-const { entryId, testsIn, PAGE_TOOLS } = (await import(
+const { entryId, testsIn, PAGE_TOOLS, IDLE_LOCK_MS } = (await import(
   new URL("../../app/said.ts", import.meta.url).href
 )) as {
+  IDLE_LOCK_MS: number;
   entryId: (entry: string) => string;
   testsIn: (labs: unknown[]) => { code: string; notation?: string }[];
   PAGE_TOOLS: { name: string }[];
@@ -1377,12 +1378,16 @@ describe("Making, unlocking, locking and deleting pods · api.makePod(), api.wai
     it("is 15 minutes", () => assert.equal(IDLE_LOCK_MS, FIFTEEN_MINUTES));
 
     /** The instance of `api.lock()`'s tests, read by a clock the test moves. */
-    async function clocked() {
+    async function clocked(hospitals?: object) {
       let now = 1_000_000;
       const at = await mkdtemp(join(tmpdir(), "pod-api-idle-"));
       folders.push(at);
       const watched = opening(host(at));
-      const over = crossing(api(watched.host as Host, { clock: () => now }));
+      const built = api(
+        { ...watched.host, ...(hospitals && { hospitals }) } as Host,
+        { clock: () => now },
+      );
+      const over = crossing(built);
       await over.makePod({ person: "Idle", encrypt: true });
       const { words } = await over.waitingWords({ pod: "idle" });
       const [, word2, , , word5] = words.split(" ");
@@ -1395,6 +1400,7 @@ describe("Making, unlocking, locking and deleting pods · api.makePod(), api.wai
       });
       return {
         over,
+        built,
         seen: watched.seen,
         words,
         pass: (ms: number) => void (now += ms),
@@ -1419,6 +1425,40 @@ describe("Making, unlocking, locking and deleting pods · api.makePod(), api.wai
       assert.equal(seen.closes, 1);
       await over.unlock({ pod: "idle", secret: words });
       assert.ok((await over.answers({ pod: "idle" })).answers);
+    });
+
+    it("closes the pod, and stops its sign-in, though the page asks after its connection every WAIT_MS, as that is no request of the person", async () => {
+      const signals: AbortSignal[] = [];
+      const { built, seen, pass } = await clocked(parkedHospitals(signals));
+      const { connection } = await built.connect({
+        pod: "idle",
+        fhirBase: FHIR_BASE(),
+      });
+      mock.timers.enable({ apis: ["setTimeout"] });
+      try {
+        let ended = false;
+        for (let minute = 0; minute < 16 && !ended; minute += 1) {
+          pass(60_000);
+          let over = false;
+          const asked = built
+            .connection({ pod: "idle", connection, wait: true })
+            .then(
+              (shown) => shown.settled,
+              () => true,
+            )
+            .finally(() => (over = true));
+          while (!over) {
+            mock.timers.tick(WAIT_MS);
+            await new Promise((done) => setImmediate(done));
+          }
+          ended = await asked;
+        }
+        assert.ok(ended, "the connection ended within 16 minutes");
+      } finally {
+        mock.timers.reset();
+      }
+      assert.equal(seen.closes, 1);
+      assert.equal(signals[0]!.aborted, true);
     });
 
     it("closes the pod by itself, with no request, when the time has passed at one of its checks", async () => {
@@ -1569,24 +1609,27 @@ const oddOnce = once(() =>
   signedInUnder(() => Response.json({ resourceType: "Basic" })),
 );
 
+/** Hospitals whose sign-in waits for the person, so a connection stays `signing in` until it is stopped; `signals` gets each sign-in's stop. */
+const parkedHospitals = (signals: AbortSignal[]) => ({
+  ...northHospitals(),
+  signIn:
+    (_: unknown, __: unknown, report: (href: string) => void) =>
+    (authorize: URL, signal: AbortSignal) =>
+      new Promise<URL>((_, reject) => {
+        signals.push(signal);
+        report(authorize.href);
+        signal.addEventListener(
+          "abort",
+          () => reject(new ConnectionFailure("cancelled", "stopped")),
+          { once: true },
+        );
+      }),
+});
+
 /** A sign-in that waits for the person, so a connection stays `signing in`, and what stops it. */
 const parkedOnce = once(async () => {
   const signals: AbortSignal[] = [];
-  const parked = {
-    ...northHospitals(),
-    signIn:
-      (_: unknown, __: unknown, report: (href: string) => void) =>
-      (authorize: URL, signal: AbortSignal) =>
-        new Promise<URL>((_, reject) => {
-          signals.push(signal);
-          report(authorize.href);
-          signal.addEventListener(
-            "abort",
-            () => reject(new ConnectionFailure("cancelled", "stopped")),
-            { once: true },
-          );
-        }),
-  };
+  const parked = parkedHospitals(signals);
   const { built } = await fresh(() => ({ hospitals: parked }));
   const start = async () => {
     await built.makePod({ person: "Ada" });
@@ -2924,7 +2967,9 @@ describe("Guarding the server · guard(), newLaunch(), GET /?launch=<token>", ()
       const again = await app.request(`${at}/?launch=${launch.token}`);
       assert.equal(again.status, 403);
       assert.equal(again.headers.get("set-cookie"), null);
-      assert.match(await again.text(), /Start the app again/);
+      const page = await again.text();
+      assert.match(page, /This address was opened already/);
+      assert.match(page, /Start the app again/);
     });
 
     it("answers 403 to a token that is not the launch's, and to none", async () => {

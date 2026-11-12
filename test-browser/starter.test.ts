@@ -1017,10 +1017,9 @@ describe("Opening the app from the address it printed · ?launch=<token>", () =>
         "refuses the same address in another browser, which says to start the app again",
         async () => {
           assert.equal(answered?.status(), 403);
-          assert.match(
-            (await second.locator("body").textContent()) ?? "",
-            /Start the app again/,
-          );
+          const said = (await second.locator("body").textContent()) ?? "";
+          assert.match(said, /This address was opened already/);
+          assert.match(said, /Start the app again/);
           assert.deepEqual(await again.cookies(fresh.origin), []);
         },
       );
@@ -1700,6 +1699,129 @@ describe("Encrypting a pod with six words · Encrypt this pod with six words", (
         assert.equal(await held(), "something else");
       },
     );
+    await page.close();
+  });
+
+  /** Makes the browser refuse to read the clipboard, as it does a page that is not the window in front, until `front` is set. */
+  const behind = (page: Page, focused: boolean) =>
+    page.evaluate((focused) => {
+      const own = window as unknown as { front: boolean; reads: number };
+      own.front = focused;
+      own.reads = 0;
+      const read = navigator.clipboard.readText.bind(navigator.clipboard);
+      navigator.clipboard.readText = () => {
+        own.reads += 1;
+        return own.front
+          ? read()
+          : Promise.reject(new DOMException("not focused", "NotAllowedError"));
+      };
+      document.hasFocus = () => own.front;
+    }, focused);
+
+  test("when Copy words is pressed and the page is not the window in front a minute later", async (t) => {
+    const page = await newPage();
+    await page
+      .context()
+      .grantPermissions(["clipboard-read", "clipboard-write"]);
+    await page.clock.install();
+    await sixWordsOf(page, modelled, "Hedy Lamarr");
+    await behind(page, false);
+    await page.getByRole("button", { name: "Copy words" }).click();
+    await page.locator("[data-copied]", { hasText: /^Copied/ }).waitFor();
+    await page.clock.fastForward(60_000);
+    await page.waitForFunction(
+      () => (window as unknown as { reads: number }).reads >= 1,
+    );
+    await t.test(
+      "does not say the clipboard is cleared, nor ask the person to clear it, while it waits for the window",
+      async () => {
+        assert.match(
+          (await page.locator("[data-copied]").textContent()) ?? "",
+          /^Copied/,
+        );
+      },
+    );
+    await page.evaluate(() => {
+      (window as unknown as { front: boolean }).front = true;
+      window.dispatchEvent(new Event("focus"));
+    });
+    await page
+      .locator("[data-copied]", { hasText: /clipboard is cleared/ })
+      .waitFor();
+    await t.test(
+      "empties the clipboard when the window is next in front",
+      async () => {
+        assert.equal(
+          await page.evaluate(() => navigator.clipboard.readText()),
+          "",
+        );
+      },
+    );
+    await page.close();
+  });
+
+  test("when Copy words is pressed, the pod is made, and the browser will not let the page clear the clipboard", async (t) => {
+    const page = await newPage();
+    await page
+      .context()
+      .grantPermissions(["clipboard-read", "clipboard-write"]);
+    await page.clock.install();
+    const words = await sixWordsOf(page, modelled, "Annie Easley");
+    await behind(page, false);
+    await page.evaluate(() => {
+      document.hasFocus = () => true;
+    });
+    await page.getByRole("button", { name: "Copy words" }).click();
+    await page.locator("[data-copied]", { hasText: /^Copied/ }).waitFor();
+    await page.getByLabel("Word 2").fill(words[1]!);
+    await page.getByLabel("Word 5").fill(words[4]!);
+    await page.getByRole("button", { name: "Make the encrypted pod" }).click();
+    await page.waitForURL(`${modelled.origin}/pods/annie-easley/`);
+    await page.clock.fastForward(60_000);
+    const note = page.locator("main [data-copied]");
+    await note.waitFor();
+    await t.test(
+      "tells the person to clear it themselves, on the screen it has moved to",
+      async () => {
+        assert.match((await note.textContent()) ?? "", /clear it yourself/);
+        assert.equal(await note.getAttribute("role"), "alert");
+      },
+    );
+    await note.getByRole("button", { name: "Dismiss" }).click();
+    await t.test("takes the note away when it is dismissed", async () => {
+      assert.equal(await page.locator("[data-copied]").count(), 0);
+    });
+    await page.close();
+  });
+
+  test("when the page makes no request the person caused for 15 minutes, or is shown again", async (t) => {
+    const page = await newPage();
+    await page.clock.install();
+    await page.goto(`${modelled.origin}/`);
+    await page.waitForFunction(() => document.body.dataset.state === "ready");
+    await page.waitForLoadState("networkidle");
+    const asked = async (cause: () => Promise<unknown>) => {
+      const [request] = await Promise.all([
+        page.waitForRequest((each) => each.url().includes("/api/")),
+        cause(),
+      ]);
+      return request.url();
+    };
+    const idle = await asked(() => page.clock.fastForward(15 * 60 * 1000));
+    await t.test(
+      "reads the screen again at the server, which locks a pod it has left idle",
+      () => {
+        assert.match(idle, /\/api\//);
+      },
+    );
+    const shown = await asked(() =>
+      page.evaluate(() =>
+        document.dispatchEvent(new Event("visibilitychange")),
+      ),
+    );
+    await t.test("reads the screen again when the tab is shown again", () => {
+      assert.match(shown, /\/api\//);
+    });
     await page.close();
   });
 });

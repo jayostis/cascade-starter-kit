@@ -29,6 +29,7 @@ import { PAGE_TOOLS, type Person } from "../../said.ts";
 import { TOOLS } from "../../tools.ts";
 import type { Host, PodApi } from "../api.tsx";
 import { busy } from "../doing.ts";
+import { counted } from "../idle.ts";
 
 const BASE = new URL(import.meta.env.BASE_URL, location.href);
 configureRuntime({ base: new URL("cascade-runtime/", BASE).href });
@@ -201,7 +202,7 @@ function named<T extends object>(api: T): T {
 const inPage = named(podApi(browser));
 
 /** PodApi in the page, with Delete all data noted in this browser's storage and a pod made or a reset forgetting it. */
-const api: PodApi = {
+const api: PodApi = counted({
   ...inPage,
   async makePod(input) {
     const made = await inPage.makePod(input);
@@ -217,7 +218,7 @@ const api: PodApi = {
     markDeletedAll(false);
     return inPage.resetAll(input);
   },
-};
+});
 
 /**
  * A browser with no pod starts with a copy of every sample, unless Delete all data was the last thing done; a sample
