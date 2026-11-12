@@ -10,8 +10,12 @@ import { nodeHost } from "../node-host.ts";
 import { podApi } from "../pod-api.ts";
 import { appServer } from "../server/app.ts";
 import { chatRoutes } from "../server/chat.ts";
+import { launchCookie, newLaunch } from "../server/launch.ts";
 
 const ORIGIN = "http://app.test";
+const launch = newLaunch();
+/** The cookie the page holds once it has opened the address the server printed. */
+const COOKIE = `${launchCookie(new URL(ORIGIN))}=${launch.exchange(launch.token)}`;
 const ANSWER = "Alex's first two imports brought in her records.";
 let folder: string;
 let api: ReturnType<typeof podApi>;
@@ -64,6 +68,7 @@ beforeAll(async () => {
   app = appServer({
     api,
     own: () => ({ hosts: new Set(["app.test"]), origins: new Set([ORIGIN]) }),
+    launch,
     chat: chatRoutes({ api, model }),
     back: () => undefined,
     pages: folder,
@@ -82,7 +87,9 @@ afterAll(async () => {
 describe("Chatting with a model over the server · chatRoutes(), /chat", () => {
   describe("with a mock model", () => {
     it("names the model by its provider, its name and whether it is local, and nothing more, at GET /chat", async () => {
-      const response = await app.request(`${ORIGIN}/chat`);
+      const response = await app.request(`${ORIGIN}/chat`, {
+        headers: { cookie: COOKIE },
+      });
       expect(await response.json()).toEqual({
         provider: "mock",
         name: "mock-1",
@@ -93,7 +100,11 @@ describe("Chatting with a model over the server · chatRoutes(), /chat", () => {
     it("streams the model's words as the AI SDK's UI message stream at POST /chat", async () => {
       const response = await app.request(`${ORIGIN}/chat`, {
         method: "POST",
-        headers: { origin: ORIGIN, "content-type": "application/json" },
+        headers: {
+          origin: ORIGIN,
+          "content-type": "application/json",
+          cookie: COOKIE,
+        },
         body: JSON.stringify({
           pod: "alex-rivera",
           page: "/pods/alex-rivera/",

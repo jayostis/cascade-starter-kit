@@ -24,12 +24,16 @@ app has two targets:
 
 - **On Node,** `npm start` builds it into `dist/` (again whenever a file it is
   built from is newer) and serves it from `server/main.ts` at
-  `http://127.0.0.1:3000/`, over the pods in `pods/`; `npm run dev` serves the
+  `http://127.0.0.1:3000/?launch=<token>` (the address it prints, whose random
+  token `server/launch.ts` trades once for the cookie that `/api/`, `/tools` and
+  `/chat` ask for), over the pods in `pods/`; `npm run dev` serves the
   sources through Vite in the same process instead, the pages redrawn on every
   save. Its pages reach PodApi over HTTP: `src/hosts/http.ts` calls
   `POST /api/<operation>` through Hono's typed client (`src/hosts/remote.ts`),
   and `server/api.ts` answers it, each input checked by `server/inputs.ts`.
-  `server/app.ts` is the server: the guard (`server/guard.ts`), `/api/`,
+  `server/app.ts` is the server: the guard (`server/guard.ts`) and the launch's
+  cookie (`server/launch.ts`; not asked at `/callback`, which a hospital's
+  cross-site redirect reaches without it), `/api/`,
   `/tools`, `/callback`, `/world-date` and the built pages, and `/chat` when
   the chat is added (without it, `/chat` is a 404).
 - **In a browser alone,** `npm run browser` (`server/browser.ts`) builds it
@@ -143,7 +147,7 @@ calling `podApi`'s operations only, with its consent `tier`: `free` reads
 (`list_pods`, the change tools, `ask` and `reference_table_checks`, which are `TOOLS` of `cascade-runtime/tools` run over `podApi` as its `PodReads`; and `worth_a_look`, the kit's own) and moves the app
 (`open_pod`, `open_trend`, `open_entry`, `open_classes`, `open_panel`, `open_table`, through the door's `open` and its own addresses), and `ask` writes,
 which the person confirms first (`make_pod`, never encrypted; `check_tables`; `set_world_date`). `NEVER` is what
-no tool calls: `makePod` with `encrypt`, `waitingWords`, `confirmWords`, `unlock`, `connect`, `bring`,
+no tool calls: `makePod` with `encrypt`, `waiting`, `waitingWords`, `confirmWords`, `unlock`, `lock`, `connect`, `bring`,
 `deleteAll` and `resetAll`. `ask` takes the runtime's `format: "compact"` (the whole pod as tab-separated pages, each page's `next` being the input of the page after) and `offset`, handed to the runtime's `ask` tool unchanged; the Node host makes the compact read (`compact` of `nodeHost`, `podReads` of `cascade-runtime/tools/node` over the pod the app has open), the browser host has none and refuses it. WebMCP (`src/tools.ts`), on both
 targets and every screen, offers every tool by its tier (the last section says how). A model reached
 by any door sends what the tools return to its provider when it is hosted:

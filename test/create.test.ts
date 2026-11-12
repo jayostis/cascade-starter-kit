@@ -228,6 +228,7 @@ describe("Making an app · create-cascade-app <folder>", () => {
       for (const line of [
         "with the pods alex-rivera, priya-natarajan, martin-okafor and tamsin-vale.",
         "npm start",
+        "the one that ends in ?launch= and a code",
         "npm run browser",
         "npm run help",
         agentPrompt("my-app"),

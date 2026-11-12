@@ -99,7 +99,7 @@ export function steps(host: Host) {
           username: field("username"),
         });
       } catch (error) {
-        const waits = await api.waitingWords({ pod }).then(
+        const waits = await api.waiting({ pod }).then(
           () => true,
           () => false,
         );
@@ -120,6 +120,10 @@ export function steps(host: Host) {
             "incorrect secret",
         };
       }
+      return null;
+    },
+    async lock() {
+      await api.lock();
       return null;
     },
     async "delete-all"() {

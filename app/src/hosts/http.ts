@@ -3,10 +3,11 @@
 import { lazy } from "react";
 import { type Person, refusal } from "../../said.ts";
 import type { ChatModel, Host, HostChat, PodApi, ReadTool } from "../api.tsx";
+import { counted } from "../idle.ts";
 import { remoteApi } from "./remote.ts";
 
 const BASE = new URL(import.meta.env.BASE_URL, location.href);
-const api: PodApi = remoteApi(BASE.href);
+const api: PodApi = counted(remoteApi(BASE.href));
 /** The chat add-on's window, found by Vite when it builds the app: none without the add-on, which then has no chat. */
 const [chatWindow] = Object.values(
   import.meta.glob<{ ChatWindow: HostChat["Window"] }>("../chat/window.tsx"),

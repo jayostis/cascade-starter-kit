@@ -23,6 +23,7 @@ import { demoPeople, worldInstant } from "../said.ts";
 import { appServer, type ChatServed, type Served } from "./app.ts";
 import { buildStalePages } from "./built.ts";
 import type { Own } from "./guard.ts";
+import { newLaunch } from "./launch.ts";
 
 const APP = fileURLToPath(new URL("../", import.meta.url));
 const DIST = join(APP, "dist");
@@ -113,9 +114,11 @@ const vite = dev
     })
   : undefined;
 
+const launch = newLaunch();
 const app = appServer({
   api,
   own: () => own,
+  launch,
   ...(chat === undefined ? {} : { chat }),
   back: (url) => back(url),
   people: () => people,
@@ -145,7 +148,7 @@ server.listen(Number(env.PORT || 3000), "127.0.0.1", () => {
   const reached = nodeHospitals(origin, demo, { asOf: startedAsOf, listener });
   Object.assign(host, { hospitals: reached.hospitals, world: reached.world });
   back = reached.back;
-  stdout.write(`${origin}/\n`);
+  stdout.write(`${origin}/?launch=${launch.token}\n`);
   stdout.write(`The demo hospitals are listening at ${listener.origin}/\n`);
 });
 

@@ -45,6 +45,7 @@ async function answer<R extends ClientResponse<unknown, number>>(
   }
   const body = (parsed ?? {}) as Output;
   if (typeof body.refused === "string") {
+    if (response.status === 403) throw new Error(body.refused);
     if (response.status === 423)
       throw new Unopened(String(body.unopened), body.refused);
     if (response.status === 400) throw new Refusal(body.refused);
@@ -72,12 +73,15 @@ export function remoteApi(base: string, options?: ClientRequestOptions) {
     tool: (json: In<"tool">) => answer("tool", api.tool.$post({ json })),
     makePod: (json: In<"makePod">) =>
       answer("makePod", api.makePod.$post({ json })),
+    waiting: (json: In<"waiting">) =>
+      answer("waiting", api.waiting.$post({ json })),
     waitingWords: (json: In<"waitingWords">) =>
       answer("waitingWords", api.waitingWords.$post({ json })),
     confirmWords: (json: In<"confirmWords">) =>
       answer("confirmWords", api.confirmWords.$post({ json })),
     unlock: (json: In<"unlock">) =>
       answer("unlock", api.unlock.$post({ json })),
+    lock: (json: In<"lock"> = {}) => answer("lock", api.lock.$post({ json })),
     deleteAll: (json: In<"deleteAll"> = {}) =>
       answer("deleteAll", api.deleteAll.$post({ json })),
     resetAll: (json: In<"resetAll"> = {}) =>

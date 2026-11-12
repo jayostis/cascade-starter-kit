@@ -612,6 +612,9 @@ export const SECTIONS: readonly Section[] = [
   },
 ];
 
+/** How long an encrypted pod stays open with no request the person caused before it is closed and asks for its words again, and the page is drawn again. */
+export const IDLE_LOCK_MS = 15 * 60 * 1000;
+
 export const SOURCES = "entry/Where it came from";
 export const REVIEW = "entry/What needs review";
 

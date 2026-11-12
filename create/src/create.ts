@@ -475,11 +475,11 @@ export async function create(
       `  cd ${shellWord(folder)}`,
       "  npm start",
       "",
-      "then open http://127.0.0.1:3000/: the app on Node, over the pods in pods/. Or, to run it in a browser alone, its pods kept in the browser:",
+      "then open the address it prints, the one that ends in ?launch= and a code: the app on Node, over the pods in pods/. Or, to run it in a browser alone, its pods kept in the browser:",
       "",
       "  npm run browser",
       "",
-      "and open the same address. `npm run help` lists the app's commands.",
+      "and open http://127.0.0.1:3000/. `npm run help` lists the app's commands.",
       ...(commands.length === 0
         ? []
         : [

@@ -6,6 +6,7 @@ import { expect, test } from "@playwright/test";
  */
 test.describe("The app in a browser · npm run test:e2e", () => {
   test("when Alex Rivera's pod is opened", async ({ page }) => {
+    await page.goto(process.env.LAUNCH!);
     await page.goto("/pods/alex-rivera/");
     const body = page.locator("body");
     try {

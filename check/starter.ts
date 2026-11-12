@@ -230,6 +230,29 @@ async function stoppedAtStart(settings) {
   return { code, wrote };
 }
 
+/** The cookies of the servers started, as a browser context takes them: the port is in each name, so one list holds every server's. */
+const jar = [];
+
+/**
+ * Opens the address a server printed, `address` with `?launch=<token>`, as a page does, once: the cookie it is given,
+ * as a request carries it, and kept for the tabs.
+ */
+async function traded(address, token) {
+  const answer = await fetch(`${address}?launch=${token}`, {
+    redirect: "manual",
+  });
+  assert.equal(
+    answer.status,
+    303,
+    "the printed address is traded for a cookie",
+  );
+  const [pair] = (answer.headers.get("set-cookie") ?? "").split(";");
+  const [name, ...value] = pair.split("=");
+  assert.match(name, /^cascade-launch-\d+$/);
+  jar.push({ name, value: value.join("="), url: address });
+  return pair;
+}
+
 /**
  * `npm start`, or with `script` `npm run <script>`, on a port the system gives, with `settings` added to its
  * environment, and its address once it serves; `npm start`'s once its demo hospitals listen too.
@@ -244,19 +267,26 @@ async function started(settings = {}, script = "start") {
   });
   let out = "";
   child.stderr.on("data", (chunk) => stdout.write(`[server] ${chunk}`));
-  const { app: address, demo: listenerAddress } = await new Promise<{
+  const {
+    app: address,
+    token,
+    demo: listenerAddress,
+  } = await new Promise<{
     app: string;
+    token?: string;
     demo?: string;
   }>((done, failed) => {
     child.stdout.on("data", (chunk) => {
       out += chunk;
-      const app = /^(http:\/\/127\.0\.0\.1:\d+\/)$/m.exec(out);
+      const app = /^(http:\/\/127\.0\.0\.1:\d+\/)(?:\?launch=([\w-]+))?$/m.exec(
+        out,
+      );
       const demo =
         /^The demo hospitals are listening at (http:\/\/127\.0\.0\.1:\d+\/)$/m.exec(
           out,
         );
       if (app !== null && (demo !== null || script !== "start"))
-        done({ app: app[1], demo: demo?.[1] });
+        done({ app: app[1], token: app[2], demo: demo?.[1] });
     });
     child.on("close", (code) =>
       failed(new Error(`npm ${args.join(" ")} exited ${code}: ${out}`)),
@@ -264,8 +294,10 @@ async function started(settings = {}, script = "start") {
   });
   stdout.write(`serving at ${address}\n`);
   const closed = new Promise((done) => child.on("close", done));
+  const cookie = token === undefined ? undefined : await traded(address, token);
   return {
     address,
+    cookie,
     listenerAddress,
     stop: async () => {
       if (platform === "win32")
@@ -284,7 +316,11 @@ async function called(server, operation, input = {}, from = undefined) {
   const origin = from ?? new URL(server.address).origin;
   const answer = await fetch(new URL(`/api/${operation}`, server.address), {
     method: "POST",
-    headers: { origin, "content-type": "application/json" },
+    headers: {
+      origin,
+      "content-type": "application/json",
+      ...(server.cookie !== undefined && { cookie: server.cookie }),
+    },
     body: JSON.stringify(input),
   });
   return { status: answer.status, body: await answer.json().catch(() => ({})) };
@@ -308,7 +344,10 @@ let browser;
 /** A new tab of the browser, what goes wrong in it kept for a failure's message. */
 async function tab() {
   browser ??= await chromium.launch();
-  const page = watched(await browser.newPage());
+  const context = await browser.newContext();
+  await context.addCookies(jar);
+  const page = watched(await context.newPage());
+  page.on("close", () => void context.close().catch(() => undefined));
   page.setDefaultTimeout(2 * MINUTES);
   return page;
 }
@@ -1056,7 +1095,9 @@ try {
     "an add-on is the app's only when added: the chat's /chat and window, the MCP server's npm run mcp and its tools",
     async () => {
       const chat = added.includes("chat");
-      const answer = await fetch(new URL("/chat", server.address));
+      const answer = await fetch(new URL("/chat", server.address), {
+        headers: { cookie: server.cookie },
+      });
       assert.equal(answer.status, chat ? 200 : 404, "GET /chat");
       if (chat)
         assert.deepEqual(await answer.json(), {}, "a model with none set");
@@ -2264,7 +2305,11 @@ if (release === undefined) {
           const call = (operation, from) =>
             fetch(at(`/api/${operation}`), {
               method: "POST",
-              headers: { origin: from, "content-type": "application/json" },
+              headers: {
+                origin: from,
+                "content-type": "application/json",
+                cookie: server.cookie,
+              },
               body: "{}",
             });
           const own = await call("pods", origin);
@@ -2272,6 +2317,35 @@ if (release === undefined) {
           assert.ok(Array.isArray((await own.json()).pods));
           assert.equal((await call("pods", "http://evil.example")).status, 403);
           assert.equal((await call("close", origin)).status, 404);
+        },
+      );
+
+      await addOnBehaviour(
+        "a program that names the app's own Host, Origin and Content-Type but holds no cookie reads no pod, and the cookie opens them",
+        async () => {
+          const bare = (method, path) =>
+            fetch(at(path), {
+              method,
+              headers: { origin, "content-type": "application/json" },
+              ...(method === "POST" && { body: "{}" }),
+            });
+          for (const [method, path] of [
+            ["POST", "/api/pods"],
+            ["POST", "/api/waitingWords"],
+            ["GET", "/tools"],
+            ["POST", "/tools/list_pods"],
+          ])
+            assert.equal(
+              (await bare(method, path)).status,
+              403,
+              `${method} ${path}`,
+            );
+          assert.equal((await fetch(at("/"))).status, 200, "the page");
+          assert.equal(
+            (await fetch(at("/tools"), { headers: { cookie: server.cookie } }))
+              .status,
+            200,
+          );
         },
       );
 

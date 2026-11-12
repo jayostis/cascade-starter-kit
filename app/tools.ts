@@ -50,12 +50,17 @@ export const NEVER: readonly {
     with: "encrypt",
     why: "an encrypted pod's six words are the person's alone",
   },
+  { op: "waiting", why: "an encrypted pod's making is the person's to finish" },
   { op: "waitingWords", why: "the six words are the person's alone" },
   {
     op: "confirmWords",
     why: "the six words and the password are the person's",
   },
   { op: "unlock", why: "the six words are the person's alone" },
+  {
+    op: "lock",
+    why: "it ends the person's opening of their pods, and is theirs to do",
+  },
   { op: "connect", why: "the sign-in at a hospital is the person's" },
   {
     op: "bring",
