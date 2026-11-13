@@ -33,8 +33,9 @@ npm run typecheck
 npm run lint
 npm test
 ```
+
 `npm run format` fixes what the formatting check in `npm run lint` finds. The suite runs in seconds, so run all of it;
-name>"`.
+pass node's own test flags through it to narrow a run, for example `npm test -- --test-name-pattern="<words>"`.
 
 The browser tests, which run `try/` and the chat add-on in Chromium, are slower and need Playwright's browser:
 
