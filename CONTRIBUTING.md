@@ -34,27 +34,28 @@ npm run lint
 npm test
 ```
 
-`npm run format` fixes what the formatting check in `npm run lint` finds. The suite runs in seconds, so run all of it;
+`npm run format` fixes what the formatting check in `npm run lint` finds. Run all of the suite before you push;
 pass node's own test flags through it to narrow a run, for example `npm test -- --test-name-pattern="<words>"`.
 
-The browser tests, which run `try/` and the chat add-on in Chromium, are slower and need Playwright's browser:
+The browser tests, which run `try/` and the chat add-on in Chromium, are slower and need Playwright's browser, which you install once:
 
 ```sh
+npx playwright install --only-shell chromium
 npm run test:browser
 ```
 
 ## What a pull request must pass
 
-CI runs on every pull request, and a red check is a reason not to merge.
+CI runs on every pull request. This repository's policy is that a pull request is merged only when its checks are green.
 
 - **`tests`**: the type check, the lint, and the suite. The results are then checked to read as a specification: every
   test sits under a capability heading listed in [`test/spec.json`](test/spec.json), word for word. That check runs in
   CI, not in `npm test`, so a new capability needs its heading added to `spec.json` by hand.
 - **`node-22`**: the suite on Node 22, the oldest Node supported.
-- **`pack`, `made` and `create`**: pack `create-cascade-app` with the template and its lockfiles, then make an app by
-  the command on Linux and Windows, with each combination of add-ons, and run the made app's own `npm test`. A made app
-  installs by `npm ci` from the lockfile the command ships, so a template change that leaves a lockfile out of step
-  fails here.
+- **`pack`, `made` and `create`**: `pack` packs `create-cascade-app` with the template and its lockfiles. `made` and
+  `create` then make an app by the command and use it; [`create.yml`](.github/workflows/create.yml) says which systems
+  and add-ons each runs. A made app installs by `npm ci` from the lockfile the command ships, so a template change that
+  leaves a lockfile out of step fails here.
 - **`browser`**: builds `try/` and runs the browser tests.
 - **`ready-to-merge`**: holds a pull request until every pull request it depends on can merge (see "A change that spans
   two repositories").
@@ -78,13 +79,13 @@ on a line of its own, with the full URL:
 Depends-On: https://github.com/jayostis/cascade-runtime-js/pull/123
 ```
 
-The short `owner/repo#123` form is rejected. While the runtime's pull request is open, every check here runs on the
+Use the full URL; the short `owner/repo#123` form is not read. While the runtime's pull request is open, every check here runs on the
 package its own check packed at its head. When it merges, the pair moves the pin onto its build with `scripts/pin.mjs`
 on the pair's branch, before the pair merges. Editing a description to add or cut a line re-runs the checks that read
 it; if the named pull request changes after your checks have run, re-run yours with `gh run rerun`.
 
-A named pull request must be from a branch of the repository itself: one from a fork fails the check. A contributor
-without write access to the other repository asks a maintainer to open the counterpart.
+cascade-runtime-js's own check fails a named pull request that is from a fork, so a contributor without write access to
+that repository asks a maintainer to open the counterpart.
 
 The full rules are in cascade-bridge-spec's
 [`compatibility.md`](https://github.com/jayostis/cascade-bridge-spec/blob/main/compatibility.md).
