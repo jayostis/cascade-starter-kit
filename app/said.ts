@@ -9,6 +9,9 @@ import {
   medicationsSharingAnIngredient,
   reportDiffers,
   reportsDifferingFromClinVar,
+  TIER_OF_KIND,
+  type ToolKind,
+  type ToolTier,
 } from "cascade-runtime/tools";
 
 /** A question's row: each variable it binds, as text. */
@@ -3207,12 +3210,13 @@ export interface PageDoor {
   open(address: string): Promise<void>;
 }
 
-/** A tool a page can run itself, with no runtime: it moves the app, or writes once the person has said yes (`ask`). */
+/** A tool a page can run itself, with no runtime: it moves the app, or writes once the person has said yes (`ask`). Its `tier` is its `kind`'s. */
 export interface PageTool {
   readonly name: string;
   readonly description: string;
   readonly inputSchema: object;
-  readonly tier: "free" | "ask";
+  readonly kind: ToolKind;
+  readonly tier: ToolTier;
   readonly ofPod?: true;
   readonly opens?: true;
   run(api: PageToolsApi, input: ToolInput, door: PageDoor): Promise<unknown>;
@@ -3239,12 +3243,12 @@ async function going(address: string, { open }: PageDoor) {
  * `{ opened }`, and the three writes the person confirms first, each giving PodApi's answer. They need no runtime, so
  * the Node target's chat runs them in the page.
  */
-export const PAGE_TOOLS: readonly PageTool[] = [
+const PAGE_TOOLS_OF_KIND: readonly Omit<PageTool, "tier">[] = [
   {
     name: "open_pod",
     description: "Opens a pod's page in the app.",
     inputSchema: NO_INPUT,
-    tier: "free",
+    kind: "MovingTheAppsView",
     ofPod: true,
     opens: true,
     async run(api, { pod = "" }, door) {
@@ -3256,7 +3260,7 @@ export const PAGE_TOOLS: readonly PageTool[] = [
     name: TREND_VIEW.name,
     description: TREND_VIEW.description,
     inputSchema: TREND_VIEW.inputSchema,
-    tier: "free",
+    kind: "MovingTheAppsView",
     ofPod: true,
     opens: true,
     async run(api, { pod = "", test, medication }, door) {
@@ -3307,7 +3311,7 @@ export const PAGE_TOOLS: readonly PageTool[] = [
       required: ["entry"],
       additionalProperties: false,
     },
-    tier: "free",
+    kind: "MovingTheAppsView",
     ofPod: true,
     opens: true,
     async run(api, { pod = "", entry = "" }, door) {
@@ -3335,7 +3339,7 @@ export const PAGE_TOOLS: readonly PageTool[] = [
       },
       additionalProperties: false,
     },
-    tier: "free",
+    kind: "MovingTheAppsView",
     ofPod: true,
     opens: true,
     async run(api, { pod = "", class: picked }, door) {
@@ -3361,7 +3365,7 @@ export const PAGE_TOOLS: readonly PageTool[] = [
       required: ["panel"],
       additionalProperties: false,
     },
-    tier: "free",
+    kind: "MovingTheAppsView",
     ofPod: true,
     opens: true,
     async run(api, { pod = "", panel = "" }, door) {
@@ -3389,7 +3393,7 @@ export const PAGE_TOOLS: readonly PageTool[] = [
       },
       additionalProperties: false,
     },
-    tier: "free",
+    kind: "MovingTheAppsView",
     opens: true,
     async run(api, { table, q, code }, door) {
       if (table !== undefined && table !== "") await api.table({ id: table });
@@ -3417,7 +3421,7 @@ export const PAGE_TOOLS: readonly PageTool[] = [
       required: ["person"],
       additionalProperties: false,
     },
-    tier: "ask",
+    kind: "MakingAPodThatIsNotEncrypted",
     run: (api, { person = "" }) => api.makePod({ person }),
   },
   {
@@ -3425,7 +3429,7 @@ export const PAGE_TOOLS: readonly PageTool[] = [
     description:
       "Checks each source of the reference tables for a newer version and keeps any there is.",
     inputSchema: NO_INPUT,
-    tier: "ask",
+    kind: "ChangingTheAppsTablesOrSettings",
     run: (api) => api.checkTables({}),
   },
   {
@@ -3444,7 +3448,12 @@ export const PAGE_TOOLS: readonly PageTool[] = [
       required: ["date"],
       additionalProperties: false,
     },
-    tier: "ask",
+    kind: "ChangingTheAppsTablesOrSettings",
     run: (api, { date = "" }) => api.setWorldDate({ date }),
   },
 ];
+
+/** The tools a page runs itself, each with the `tier` the protocol gives its `kind` of act. */
+export const PAGE_TOOLS: readonly PageTool[] = PAGE_TOOLS_OF_KIND.map(
+  (tool) => ({ ...tool, tier: TIER_OF_KIND[tool.kind] }),
+);
