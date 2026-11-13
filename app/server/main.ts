@@ -102,6 +102,10 @@ const chat = existsSync(CHAT)
 let own: Own = { hosts: new Set(), origins: new Set() };
 let back: Served["back"] = () => undefined;
 
+/** `folder` as a glob for everything under it: a character a glob reads is a class of its own, so no path changes it. */
+const under = (folder: string) =>
+  `${folder.replaceAll("\\", "/").replace(/[*?[\]{}()!+@|]/g, "[$&]")}**`;
+
 const dev = argv.includes("--dev");
 if (!dev) await pagesBuilt();
 const vite = dev
@@ -109,7 +113,11 @@ const vite = dev
       await import("vite")
     ).createServer({
       root: APP,
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        // On top of Vite's own list: `/@fs/` reaches a pod's files as well as `/pods/`.
+        fs: { deny: [under(PODS), "**/.answers/**"] },
+      },
       appType: "spa",
     })
   : undefined;

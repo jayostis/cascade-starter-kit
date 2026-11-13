@@ -2741,7 +2741,7 @@ describe("Answering an address a person opens with the app's page · appServer()
         const refused = await ask(path, { "sec-fetch-mode": "navigate" });
         assert.equal(refused.status, 403, path);
         assert.match(refused.headers.get("content-type") ?? "", /text\/html/);
-        assert.match(await refused.text(), /open the address .* printed/s);
+        assert.match(await refused.text(), /Open the address .* printed/s);
       }
       assert.deepEqual(reached, []);
     });
