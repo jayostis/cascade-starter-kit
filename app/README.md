@@ -119,14 +119,15 @@ dates in short included.
 
 `tools.ts` is the one list of tools a model reaches the app by, the browser
 target's WebMCP, and the chat and an MCP client when they are added, alike.
-Each calls the app's PodApi only, and each has a consent tier:
+Each calls the app's PodApi only, takes one kind of act, and has the consent tier
+the protocol gives that kind:
 
 - **free**, reads: `list_pods`, `find_changes`, `finding_rows`, `lab_series`,
   `timeline`, `worth_a_look` and `ask`; and moving the app: `open_pod`,
   `open_trend`, `open_entry`, `open_classes`, `open_panel` and `open_table`.
 - **ask**, writes the person confirms first: `make_pod` (never encrypted),
   `check_tables` and `set_world_date`.
-- **never**, what no tool calls: making an encrypted pod, its six words and
+- **never**, the tier of the kinds of act no tool takes, so what no tool calls: making an encrypted pod, its six words and
   password (`waitingWords`, `confirmWords`, `unlock`), the sign-in at a hospital
   (`connect`), bringing a record in (`bring`: the person does it from its box),
   and Delete all and Reset all.

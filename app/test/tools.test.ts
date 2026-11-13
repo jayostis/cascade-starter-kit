@@ -1,4 +1,8 @@
-import { QUESTIONS, TOOLS as RUNTIME } from "cascade-runtime/tools";
+import {
+  QUESTIONS,
+  TIER_OF_KIND,
+  TOOLS as RUNTIME,
+} from "cascade-runtime/tools";
 import { beforeAll, describe, expect, it } from "vitest";
 import { NEVER, TOOLS } from "../tools.ts";
 
@@ -22,6 +26,12 @@ const RUNS: Record<string, [Record<string, unknown>, string[]]> = {
   check_tables: [{}, ["checkTables"]],
   set_world_date: [{ date: "2026-01-01" }, ["setWorldDate"]],
 };
+/** The kind of act of each tool that neither reads nor opens a screen. */
+const OTHER_KINDS: Record<string, string> = {
+  make_pod: "MakingAPodThatIsNotEncrypted",
+  check_tables: "ChangingTheAppsTablesOrSettings",
+  set_world_date: "ChangingTheAppsTablesOrSettings",
+};
 const ANSWERS: Record<string, unknown> = {
   pods: { pods: [{ name: "p" }] },
   tool: { value: [], found: [] },
@@ -38,10 +48,10 @@ const address = () => "/";
  */
 describe("The tool list a model is offered · TOOLS, NEVER", () => {
   describe("TOOLS", () => {
-    /** Each tool's tier, and the operations and inputs its `run` called when given the input its `RUNS` row names. */
+    /** The operations and inputs each tool's `run` called when given the input its `RUNS` row names. */
     const ran = new Map<
       string,
-      { tier: string; called: [string, Record<string, unknown>][] }
+      { called: [string, Record<string, unknown>][] }
     >();
 
     beforeAll(async () => {
@@ -70,7 +80,7 @@ describe("The tool list a model is offered · TOOLS, NEVER", () => {
             table: address,
           },
         });
-        ran.set(tool.name, { tier: tool.tier, called });
+        ran.set(tool.name, { called });
       }
     });
 
@@ -80,9 +90,20 @@ describe("The tool list a model is offered · TOOLS, NEVER", () => {
       );
     });
 
-    it("gives every tool the tier free or ask", () => {
-      for (const [name, { tier }] of ran)
+    it("gives every tool the tier of its kind, free or ask", () => {
+      for (const { name, kind, tier } of TOOLS) {
+        expect(tier, name).toBe(TIER_OF_KIND[kind]);
         expect(["free", "ask"], name).toContain(tier);
+      }
+    });
+
+    it("gives each tool the kind of act it takes", () => {
+      for (const { name, kind } of TOOLS)
+        expect(kind, name).toBe(
+          name.startsWith("open_")
+            ? "MovingTheAppsView"
+            : (OTHER_KINDS[name] ?? "ReadingPodsOrTables"),
+        );
     });
 
     it("calls from each tool only the PodApi operations its row names", () => {
@@ -91,6 +112,11 @@ describe("The tool list a model is offered · TOOLS, NEVER", () => {
           called.map(([op]) => op),
           name,
         ).toEqual(RUNS[name]?.[1]);
+    });
+
+    it("puts the kind of each `NEVER` entry at the tier never", () => {
+      for (const { op, kind } of NEVER)
+        expect(TIER_OF_KIND[kind], op).toBe("never");
     });
 
     it("never calls an operation `NEVER` holds", () => {

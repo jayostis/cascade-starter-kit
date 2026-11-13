@@ -1,12 +1,16 @@
 // The one list of tools a model reaches the app by, over PodApi alone: the browser target's WebMCP, and the chat
-// (`server/chat.ts`) and the MCP server (`mcp-server.ts`) when they are added, each offer those their door may. A tool's `tier` is the person's consent: `free`
-// reads or moves the app, `ask` writes once the person has said yes. What no tool ever calls is `NEVER`.
+// (`server/chat.ts`) and the MCP server (`mcp-server.ts`) when they are added, each offer those their door may. A tool
+// takes one `kind` of act, and its `tier`, the person's consent, is the protocol's for that kind (`TIER_OF_KIND`): `free`
+// reads or moves the app, `ask` writes once the person has said yes. The kinds at `never` are `NEVER`'s, which no tool takes.
 import { type InputSchema, type LabChange, Refusal } from "cascade-runtime";
 import {
   type CompactAnswer,
   type PodReads,
   type PodTool,
+  TIER_OF_KIND,
   TOOLS as RUNTIME_TOOLS,
+  type ToolKind,
+  type ToolTier,
 } from "cascade-runtime/tools";
 import { POD_TOOLS, type PodApi } from "./pod-api.ts";
 import { PAGE_TOOLS, type PageDoor, type PageTool } from "./said.ts";
@@ -25,7 +29,8 @@ export interface Tool {
   readonly name: string;
   readonly description: string;
   readonly inputSchema: InputSchema;
-  readonly tier: "free" | "ask";
+  readonly kind: ToolKind;
+  readonly tier: ToolTier;
   readonly ofPod?: true;
   readonly opens?: true;
   run(api: PodApi, input: ToolInput, door: Door): Promise<unknown>;
@@ -37,37 +42,58 @@ export interface Tool {
 }
 
 /**
- * The PodApi operations no tool calls, whatever the person says; `with` names the input that makes a call one of
- * them, where only some calls are.
+ * The PodApi operations no tool calls, whatever the person says, each with the `kind` of act it is, a kind the protocol
+ * puts at `never`; `with` names the input that makes a call one of them, where only some calls are.
  */
 export const NEVER: readonly {
   readonly op: keyof PodApi;
+  readonly kind: Exclude<keyof typeof TIER_OF_KIND, ToolKind>;
   readonly with?: string;
   readonly why: string;
 }[] = [
   {
     op: "makePod",
+    kind: "MakingUnlockingOrLockingAnEncryptedPod",
     with: "encrypt",
     why: "an encrypted pod's six words are the person's alone",
   },
-  { op: "waiting", why: "an encrypted pod's making is the person's to finish" },
-  { op: "waitingWords", why: "the six words are the person's alone" },
+  {
+    op: "waiting",
+    kind: "MakingUnlockingOrLockingAnEncryptedPod",
+    why: "an encrypted pod's making is the person's to finish",
+  },
+  {
+    op: "waitingWords",
+    kind: "MakingUnlockingOrLockingAnEncryptedPod",
+    why: "the six words are the person's alone",
+  },
   {
     op: "confirmWords",
+    kind: "MakingUnlockingOrLockingAnEncryptedPod",
     why: "the six words and the password are the person's",
   },
-  { op: "unlock", why: "the six words are the person's alone" },
+  {
+    op: "unlock",
+    kind: "MakingUnlockingOrLockingAnEncryptedPod",
+    why: "the six words are the person's alone",
+  },
   {
     op: "lock",
+    kind: "MakingUnlockingOrLockingAnEncryptedPod",
     why: "it ends the person's opening of their pods, and is theirs to do",
   },
-  { op: "connect", why: "the sign-in at a hospital is the person's" },
+  {
+    op: "connect",
+    kind: "SigningInAtASource",
+    why: "the sign-in at a hospital is the person's",
+  },
   {
     op: "bring",
+    kind: "ImportingRecordsFromASource",
     why: "it imports what the person has not said is theirs; they bring a record in from its box",
   },
-  { op: "deleteAll", why: "it removes every pod" },
-  { op: "resetAll", why: "it removes every pod" },
+  { op: "deleteAll", kind: "DeletingPods", why: "it removes every pod" },
+  { op: "resetAll", kind: "DeletingPods", why: "it removes every pod" },
 ];
 
 /** PodApi as the runtime's tools read it: its operations, the compact read as `ask` with the tool's own input (`again` and the page's offset), and the lookups `reference_table_checks` asks of the tables. */
@@ -101,7 +127,8 @@ const OWN: Tool[] = POD_TOOLS.map(({ name, description, inputSchema }) => ({
   name,
   description,
   inputSchema,
-  tier: "free",
+  kind: "ReadingPodsOrTables",
+  tier: TIER_OF_KIND.ReadingPodsOrTables,
   ofPod: true,
   run: async (api, { pod, ...input }) =>
     (await api.tool({ pod: pod as string, tool: name, input })).value,

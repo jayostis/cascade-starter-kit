@@ -143,12 +143,16 @@ an encrypted pod is opened only by the app, with its six words (`src/newpod.tsx`
 at `/encrypted-pods/<name>`), and `npm run ask` refuses it, as its host is
 `nodeHost({ opensEncrypted: false })` (`node-host.ts`), and `console.ts` refuses it too;
 `tools.ts` holds the one list of tools a model reaches the app by (`TOOLS`), each
-calling `podApi`'s operations only, with its consent `tier`: `free` reads
+calling `podApi`'s operations only. A tool takes one `kind` of act (`ReadingPodsOrTables`, `MovingTheAppsView`,
+`MakingAPodThatIsNotEncrypted`, `ChangingTheAppsTablesOrSettings`), and its consent `tier` is the one the protocol gives
+that kind (`TIER_OF_KIND` of `cascade-runtime/tools`, from the vocabulary's `cascade:consentTier`), never one written
+beside the tool: `free` reads
 (`list_pods`, the change tools, `ask` and `reference_table_checks`, which are `TOOLS` of `cascade-runtime/tools` run over `podApi` as its `PodReads`; and `worth_a_look`, the kit's own) and moves the app
 (`open_pod`, `open_trend`, `open_entry`, `open_classes`, `open_panel`, `open_table`, through the door's `open` and its own addresses), and `ask` writes,
 which the person confirms first (`make_pod`, never encrypted; `check_tables`; `set_world_date`). `NEVER` is what
-no tool calls: `makePod` with `encrypt`, `waiting`, `waitingWords`, `confirmWords`, `unlock`, `lock`, `connect`, `bring`,
-`deleteAll` and `resetAll`. `ask` takes the runtime's `format: "compact"` (the whole pod as tab-separated pages, each page's `next` being the input of the page after) and `offset`, handed to the runtime's `ask` tool unchanged; the Node host makes the compact read (`compact` of `nodeHost`, `podReads` of `cascade-runtime/tools/node` over the pod the app has open), the browser host has none and refuses it. WebMCP (`src/tools.ts`), on both
+no tool calls, each with its `kind` of act, which the protocol puts at `never`: `makePod` with `encrypt`, `waiting`,
+`waitingWords`, `confirmWords`, `unlock` and `lock` (`MakingUnlockingOrLockingAnEncryptedPod`), `connect`
+(`SigningInAtASource`), `bring` (`ImportingRecordsFromASource`), `deleteAll` and `resetAll` (`DeletingPods`). `ask` takes the runtime's `format: "compact"` (the whole pod as tab-separated pages, each page's `next` being the input of the page after) and `offset`, handed to the runtime's `ask` tool unchanged; the Node host makes the compact read (`compact` of `nodeHost`, `podReads` of `cascade-runtime/tools/node` over the pod the app has open), the browser host has none and refuses it. WebMCP (`src/tools.ts`), on both
 targets and every screen, offers every tool by its tier (the last section says how). A model reached
 by any door sends what the tools return to its provider when it is hosted:
 never point one at a person's own pod without their say. The starter holds only
@@ -319,8 +323,8 @@ smallest input that shows it, and asserts what it means, never bytes or a whole 
 - `test/api.test.ts` puts PodApi behind the server in the process: `appServer(...)` from `server/app.ts` over a pod
   replayed from a kit into a temporary folder, called with `app.request()`, so no port is opened. Copy it to test a new
   operation or route: it lists the pods by name, returns rows for a question's name, and answers 400 with the rules' reason, `{ refused }`, for a pod there is none of.
-- `test/tools.test.ts` holds the tool list to its rules: every tool in `tools.ts` is `free` or `ask`, and none calls an
-  operation of `NEVER`. A tool you add needs a row in `RUNS`, or the test fails.
+- `test/tools.test.ts` holds the tool list to its rules: every tool in `tools.ts` has the tier of its kind (`free` or
+  `ask`), every kind of `NEVER` is at `never`, and no tool calls an operation of `NEVER`. A tool you add needs a row in `RUNS`, or the test fails.
 - `e2e/pod.test.ts` is the one browser test, on Playwright: it starts the app with `npm start`, opens Alex Rivera's pod
   and waits for the page to say it is ready (`body[data-state="ready"]`, never `main`'s text), then looks for its
   tiles (`.tiles .tile`), as two steps of one test. A failure prints `body[data-trace]`, the page's last changes of state. Chromium is not
@@ -357,10 +361,11 @@ one (`server/tools.ts`), while the browser target runs them in the page (`reads`
 To add a tool:
 
 - one the page runs itself (it moves the app, or writes after the person's Allow): one entry in `PAGE_TOOLS` in
-  `said.ts`, with `run(api, input, door)` calling only PodApi's operations and moving through `door.open`. A write
+  `said.ts`, with the `kind` of act it takes (its tier follows) and `run(api, input, door)` calling only PodApi's
+  operations and moving through `door.open`. A write
   also needs an entry in `ACTIONS` in `src/confirm.tsx`. Every door then offers it.
 - one the server runs (a read) that any app would want: one entry in `TOOLS` of `cascade-runtime/tools`, which `tools.ts`
-  takes whole. One only this app has (`worth_a_look`): one entry in `tools.ts`, with `tier: "free"`. Both targets' WebMCP
+  takes whole. One only this app has (`worth_a_look`): one entry in `tools.ts`, with `kind: "ReadingPodsOrTables"` and that kind's tier. Both targets' WebMCP
   offer it, the Node page through `/tools`, and so does every door an add-on adds.
 
 Either way, add its row to the `RUNS` table in `test/tools.test.ts`, which fails for a tool with none.
