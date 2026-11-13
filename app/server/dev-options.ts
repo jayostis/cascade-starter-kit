@@ -20,7 +20,7 @@ export async function devOptions(
     root,
     server: {
       middlewareMode: true,
-      fs: { deny: [under(pods), "**/.answers/**"] },
+      fs: { deny: [...server.fs.deny, under(pods), "**/.answers/**"] },
       watch: { ignored: [under(pods)] },
       hmr: { host: "127.0.0.1" },
     },
