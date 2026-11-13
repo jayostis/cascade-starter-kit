@@ -14,6 +14,7 @@
     "Calling PodApi over HTTP · /api/, INPUT_SCHEMAS, refusalOf()",
     "Reaching the demo hospitals from the Node server · nodeHospitals()",
     "Serving pages built from the app as it stands · npm start, buildStalePages()",
+    "Keeping pods out of development's Vite · devOptions()",
     "Answering an address a person opens with the app's page · appServer()",
     "Reading for a screen and running a step · routes(), watch()",
     "Moving between screens without loading the page again · movesInPlace()",
