@@ -22,6 +22,7 @@ import { PODS } from "../pods.ts";
 import { demoPeople, worldInstant } from "../said.ts";
 import { appServer, type ChatServed, type Served } from "./app.ts";
 import { buildStalePages } from "./built.ts";
+import { devOptions } from "./dev-options.ts";
 import type { Own } from "./guard.ts";
 import { newLaunch } from "./launch.ts";
 
@@ -104,15 +105,11 @@ let back: Served["back"] = () => undefined;
 
 const dev = argv.includes("--dev");
 if (!dev) await pagesBuilt();
-const vite = dev
-  ? await (
-      await import("vite")
-    ).createServer({
-      root: APP,
-      server: { middlewareMode: true },
-      appType: "spa",
-    })
-  : undefined;
+async function devServer() {
+  const { createServer } = await import("vite");
+  return createServer(await devOptions(APP, PODS));
+}
+const vite = dev ? await devServer() : undefined;
 
 const launch = newLaunch();
 const app = appServer({

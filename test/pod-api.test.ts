@@ -94,7 +94,7 @@ const { appServer } = (await import(
     launch: Launch;
     chat: Hono;
     back: () => undefined;
-    pages: string;
+    pages: string | ((c: { req: { path: string } }) => Response);
   }) => App;
 };
 /** What proves a request comes from the page the launch opened: the token the printed address carries, spent for a cookie. */
@@ -2691,6 +2691,98 @@ describe("Answering an address a person opens with the app's page · appServer()
 
     it("responds 404 for an address with a dot in it that asks for no page", async () => {
       assert.equal((await get("/pods/a/entries/x.1"))[0], 404);
+    });
+  });
+
+  describe("given pages that are a function, as `npm run dev` gives them, and a request that holds no launch cookie", () => {
+    const at = "http://app.test";
+    const dev = () => {
+      const launch = newLaunch();
+      const reached: string[] = [];
+      const app = appServer({
+        api: inProcess,
+        own: () => ({ hosts: new Set(["app.test"]), origins: new Set([at]) }),
+        launch,
+        chat: new Hono(),
+        back: () => undefined,
+        pages: (c) => {
+          reached.push(c.req.path);
+          return new Response("from vite");
+        },
+      });
+      const ask = (path: string, headers: Record<string, string> = {}) =>
+        app.request(`${at}${path}`, { headers });
+      return { app, ask, launch, reached };
+    };
+
+    for (const path of [
+      "/pods/probe-plain/clinical/labels.ttl",
+      "/pods/probe-four/settings/encryption.json",
+      "/pods/.answers/probe-four/pod.json",
+      "/@fs/C:/app/pods/probe-four/settings/encryption.json",
+      "/server/launch.ts",
+      "/pod-api.ts",
+      "/src/main.tsx",
+    ])
+      it(`responds 403 to GET ${path} and does not reach the pages`, async () => {
+        const { ask, reached } = dev();
+        const refused = await ask(path, { "sec-fetch-mode": "cors" });
+        assert.equal(refused.status, 403);
+        assert.match(
+          ((await refused.json()) as { refused: string }).refused,
+          /address .* printed/,
+        );
+        assert.deepEqual(reached, []);
+      });
+
+    it("responds 403 with a page that says to open the address the app printed, to a navigation", async () => {
+      const { ask, reached } = dev();
+      for (const path of ["/", "/pods/a"]) {
+        const refused = await ask(path, { "sec-fetch-mode": "navigate" });
+        assert.equal(refused.status, 403, path);
+        assert.match(refused.headers.get("content-type") ?? "", /text\/html/);
+        assert.match(await refused.text(), /Open the address .* printed/s);
+      }
+      assert.deepEqual(reached, []);
+    });
+
+    it("responds 403 to a cookie that is not the launch's", async () => {
+      const { ask, launch, reached } = dev();
+      cookieOf(launch, at);
+      const name = launchCookie(new URL(at));
+      for (const cookie of [`${name}=wrong`, `${name}=`, "x=y"])
+        assert.equal(
+          (await ask("/pods/a/clinical/labels.ttl", { cookie })).status,
+          403,
+          cookie,
+        );
+      assert.deepEqual(reached, []);
+    });
+
+    it("answers the pages when the request holds the launch cookie", async () => {
+      const { ask, launch, reached } = dev();
+      const cookie = cookieOf(launch, at);
+      for (const path of ["/", "/src/main.tsx", "/@vite/client"]) {
+        const answered = await ask(path, { cookie });
+        assert.equal(answered.status, 200, path);
+        assert.equal(await answered.text(), "from vite");
+      }
+      assert.deepEqual(reached, ["/", "/src/main.tsx", "/@vite/client"]);
+    });
+
+    it("trades the printed address's token for the cookie, which the page it sends the browser to then holds", async () => {
+      const { ask, launch, reached } = dev();
+      const traded = await ask(`/?launch=${launch.token}`, {
+        "sec-fetch-mode": "navigate",
+      });
+      assert.equal(traded.status, 303);
+      assert.equal(traded.headers.get("location"), "/");
+      const cookie = (traded.headers.get("set-cookie") ?? "").split(";")[0]!;
+      assert.equal(
+        (await ask("/", { cookie, "sec-fetch-mode": "navigate" })).status,
+        200,
+      );
+      assert.deepEqual(reached, ["/"]);
     });
   });
 });

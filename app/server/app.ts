@@ -58,6 +58,25 @@ const launched =
     return launch.holds(cookie) ? next() : c.json({ refused: NO_COOKIE }, 403);
   };
 
+const openPrinted = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Open the printed address · Cascade</title></head><body><h1>Open the address the app printed</h1><p>This page holds no launch cookie. The address the app printed when it started carries the one-time token that gives it.</p></body></html>`;
+
+/**
+ * Development's pages (Vite's middleware, which serves any file under the app) only to a request that holds the launch
+ * cookie. A navigation without it is told to open the printed address; any other request is refused in JSON.
+ */
+const launchedPages =
+  (launch: Launch, pages: MiddlewareHandler): MiddlewareHandler =>
+  async (c, next) => {
+    if (launch.holds(getCookie(c, launchCookie(new URL(c.req.url)))))
+      return pages(c, next);
+    const navigating =
+      c.req.header("sec-fetch-mode") === "navigate" ||
+      (c.req.header("accept") ?? "").includes("text/html");
+    return navigating
+      ? c.html(openPrinted, 403)
+      : c.json({ refused: NO_COOKIE }, 403);
+  };
+
 /**
  * `GET /?launch=<token>`: the token of the address the server printed, once, for the cookie that opens the pod's routes,
  * then the same address without it. A page that holds the cookie already is sent on as well.
@@ -129,7 +148,8 @@ export function appServer(served: Served) {
     .get("/world-date", (c) => c.redirect(worldDateBack(c.req.query("back"))))
     .get("/demo-people.json", (c) => c.json(served.people?.() ?? []));
   const { pages } = served;
-  if (typeof pages !== "string") app.get("*", pages);
+  if (typeof pages !== "string")
+    app.get("*", launchedPages(served.launch, pages));
   else withPages(app, pages);
   app.notFound((c) =>
     c.req.path.startsWith("/api/")
