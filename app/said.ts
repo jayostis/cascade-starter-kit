@@ -2704,6 +2704,8 @@ export const UNOPENED: Readonly<Record<string, string>> = {
   "unsupported version":
     "A newer version of Cascade encrypted this pod. Update the app to open it.",
   "cannot open": "This pod can only be opened another way, not with six words.",
+  "changed outside the runtime":
+    "This pod was changed outside the app: a file in it is missing, damaged or swapped for another. Restore the pod from a copy you made before that, then open it again.",
 };
 
 /** What the six-words page says when the check fails, by the way it failed. */

@@ -33,6 +33,7 @@ import {
   VARIANT_ANSWERS,
   VARIANTS_SAID,
 } from "./fixtures.js";
+import { saysWhatEncryptionHides } from "../test-browser/shown.js";
 import {
   currentIn,
   links,
@@ -1420,8 +1421,8 @@ describe("Encrypting a pod with six words · SixWords, Unlock", () => {
       assert.match(textOf(shown), /Grace Hopper's pod/);
     });
 
-    it("warns that the words do not hide that the pod exists", () => {
-      assert.match(shown, /does not hide that this pod exists/);
+    it("says what encryption hides and what it does not", () => {
+      saysWhatEncryptionHides(textOf(shown));
     });
   });
 
@@ -1432,13 +1433,20 @@ describe("Encrypting a pod with six words · SixWords, Unlock", () => {
       ["malformed", /header is damaged or was changed/, false],
       ["unsupported version", /newer version of Cascade/, false],
       ["cannot open", /another way, not with six words/, false],
+      [
+        "changed outside the runtime",
+        /changed outside the app.*Restore the pod from a copy/,
+        false,
+      ],
     ];
     const open = (outcome: string) =>
       drawn.unlock({ pod: "grace-hopper", titles: new Map(), outcome });
 
-    it("says why, for each outcome", () => {
-      for (const [outcome, sentence] of OUTCOMES)
+    it("says why in a sentence, never the outcome's own words, for each outcome", () => {
+      for (const [outcome, sentence] of OUTCOMES) {
         assert.match(textOf(open(outcome)), sentence, outcome);
+        assert.equal(textOf(open(outcome)).includes(outcome), false, outcome);
+      }
     });
 
     it("draws a field for the words only where words could open the pod", () => {

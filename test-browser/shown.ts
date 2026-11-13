@@ -165,6 +165,52 @@ export async function drawn(page: Page, timeout = 120_000): Promise<void> {
     );
 }
 
+/** What the six-words screen must say of what encryption hides and what it does not, each as the words it is said in. */
+const SIX_WORDS_SAY: Readonly<Record<string, RegExp>> = {
+  "that the records' contents are hidden": /hides what the records say/,
+  "that the files' names are hidden": /names of the files/,
+  "that the pod's existence shows": /not hide that this pod exists/,
+  "that the pod's name shows": /exists, its name/,
+  "that the number of files shows": /how many files it has/,
+  "that the files' sizes show": /how big they are/,
+  "that when the files were written shows": /when they were written/,
+  "that an older copy of the pod, or of some of its files, put back goes unseen":
+    /older copy of the pod, or of some of its files saved at the same moment, the app cannot tell/,
+};
+
+/** Fails unless `text`, the six-words screen as a person reads it, says each thing `SIX_WORDS_SAY` lists. */
+export function saysWhatEncryptionHides(text: string): void {
+  const said = text.replace(/\s+/g, " ");
+  for (const [claim, words] of Object.entries(SIX_WORDS_SAY))
+    assert.match(said, words, `the six words do not say ${claim}`);
+}
+
+/** What a stored encrypted pod keeps in the clear, by path: its header, its README and its egress log. */
+export const KEPT_PLAIN: readonly string[] = [
+  "settings/encryption.json",
+  "README.md",
+  "provenance/egress-log.jsonl",
+];
+
+/** Every other path of a stored encrypted pod: a generation of the sealed index, or a sealed file named by a keyed hash, in a folder of its first two letters. */
+const SEALED_PATH = /^sealed\/(?:index\/\d+|[0-9a-f]{2}\/[0-9a-f]{62})$/;
+
+/** The two files the runtime keeps a pod's answers and title in, beside the pod, under these names whatever the pod holds. */
+export const ANSWERS_KEPT: readonly string[] = ["answers.json", "pod.json"];
+
+/**
+ * The paths of a stored encrypted pod that are neither kept in the clear (`plain`, the pod's own by default) nor
+ * sealed: any that says a record's kind, title or place.
+ */
+export function pathsThatShow(
+  paths: readonly string[],
+  plain: readonly string[] = KEPT_PLAIN,
+): string[] {
+  return paths
+    .map((path) => path.replaceAll("\\", "/"))
+    .filter((path) => !plain.includes(path) && !SEALED_PATH.test(path));
+}
+
 /** What a person reads of the page: the text of its body, its scripts and styles left out, its closed boxes kept. */
 export function readable(page: Page): Promise<string> {
   return page.evaluate(() => {
