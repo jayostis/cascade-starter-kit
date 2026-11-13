@@ -26,7 +26,7 @@ async function viteDeny() {
  * serves or watches: a pod holds a person's record, and a write to one sent to a page's HMR socket names its path.
  */
 describe("Keeping pods out of development's Vite · devOptions()", () => {
-  describe("devOptions(root, pods).server.fs.deny", () => {
+  describe("with the options' `server.fs.deny`", () => {
     it("holds every pattern of Vite's own list, which a `deny` of the app's would replace", async () => {
       const { server } = await devOptions(APP, PODS);
       const own = await viteDeny();
@@ -42,14 +42,14 @@ describe("Keeping pods out of development's Vite · devOptions()", () => {
     });
   });
 
-  describe("devOptions(root, pods).server.watch.ignored", () => {
+  describe("with the options' `server.watch.ignored`", () => {
     it("holds the pods folder, so a pod write sends nothing and reloads no page", async () => {
       const { server } = await devOptions(APP, PODS);
       assert.deepEqual(server?.watch?.ignored, [under(PODS)]);
     });
   });
 
-  describe("devOptions(root, pods).server.hmr", () => {
+  describe("with the options' `server.hmr`", () => {
     it("listens on loopback only", async () => {
       const { server } = await devOptions(APP, PODS);
       assert.deepEqual(server?.hmr, { host: "127.0.0.1" });
