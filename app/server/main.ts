@@ -108,19 +108,23 @@ const under = (folder: string) =>
 
 const dev = argv.includes("--dev");
 if (!dev) await pagesBuilt();
-const vite = dev
-  ? await (
-      await import("vite")
-    ).createServer({
-      root: APP,
-      server: {
-        middlewareMode: true,
-        // On top of Vite's own list: `/@fs/` reaches a pod's files as well as `/pods/`.
-        fs: { deny: [under(PODS), "**/.answers/**"] },
-      },
-      appType: "spa",
-    })
-  : undefined;
+/** Development's Vite, which never serves a pod, at `/pods/` or at `/@fs/`. A `deny` of ours replaces Vite's own list, so it is read and kept. */
+async function devServer() {
+  const { createServer, resolveConfig } = await import("vite");
+  const { server } = await resolveConfig(
+    { root: APP, configFile: false },
+    "serve",
+  );
+  return createServer({
+    root: APP,
+    server: {
+      middlewareMode: true,
+      fs: { deny: [...server.fs.deny, under(PODS), "**/.answers/**"] },
+    },
+    appType: "spa",
+  });
+}
+const vite = dev ? await devServer() : undefined;
 
 const launch = newLaunch();
 const app = appServer({
