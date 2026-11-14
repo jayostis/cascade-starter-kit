@@ -65,7 +65,7 @@ function useClosing() {
 }
 
 /** What the link back to the hub is called, as the hub's own pages call it. */
-const HUB_LABEL = "Cascade pods";
+const HUB_LABEL = "Cascade Protocol reference";
 
 function Menu({ name, items }: { name: string; items: [string, string][] }) {
   return (
