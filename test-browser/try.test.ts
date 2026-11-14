@@ -1440,7 +1440,7 @@ describe("Menus and the About box · File, Help, #about", () => {
       });
       const hubLinks = (on: Page): Promise<(string | null)[]> =>
         on.$$eval(
-          '.menu a:has-text("Cascade pods"), #about a:has-text("Cascade pods")',
+          '.menu a:has-text("Cascade Protocol reference"), #about a:has-text("Cascade Protocol reference")',
           (found) => found.map((each) => each.getAttribute("href")),
         );
       const loaded = watched(await context.newPage());
