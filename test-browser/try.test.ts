@@ -3573,7 +3573,7 @@ ${shots.join("\n")}`);
       await inPlace(page, async () => {
         await page
           .locator("#see-allergies tbody tr")
-          .filter({ hasText: String(row.allergen) })
+          .filter({ hasText: String(row.allergenName) })
           .locator("td:first-child a")
           .first()
           .click();
@@ -3583,7 +3583,7 @@ ${shots.join("\n")}`);
         "opens a row's entry from the kept answers, without loading a page",
         async () => {
           assert.equal(AT.entryOf(page.url()), view.entryId(String(row.entry)));
-          assert.equal(await page.textContent("main h1"), row.allergen);
+          assert.equal(await page.textContent("main h1"), row.allergenName);
           assert.equal(await page.getAttribute("body", "data-engine"), null);
         },
       );
