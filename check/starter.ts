@@ -1542,7 +1542,7 @@ if (release === undefined) {
         [
           ...new Set(
             triples
-              .filter(([, p]) => p.value === terms.mergedFrom)
+              .filter(([, p]) => p.value === terms.entryMember)
               .map(([s]) => s.value),
           ),
         ].map((entry) => ({
@@ -1642,7 +1642,7 @@ if (release === undefined) {
       const kitGroups = new Map();
       for (const entry of new Set(
         kitReports
-          .filter(([, p]) => p.value === terms.mergedFrom)
+          .filter(([, p]) => p.value === terms.entryMember)
           .map(([s]) => s.value),
       )) {
         const [about] = objectsOf(kitReports, entry, terms.variantInterpreted);
