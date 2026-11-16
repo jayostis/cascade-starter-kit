@@ -44,8 +44,8 @@ const shown = ({ entry, sentence, tag }: Line) => [entry, sentence, tag];
 /** A pod's rows: what needs review, and the names the rows are of. */
 const REVIEWED = {
   [ALLERGIES]: [
-    { entry: "e1", allergen: "Penicillin" },
-    { entry: "e5", allergen: "Sulfamethoxazole" },
+    { entry: "e1", allergenName: "Penicillin" },
+    { entry: "e5", allergenName: "Sulfamethoxazole" },
     { entry: "e6" },
   ],
   [CONDITIONS]: [
@@ -629,7 +629,6 @@ function reviewNeeds(change: (text: string) => string = (text) => text) {
 describe("Naming and ordering the rows of a pod's tables · codesOf(), codesSaid(), rounded(), compare(), openingOrder()", () => {
   const CVX = "urn:test:cvx/";
   const ICD = "urn:test:icd/";
-  const SCT = "urn:test:sct/";
   const LOINC = codeStems.LOINC;
 
   describe("codesOf(answers)", () => {
@@ -648,8 +647,7 @@ describe("Naming and ordering the rows of a pod's tables · codesOf(), codesSaid
         {
           entry: "c1",
           condition: "Asthma",
-          snomed: `${SCT}195967001`,
-          icd10: `${ICD}J45.909`,
+          conditionCode: `${ICD}J45.909`,
         },
       ],
       [REVIEW]: [{ entry: "i3", needs: "judged different, still joined" }],
@@ -663,7 +661,6 @@ describe("Naming and ordering the rows of a pod's tables · codesOf(), codesSaid
           `${CVX}15`,
           `${CVX}57`,
           `${CVX}999`,
-          `${SCT}195967001`,
           `${ICD}J45.909`,
           `${LOINC}2823-3`,
           `${LOINC}2075-0`,
@@ -671,9 +668,8 @@ describe("Naming and ordering the rows of a pod's tables · codesOf(), codesSaid
       );
     });
 
-    it("returns both codes of a condition that has a SNOMED CT code and an ICD-10 code", () => {
-      for (const code of [`${SCT}195967001`, `${ICD}J45.909`])
-        assert.ok(codes.includes(code), code);
+    it("returns the one code of a condition", () => {
+      assert.ok(codes.includes(`${ICD}J45.909`));
     });
   });
 

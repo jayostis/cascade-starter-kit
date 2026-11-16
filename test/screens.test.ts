@@ -210,7 +210,6 @@ const medicationRows = (page: string): Record<string, string>[] => {
 describe("Reading a pod as a person's record · PodPage", () => {
   const CVX = "urn:test:cvx/";
   const ICD = "urn:test:icd/";
-  const SNOMED = "urn:test:sct/";
   const LOINC = codeStems.LOINC;
   const answers = {
     "pod/My immunizations": [
@@ -227,8 +226,7 @@ describe("Reading a pod as a person's record · PodPage", () => {
       {
         entry: "c1",
         condition: "Asthma",
-        snomed: `${SNOMED}195967001`,
-        icd10: `${ICD}J45.909`,
+        conditionCode: `${ICD}J45.909`,
       },
     ],
     [REVIEW]: [{ entry: "i3", needs: "judged different, still joined" }],
@@ -248,7 +246,7 @@ describe("Reading a pod as a person's record · PodPage", () => {
     const page = podPage({
       answers: {
         [ALLERGIES]: [
-          { entry: "urn:cascade:entry:e1", allergen: "Penicillin" },
+          { entry: "urn:cascade:entry:e1", allergenName: "Penicillin" },
         ],
         [LABS]: [{ entry: "urn:cascade:entry:e2", test: "Glucose" }],
       },
@@ -279,7 +277,7 @@ describe("Reading a pod as a person's record · PodPage", () => {
     const page = [
       podPage({
         answers: {
-          [ALLERGIES]: [{ entry: "e1", allergen: "Penicillin" }],
+          [ALLERGIES]: [{ entry: "e1", allergenName: "Penicillin" }],
           [LABS]: [{ entry: "e2", test: "Glucose" }],
         },
         connection: at("pulling"),
@@ -336,7 +334,6 @@ describe("Reading a pod as a person's record · PodPage", () => {
       [`${CVX}141`, name("flu, split")],
       [`${CVX}57`, { ...name("hantavirus"), ...retired() }],
       [`${CVX}15`, retired(`${CVX}141`, `${CVX}150`)],
-      [`${SNOMED}195967001`, { ...name("Asthma (disorder)"), ...retired() }],
       [`${ICD}J45.909`, name("Unspecified asthma, uncomplicated")],
       [`${LOINC}2823-3`, name("Potassium [Moles/volume] in Serum or Plasma")],
     ]);
@@ -354,7 +351,7 @@ describe("Reading a pod as a person's record · PodPage", () => {
         "Potassium [Moles/volume] in Serum or Plasma",
       ])
         assert.ok(lines.includes(shown), shown);
-      for (const hidden of ["Fluarix", "Hantavax", "Asthma (disorder)", "K+"])
+      for (const hidden of ["Fluarix", "Hantavax", "K+"])
         assert.ok(!lines.includes(hidden), hidden);
     });
 
@@ -367,7 +364,7 @@ describe("Reading a pod as a person's record · PodPage", () => {
       assert.equal(
         lines.filter((line) => line.startsWith("Retired code")).length,
         2,
-        "hantavirus, named and retired, and Old flu, with no name; the asthma row has none, its retired SNOMED CT code did not name it",
+        "hantavirus, named and retired, and Old flu, with no name; the asthma row has none, its one code names it",
       );
     });
 
@@ -528,7 +525,7 @@ describe("Reading a pod as a person's record · PodPage", () => {
     it('links "By class" from the Medications tile, and from no other, to the pod\'s medicines by drug class', () => {
       const withAllergy = podPage({
         answers: {
-          [ALLERGIES]: [{ entry: "e1", allergen: "Penicillin" }],
+          [ALLERGIES]: [{ entry: "e1", allergenName: "Penicillin" }],
           [MEDICATIONS]: [
             { entry: "e8", medication: "Lisinopril 10 MG Oral Tablet" },
           ],
@@ -552,7 +549,7 @@ describe("Reading a pod as a person's record · PodPage", () => {
 
     it('draws no "By class" link for a pod with no medication', () => {
       const none = podPage({
-        answers: { [ALLERGIES]: [{ entry: "e1", allergen: "Penicillin" }] },
+        answers: { [ALLERGIES]: [{ entry: "e1", allergenName: "Penicillin" }] },
       });
       assert.ok(!none.includes("By class"));
     });
@@ -729,7 +726,7 @@ const ENTRY_ANSWERS = {
       entryLabel: "Condition entry · Asthma",
       condition: "Asthma",
       onset: "2019-03-02",
-      snomed: `${SCT}195967001`,
+      conditionCode: `${SCT}195967001`,
     },
   ],
   [SEEN]: [AT_MERIDIAN, AT_LARKSPUR].map((place) => ({

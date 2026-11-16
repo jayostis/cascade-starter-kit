@@ -453,8 +453,8 @@ async function pageShows(page, server, pod, person) {
   const named = await heldNames(
     rows[ALLERGIES].flatMap(({ code }) => (code === undefined ? [] : [code])),
   );
-  for (const { allergen, code } of rows[ALLERGIES]) {
-    const shown = named.get(code)?.name?.label ?? allergen;
+  for (const { allergenName, code } of rows[ALLERGIES]) {
+    const shown = named.get(code)?.name?.label ?? allergenName;
     assert.ok(text.includes(shown), `no ${shown} on ${pod}`);
   }
   return { rows };
@@ -628,7 +628,7 @@ const pod = await openPod();
 const files = pullFiles(await pull(connection, DEMO_PLAN), "expected");
 const look = await pod.look(files);
 await pod.import(files, { claimProfiles: true });
-const allergens = (await pod.ask(${JSON.stringify(ALLERGIES)})).map(({ allergen }) => allergen).sort();
+const allergens = (await pod.ask(${JSON.stringify(ALLERGIES)})).map(({ allergenName }) => allergenName).sort();
 await pod.close();
 const south = await loadHospital("cascade-south");
 const named = (data, person) =>
@@ -780,7 +780,7 @@ await setUp("the command makes the app", async () => {
   );
   const active = new Set(
     triples
-      .filter(([, p]) => p.value === terms.allergen)
+      .filter(([, p]) => p.value === terms.allergenName)
       .map(([s]) => s.value)
       .filter((s) => !left.has(s)),
   );
@@ -792,7 +792,7 @@ await setUp("the command makes the app", async () => {
       .filter(({ happened }) => !["reference", "open"].includes(happened.kind))
       .map(({ name }) => name),
     activeAllergens: triples
-      .filter(([s, p]) => active.has(s.value) && p.value === terms.allergen)
+      .filter(([s, p]) => active.has(s.value) && p.value === terms.allergenName)
       .map(([, , o]) => o.value)
       .sort(),
   };
@@ -954,7 +954,7 @@ const server = await (async () => {
     const shown = await pageShows(page, server, "alex-rivera", "Alex Rivera");
     alex = shown.rows;
     assert.deepEqual(
-      alex[ALLERGIES].map(({ allergen }) => allergen).sort(),
+      alex[ALLERGIES].map(({ allergenName }) => allergenName).sort(),
       story.activeAllergens,
     );
     const sources = await asked(SOURCES, "alex-rivera");
@@ -1042,7 +1042,7 @@ const server = await (async () => {
         await heldNames(
           penicillinRow.code === undefined ? [] : [penicillinRow.code],
         )
-      ).get(penicillinRow.code)?.name?.label ?? penicillinRow.allergen;
+      ).get(penicillinRow.code)?.name?.label ?? penicillinRow.allergenName;
     const penicillinHeading = await heading(penicillinPage);
     assert.ok(
       penicillinHeading.startsWith(penicillinName),
@@ -1645,7 +1645,7 @@ if (release === undefined) {
           .filter(([, p]) => p.value === terms.entryMember)
           .map(([s]) => s.value),
       )) {
-        const [about] = objectsOf(kitReports, entry, terms.variantInterpreted);
+        const [about] = objectsOf(kitReports, entry, terms.subjectVariant);
         kitGroups.set(about, [
           ...(kitGroups.get(about) ?? []),
           {
@@ -1654,7 +1654,11 @@ if (release === undefined) {
               entry,
               terms.acmgClassification,
             )[0],
-            date: objectsOf(kitReports, entry, terms.interpretedDate)[0],
+            date: objectsOf(
+              kitReports,
+              entry,
+              terms.variantInterpretationDate,
+            )[0],
           },
         ]);
       }
@@ -2108,7 +2112,7 @@ if (release === undefined) {
           assert.ok(expected.allergens.length > 0, "A has no active allergy");
           assert.deepEqual(
             (await asked(ALLERGIES, pod))
-              .map(({ allergen }) => allergen)
+              .map(({ allergenName }) => allergenName)
               .sort(),
             expected.allergens,
           );

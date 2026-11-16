@@ -133,7 +133,7 @@ export const NAME = "NM_000249.3:c.2042C>T";
  * which has no lab.
  */
 export const VARIANT_ANSWERS = {
-  [ALLERGIES]: [{ entry: "e1", allergen: "Penicillin" }],
+  [ALLERGIES]: [{ entry: "e1", allergenName: "Penicillin" }],
   [VARIANTS]: [
     { variant: "v1", gene: "MLH1", hgvs: NAME },
     { variant: "v1", gene: "MLH1", hgvs: "NM_000249.4:c.2042C>T" },
