@@ -629,7 +629,6 @@ function reviewNeeds(change: (text: string) => string = (text) => text) {
 describe("Naming and ordering the rows of a pod's tables · codesOf(), codesSaid(), rounded(), compare(), openingOrder()", () => {
   const CVX = "urn:test:cvx/";
   const ICD = "urn:test:icd/";
-  const SCT = "urn:test:sct/";
   const LOINC = codeStems.LOINC;
 
   describe("codesOf(answers)", () => {

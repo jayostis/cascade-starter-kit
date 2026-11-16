@@ -500,10 +500,10 @@ export const SECTIONS: readonly Section[] = [
     title: "Allergies",
     one: "allergy",
     question: "pod/My active allergies",
-    field: "allergen",
+    field: "allergenName",
     codes: ["code"],
     columns: [
-      text("Allergen", (row) => row.allergen),
+      text("Allergen", (row) => row.allergenName),
       {
         head: "Severity",
         type: "number",
@@ -553,7 +553,7 @@ export const SECTIONS: readonly Section[] = [
     one: "condition",
     question: "pod/My active conditions",
     field: "condition",
-    codes: ["icd10", "snomed"],
+    codes: ["conditionCode"],
     columns: [
       text("Condition", (row) => row.condition),
       date("Since", (row) => row.onset),
@@ -593,7 +593,7 @@ export const SECTIONS: readonly Section[] = [
     one: "procedure",
     question: "pod/My procedures",
     field: "procedure",
-    codes: ["snomed"],
+    codes: ["procedureCode"],
     columns: [
       text("Procedure", (row) => row.procedure),
       date("Date", (row) => row.performed),
