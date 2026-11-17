@@ -1701,9 +1701,7 @@ const namedAfterBringIn = once(async () => {
                 );
               failing = false;
               if (disclaimsFirst === true)
-                await (
-                  value as (...a: unknown[]) => Promise<object>
-                ).call(
+                await (value as (...a: unknown[]) => Promise<object>).call(
                   target,
                   (args[0] as string)
                     .replace("cascade:About", "cascade:NotAbout")

@@ -301,20 +301,24 @@ interface Underway {
   /** Why the pod holds no record of the connect, when it does not; the pull goes on. */
   notRecorded?: string;
   retry?: boolean;
+  /** The profiles this pull's own import filed, of which a retry claims those still unanswered. */
+  profiles?: readonly string[];
   imported?: boolean;
   broughtIn?: boolean;
 }
 
-/** The profiles `hospital`'s records name that no one has said whether they are the subject's. */
-async function awaitingAnswer(pod: Pod, hospital: string) {
-  return (await pod.ask("profile/What needs review")).flatMap((row) =>
-    row.hospital === hospital &&
-    row.saidAbout === undefined &&
-    row.saidNotAbout === undefined &&
-    typeof row.profile === "string"
-      ? [row.profile]
-      : [],
+/** Those of `profiles` that no one has said whether they are the subject's. */
+async function awaitingAnswer(pod: Pod, profiles: readonly string[]) {
+  const waiting = new Set(
+    (await pod.ask("profile/What needs review")).flatMap((row) =>
+      row.saidAbout === undefined &&
+      row.saidNotAbout === undefined &&
+      typeof row.profile === "string"
+        ? [row.profile]
+        : [],
+    ),
   );
+  return profiles.filter((profile) => waiting.has(profile));
 }
 
 /** The owner's About for `profile`: the person says the hospital's patient is them. */
@@ -1294,8 +1298,10 @@ export function podApi(
     // The sign-in was the patient's, which is the person's yes to each profile the pull names, so each one a counting
     // About or NotAbout does not already answer is claimed once the import has filed it, and the matcher runs after.
     // An import of a pull the pod already holds files nothing and so finds no profile: a bring retried after its claim
-    // failed, or after the app stopped, finds what is left to claim in `profile/What needs review`, and the matcher then
-    // rechecks the whole pod.
+    // failed claims what is left of the profiles this pull's own import filed, and the matcher then rechecks the whole
+    // pod. No hospital's other profile is claimed: the sign-in was the person's yes for this patient only. A pull the
+    // pod held before this connection's import is claimed nothing: no question tells which import brought a pull's
+    // documents (`pod/What each import brought in` names records, not documents).
     void (async () => {
       try {
         const done = await pod.import(files, {
@@ -1308,15 +1314,20 @@ export function podApi(
           return;
         }
         const filed = done.wrote.length > 0;
-        const profiles = filed
-          ? done.unclaimedProfiles
-          : await awaitingAnswer(pod, connection.row.name);
+        connection.profiles = [
+          ...new Set([
+            ...(connection.profiles ?? []),
+            ...done.unclaimedProfiles,
+          ]),
+        ];
+        const profiles = await awaitingAnswer(pod, connection.profiles);
         told({ part: "judging", done: 0, of: profiles.length + 1 });
         for (const [at, profile] of profiles.entries()) {
           await claim(pod, profile);
           told({ part: "judging", done: at + 1, of: profiles.length + 1 });
         }
-        if (profiles.length > 0)
+        // The pod is named after the pull's Patient only when the pull names one patient, so that it is the one claimed.
+        if (profiles.length > 0 && connection.profiles.length === 1)
           await titledAfter(name, pod, patientName(pulled!.bundle));
         await pod.match(filed ? done.activity : undefined);
         connection.imported = true;
