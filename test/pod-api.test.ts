@@ -147,6 +147,8 @@ const { TOOLS } = (await import(
 )) as { TOOLS: { name: string; tier: string; opens?: true }[] };
 
 const STATIN = "story-statin";
+const SIDE_EFFECT = "story-side-effect";
+const REVIEW = "profile/What needs review";
 const EMPTY = "empty";
 const SEALED = "sealed";
 const LDL = "18262-6";
@@ -1663,11 +1665,22 @@ const parkedOnce = once(async () => {
  * titles after the app is closed and opened again, and what each pod holds of the record.
  */
 const namedAfterBringIn = once(async () => {
-  /** What a pod's `import` gives with `result` laid over it, and its first `judge` failing when `judgeFails`. */
+  /**
+   * What a pod's `import` gives with `result` laid over it, and its first `judge` failing when `judgeFails`, after the
+   * person has said the profile it claims is not them when `disclaimsFirst`.
+   */
   const doing =
-    ({ result, judgeFails }: { result?: object; judgeFails?: boolean }) =>
+    ({
+      result,
+      judgeFails,
+      disclaimsFirst,
+    }: {
+      result?: object;
+      judgeFails?: boolean;
+      disclaimsFirst?: boolean;
+    }) =>
     (pod: object) => {
-      let failing = judgeFails === true;
+      let failing = judgeFails === true || disclaimsFirst === true;
       return new Proxy(pod, {
         get(target, key) {
           const value = Reflect.get(target, key, target);
@@ -1687,6 +1700,15 @@ const namedAfterBringIn = once(async () => {
                   args,
                 );
               failing = false;
+              if (disclaimsFirst === true)
+                await (
+                  value as (...a: unknown[]) => Promise<object>
+                ).call(
+                  target,
+                  (args[0] as string)
+                    .replace("cascade:About", "cascade:NotAbout")
+                    .replace(" cascade:basis cascade:OwnerStatement", ""),
+                );
               throw new Error("no room to write the About");
             };
           return typeof value === "function" ? value.bind(target) : value;
@@ -1696,7 +1718,7 @@ const namedAfterBringIn = once(async () => {
   const brought = async (
     pod: string,
     make: (local: Api, at: string) => Promise<unknown>,
-    over?: { result?: object; judgeFails?: boolean },
+    over?: { result?: object; judgeFails?: boolean; disclaimsFirst?: boolean },
   ) => {
     const at = await mkdtemp(join(tmpdir(), "pod-api-named-"));
     folders.push(at);
@@ -1742,6 +1764,7 @@ const namedAfterBringIn = once(async () => {
       ).size,
       medications: (await local.ask({ pod, question: MEDICATIONS })).rows
         .length,
+      unanswered: (await local.ask({ pod, question: REVIEW })).rows.length,
     };
     await local.close();
     const again = api({ ...host(at), hospitals: northHospitals() });
@@ -1786,6 +1809,15 @@ const namedAfterBringIn = once(async () => {
         }
       ).open("rowan-ellery-marsh")
     ).close();
+  /** The pod already holds another pull of the same hospital, filed and claimed by no one. */
+  const holdingAnotherPull = async (_: Api, at: string) => {
+    const owner = await openPod(join(at, "rowan-ellery-marsh"));
+    await owner.import(
+      pullFiles((await pulled(north, SIDE_EFFECT)).pull, "north"),
+      { match: false },
+    );
+    await owner.close();
+  };
   return {
     untitled: await brought("rowan-ellery-marsh", untitled),
     titled: await brought("ada", (local) => local.makePod({ person: "Ada" })),
@@ -1795,6 +1827,14 @@ const namedAfterBringIn = once(async () => {
     disclaimed: await brought("rowan-ellery-marsh", disclaiming),
     retried: await brought("rowan-ellery-marsh", untitled, {
       judgeFails: true,
+    }),
+    retriedBesideAnotherPull: await brought(
+      "rowan-ellery-marsh",
+      holdingAnotherPull,
+      { judgeFails: true },
+    ),
+    disclaimedBeforeTheRetry: await brought("rowan-ellery-marsh", untitled, {
+      disclaimsFirst: true,
     }),
   };
 });
@@ -2168,6 +2208,20 @@ describe("Connecting a pod to a hospital and bringing its records in · api.hosp
       assert.match(retried.failedFirst ?? "", /^Not brought in: /);
       assert.equal(retried.title, "Ines Calloway");
       assert.equal(retried.medications, untitled.medications);
+    });
+
+    it("claims on a retry only the profiles its own pull's import filed, leaving another pull's of the same hospital for the person to answer", async () => {
+      const { retriedBesideAnotherPull, retried } = await namedAfterBringIn();
+      assert.equal(retried.unanswered, 0);
+      assert.equal(retriedBesideAnotherPull.unanswered, 1);
+      assert.equal(retriedBesideAnotherPull.medications, retried.medications);
+    });
+
+    it("leaves a profile unclaimed when its owner said it is not them after the first claim failed and before the retry", async () => {
+      const { disclaimedBeforeTheRetry: kept } = await namedAfterBringIn();
+      assert.match(kept.failedFirst ?? "", /^Not brought in: /);
+      assert.equal(kept.medications, 0);
+      assert.equal(kept.title, "rowan-ellery-marsh");
     });
 
     it("does not retitle a pod, and logs nothing, when the person of the record has no name to give it", async () => {

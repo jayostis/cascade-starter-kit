@@ -2,7 +2,8 @@ import type { Exported, Imported, Pod } from "cascade-runtime";
 
 /**
  * An import after which the person said yes to every patient it names: the records are filed, the owner files an About
- * for each patient left unclaimed, and the matcher runs on the import. Self-contained, so a page runs it from its source.
+ * for each patient left unclaimed, and the matcher runs on the import. Self-contained, so a page runs it from its source:
+ * it cannot import the About the app writes in `app/pod-api.ts`, which a page and a made app do not hold as a module.
  */
 export async function importClaimingEveryProfile(
   pod: Pod,
@@ -12,7 +13,7 @@ export async function importClaimingEveryProfile(
   if (filed.activity === undefined) return filed;
   const claimedProfiles: { profile: string; judgment: string }[] = [];
   for (const profile of filed.unclaimedProfiles) {
-    const { judgment } = await pod.judge(
+    const { judgment, refused } = await pod.judge(
       `@prefix cascade: <https://ns.cascadeprotocol.org/cascade#> .
 @prefix prov: <http://www.w3.org/ns/prov#> .
 <urn:cascade:this-judgment> a cascade:Judgment ;
@@ -22,6 +23,8 @@ export async function importClaimingEveryProfile(
 <${pod.owner}> a prov:Person .
 `,
     );
+    if (refused !== undefined)
+      throw new Error(`the About of ${profile} was refused: ${refused}`);
     if (judgment !== undefined) claimedProfiles.push({ profile, judgment });
   }
   const matched = await pod.match(filed.activity);
