@@ -537,10 +537,22 @@ const FHIR_BASE = () => rowOf(north).fhirBase;
 /** A connection of `pod` to Cascade North, waited for until it has settled. */
 async function connected(local: Api, pod: string) {
   const { connection } = await local.connect({ pod, fhirBase: FHIR_BASE() });
-  return {
-    connection,
-    shown: await local.connection({ pod, connection, wait: true }),
-  };
+  let shown = await local.connection({ pod, connection, wait: true });
+  // `wait` returns when the hold runs out, not when the pull has settled: a slow pull is a wait, not a Refusal.
+  for (let tries = 0; !shown.settled && tries < 120; tries++) {
+    shown = await local.connection({ pod, connection, wait: true });
+  }
+  return { connection, shown };
+}
+/** `connected`, failing with the step it got when the connection settled anywhere but at "pulled". */
+async function connectedAndPulled(local: Api, pod: string) {
+  const got = await connected(local, pod);
+  assert.equal(
+    got.shown.step,
+    "pulled",
+    `the connection is at step "${got.shown.step}", not "pulled"`,
+  );
+  return got;
 }
 /** `name` as a model runs it through `POST /tools/<name>` on the Node server over `built`. */
 function toolsOf(built: Api) {
@@ -1765,11 +1777,10 @@ const namedAfterBringIn = once(async () => {
     };
     let local = opened(over);
     const made = await make(local, at);
-    let { connection } = await connected(local, pod);
+    let { connection } = await connectedAndPulled(local, pod);
     let target = { pod, connection };
     const logged = mock.method(console, "error", () => undefined);
     let failedFirst: string | undefined;
-    let last: Output | undefined;
     try {
       await local.bring(target);
       const first = await local.connection({ ...target, wait: true });
@@ -1778,11 +1789,11 @@ const namedAfterBringIn = once(async () => {
         if (over?.restarts === true) {
           await local.close();
           local = opened();
-          ({ connection } = await connected(local, pod));
+          ({ connection } = await connectedAndPulled(local, pod));
           target = { pod, connection };
         }
         await local.bring(target);
-        last = await local.connection({ ...target, wait: true });
+        await local.connection({ ...target, wait: true });
       }
     } finally {
       logged.mock.restore();
@@ -1791,7 +1802,6 @@ const namedAfterBringIn = once(async () => {
     const held = {
       made,
       failedFirst,
-      notClaimed: last?.notClaimed,
       waiting: (await local.answers({ pod })).waiting,
       imports: new Set(
         (await local.ask({ pod, question: IMPORTS })).rows.map(
@@ -2262,21 +2272,18 @@ describe("Connecting a pod to a hospital and bringing its records in · api.hosp
       assert.equal(kept.title, "rowan-ellery-marsh");
     });
 
-    it("claims nothing, and tells in the connection's `notClaimed` and the pod's `waiting` what waits, when a bring is tried again on an app opened again over the same folder", async () => {
-      const { retriedAfterARestart: restarted, retried } =
-        await namedAfterBringIn();
+    it("claims nothing, and tells in the pod's `waiting` what waits, when a bring is tried again on an app opened again over the same folder", async () => {
+      const { retriedAfterARestart: restarted } = await namedAfterBringIn();
       assert.match(restarted.failedFirst ?? "", /^Not brought in: /);
       assert.equal(restarted.medications, 0);
       assert.equal(restarted.title, "rowan-ellery-marsh");
       assert.equal(restarted.unansweredProfiles.length, 1);
       assert.deepEqual(
-        restarted.notClaimed.map(({ profile }: Output) => profile),
+        restarted.waiting.map(({ profile }: Output) => profile),
         restarted.unansweredProfiles,
       );
-      assert.match(restarted.notClaimed[0].hospital, /^Cascade North/);
-      assert.ok(restarted.notClaimed[0].records > 0);
-      assert.deepEqual(restarted.waiting, restarted.notClaimed);
-      assert.equal(retried.notClaimed, undefined);
+      assert.match(restarted.waiting[0].hospital, /^Cascade North/);
+      assert.ok(restarted.waiting[0].records > 0);
     });
 
     it("does not retitle a pod, and logs nothing, when the person of the record has no name to give it", async () => {

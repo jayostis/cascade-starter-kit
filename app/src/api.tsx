@@ -111,8 +111,6 @@ export interface ConnectionNow {
   /** Why the pod holds no record of the connect, when it does not. */
   readonly notRecorded?: string;
   readonly broughtIn?: boolean;
-  /** What waits for an answer when the bring could not tell which profiles were this pull's, so claimed none. */
-  readonly notClaimed?: readonly Waiting[];
 }
 
 /** The operations of the hospitals and a connection's box. */
