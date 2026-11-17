@@ -69,14 +69,43 @@ async function diagnosis(page: Page): Promise<string> {
 
 /**
  * `stack` with `seen` after the message `was` at its header, the text after the first `: `; a stack with no message there
- * (an error with an empty message prints none) takes `seen` after it.
+ * (an error with an empty message prints none) takes `seen` after its first line, the header.
  */
 function stackWith(stack: string, was: string, seen: string): string {
-  const at = stack.indexOf(`: ${was}`);
   const first = stack.indexOf("\n");
+  if (was === "")
+    return first === -1
+      ? `${stack}\n${seen}`
+      : `${stack.slice(0, first)}\n${seen}${stack.slice(first)}`;
+  const at = stack.indexOf(`: ${was}`);
   if (at === -1 || (first !== -1 && at > first)) return `${stack}\n${seen}`;
   const end = at + 2 + was.length;
   return `${stack.slice(0, end)}\n${seen}${stack.slice(end)}`;
+}
+
+/** `value` as text, however it prints: one with no string form (a null-prototype object, a Symbol) is named by its kind. */
+function describe(value: unknown): string {
+  try {
+    return String(value);
+  } catch {
+    return Object.prototype.toString.call(value);
+  }
+}
+
+/** Puts `seen` in `error`'s message and stack; false, with `error` as it was, when it cannot be changed (a frozen one). */
+function changed(error: Error, seen: string): boolean {
+  const stack =
+    error.stack === undefined
+      ? `${error.message}\n${seen}`
+      : stackWith(error.stack, error.message, seen);
+  const message = `${error.message}\n${seen}`;
+  try {
+    error.message = message;
+    error.stack = stack;
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -94,16 +123,14 @@ export async function withDiagnosis<T>(
     if (typeof error === "object" && error !== null && diagnosed.has(error))
       throw error;
     const seen = await diagnosis(page);
-    if (error instanceof Error) {
-      error.stack =
-        error.stack === undefined
-          ? `${error.message}\n${seen}`
-          : stackWith(error.stack, error.message, seen);
-      error.message = `${error.message}\n${seen}`;
+    if (error instanceof Error && changed(error, seen)) {
       diagnosed.add(error);
       throw error;
     }
-    const attached = new Error(`${String(error)}\n${seen}`);
+    const attached = new Error(
+      `${error instanceof Error ? error.message : describe(error)}\n${seen}`,
+      { cause: error },
+    );
     diagnosed.add(attached);
     throw attached;
   }

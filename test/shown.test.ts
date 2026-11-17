@@ -45,8 +45,46 @@ describe("Diagnosing a failed step on a watched page · shown.ts", () => {
         message === "" ? header : `${header}: ${message}`,
         `the header of the stack for message ${JSON.stringify(message)}`,
       );
+      assert.match(stack.split("\n")[1] ?? "", /^--- the page at/, message);
       assert.equal(stack.split("--- the page at").length, 2, message);
     }
+  });
+
+  it("keeps a thrown value that is not an error as the cause, however it prints", async () => {
+    const page = watched(fakePage());
+    const plain = { code: 1 };
+    const bare = Object.create(null) as object;
+    const symbol = Symbol("s");
+    for (const thrown of [plain, bare, symbol, "text", null]) {
+      const error = (await withDiagnosis(page, () =>
+        Promise.reject(thrown),
+      ).catch((caught: unknown) => caught)) as Error;
+      assert.ok(error instanceof Error, String(typeof thrown));
+      assert.equal(error.cause, thrown);
+      assert.match(error.message, /--- the page at/);
+    }
+  });
+
+  it("gives the diagnosis after an error whose stack is undefined", async () => {
+    const page = watched(fakePage());
+    const thrown = new Error("no stack");
+    thrown.stack = undefined;
+    const error = (await withDiagnosis(page, () =>
+      Promise.reject(thrown),
+    ).catch((caught: unknown) => caught)) as Error;
+    assert.equal(error, thrown);
+    assert.match(error.stack ?? "", /^no stack\n--- the page at/);
+  });
+
+  it("wraps a frozen error, keeping it as the cause, since its message cannot be changed", async () => {
+    const page = watched(fakePage());
+    const thrown = Object.freeze(new Error("frozen"));
+    const error = (await withDiagnosis(page, () =>
+      Promise.reject(thrown),
+    ).catch((caught: unknown) => caught)) as Error;
+    assert.notEqual(error, thrown);
+    assert.equal(error.cause, thrown);
+    assert.match(error.message, /frozen\n--- the page at/);
   });
 
   it("prints the message of a failed step once, with its cause kept", async () => {
