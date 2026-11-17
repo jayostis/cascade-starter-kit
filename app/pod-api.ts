@@ -303,8 +303,18 @@ interface Underway {
   retry?: boolean;
   imported?: boolean;
   broughtIn?: boolean;
-  /** What an import found and a bring has claimed of it, held until the bring is done, for a retry to finish. */
-  claiming?: { found: readonly string[]; claimed: Set<string> };
+}
+
+/** The profiles `hospital`'s records name that no one has said whether they are the subject's. */
+async function awaitingAnswer(pod: Pod, hospital: string) {
+  return (await pod.ask("profile/What needs review")).flatMap((row) =>
+    row.hospital === hospital &&
+    row.saidAbout === undefined &&
+    row.saidNotAbout === undefined &&
+    typeof row.profile === "string"
+      ? [row.profile]
+      : [],
+  );
 }
 
 /** The owner's About for `profile`: the person says the hospital's patient is them. */
@@ -1283,8 +1293,9 @@ export function podApi(
     };
     // The sign-in was the patient's, which is the person's yes to each profile the pull names, so each one a counting
     // About or NotAbout does not already answer is claimed once the import has filed it, and the matcher runs after.
-    // A retry after a failure past the import finds no profile, since a second import files nothing: it claims what
-    // the first try found and left, and the matcher then rechecks the whole pod.
+    // An import of a pull the pod already holds files nothing and so finds no profile: a bring retried after its claim
+    // failed, or after the app stopped, finds what is left to claim in `profile/What needs review`, and the matcher then
+    // rechecks the whole pod.
     void (async () => {
       try {
         const done = await pod.import(files, {
@@ -1296,24 +1307,20 @@ export function podApi(
           connection.failed = `Refused: ${done.refused}`;
           return;
         }
-        const retried = connection.claiming !== undefined;
-        const { found, claimed } = (connection.claiming ??= {
-          found: done.unclaimedProfiles,
-          claimed: new Set(),
-        });
-        const left = found.filter((profile) => !claimed.has(profile));
-        told({ part: "judging", done: 0, of: left.length + 1 });
-        for (const [at, profile] of left.entries()) {
+        const filed = done.wrote.length > 0;
+        const profiles = filed
+          ? done.unclaimedProfiles
+          : await awaitingAnswer(pod, connection.row.name);
+        told({ part: "judging", done: 0, of: profiles.length + 1 });
+        for (const [at, profile] of profiles.entries()) {
           await claim(pod, profile);
-          claimed.add(profile);
-          told({ part: "judging", done: at + 1, of: left.length + 1 });
+          told({ part: "judging", done: at + 1, of: profiles.length + 1 });
         }
-        await pod.match(retried ? undefined : done.activity);
-        connection.claiming = undefined;
+        if (profiles.length > 0)
+          await titledAfter(name, pod, patientName(pulled!.bundle));
+        await pod.match(filed ? done.activity : undefined);
         connection.imported = true;
         connection.broughtIn = true;
-        if (found.length > 0)
-          await titledAfter(name, pod, patientName(pulled!.bundle));
       } catch (error) {
         globalThis.console.error(error);
         connection.failed = NOT_BROUGHT_IN;
