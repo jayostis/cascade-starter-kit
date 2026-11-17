@@ -68,9 +68,21 @@ async function diagnosis(page: Page): Promise<string> {
 }
 
 /**
+ * `stack` with `seen` after the message `was` at its header, the text after the first `: `; a stack with no message there
+ * (an error with an empty message prints none) takes `seen` after it.
+ */
+function stackWith(stack: string, was: string, seen: string): string {
+  const at = stack.indexOf(`: ${was}`);
+  const first = stack.indexOf("\n");
+  if (at === -1 || (first !== -1 && at > first)) return `${stack}\n${seen}`;
+  const end = at + 2 + was.length;
+  return `${stack.slice(0, end)}\n${seen}${stack.slice(end)}`;
+}
+
+/**
  * Does `doing`; a failure of it is thrown again with the page's diagnosis after its message, once however many steps
- * nest. An AssertionError keeps its actual and expected and takes the diagnosis in its message and in its stack, which
- * is what node:test prints.
+ * nest. The error thrown is the one rethrown, so its actual, expected and cause stay, and its message and its stack,
+ * which is what node:test prints, each carry the diagnosis once.
  */
 export async function withDiagnosis<T>(
   page: Page,
@@ -81,23 +93,17 @@ export async function withDiagnosis<T>(
   } catch (error) {
     if (typeof error === "object" && error !== null && diagnosed.has(error))
       throw error;
-    if (error instanceof assert.AssertionError) {
-      const was = error.message;
-      const seen = await diagnosis(page);
-      error.message = `${was}\n${seen}`;
+    const seen = await diagnosis(page);
+    if (error instanceof Error) {
       error.stack =
         error.stack === undefined
-          ? error.message
-          : error.stack.includes(was)
-            ? error.stack.replace(was, () => error.message)
-            : `${error.stack}\n${seen}`;
+          ? `${error.message}\n${seen}`
+          : stackWith(error.stack, error.message, seen);
+      error.message = `${error.message}\n${seen}`;
       diagnosed.add(error);
       throw error;
     }
-    const attached = new Error(
-      `${error instanceof Error ? error.message : String(error)}\n${await diagnosis(page)}`,
-      { cause: error },
-    );
+    const attached = new Error(`${String(error)}\n${seen}`);
     diagnosed.add(attached);
     throw attached;
   }

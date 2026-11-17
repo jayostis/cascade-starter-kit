@@ -31,6 +31,36 @@ describe("Diagnosing a failed step on a watched page · shown.ts", () => {
     assert.equal(error.expected, 2);
   });
 
+  it("puts the diagnosis after the stack's header, not inside it, for a message that is a part of the header", async () => {
+    const page = watched(fakePage());
+    for (const message of ["e", ""]) {
+      const error = (await withDiagnosis(page, () => {
+        assert.ok(false, message);
+        return Promise.resolve();
+      }).catch((caught: unknown) => caught)) as assert.AssertionError;
+      const header = `${error.name} [${error.code}]`;
+      const stack = error.stack ?? "";
+      assert.equal(
+        stack.split("\n")[0],
+        message === "" ? header : `${header}: ${message}`,
+        `the header of the stack for message ${JSON.stringify(message)}`,
+      );
+      assert.equal(stack.split("--- the page at").length, 2, message);
+    }
+  });
+
+  it("prints the message of a failed step once, with its cause kept", async () => {
+    const page = watched(fakePage());
+    const cause = new Error("the inner one");
+    const thrown = new Error("the step failed", { cause });
+    const error = (await withDiagnosis(page, () =>
+      Promise.reject(thrown),
+    ).catch((caught: unknown) => caught)) as Error;
+    assert.equal(error, thrown);
+    assert.equal(error.cause, cause);
+    assert.equal((error.stack ?? "").split("the step failed").length, 2);
+  });
+
   it("gives the diagnosis once however many steps nest", async () => {
     const page = watched(fakePage());
     const error = (await withDiagnosis(page, () =>
