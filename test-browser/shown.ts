@@ -4,19 +4,103 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import type { Page } from "playwright";
 
 const pageErrors = new WeakMap<Page, string[]>();
+const pageLogs = new WeakMap<Page, string[]>();
+const diagnosed = new WeakSet<object>();
 
-/** The page, with what went wrong in it collected for a failure's message. */
+const LOG_LINES = 200;
+const LOG_LINE = 500;
+const TEXT_CHARS = 2_000;
+
+/** Adds `line`, dropping the oldest when more than LOG_LINES are held: the lines nearest a failure are the ones a diagnosis needs. */
+function keepLast(lines: string[], line: string): void {
+  lines.push(line);
+  if (lines.length > LOG_LINES) lines.shift();
+}
+
+/** The page, with what went wrong in it, and when, collected from now for a failure's message. */
 export function watched(page: Page): Page {
   const said: string[] = [];
-  page.on("pageerror", (error) => said.push(error.message));
-  page.on("console", (message) => {
-    if (message.type() === "error") said.push(message.text());
+  const log: string[] = [];
+  const started = Date.now();
+  const note = (kind: string, text: string): void =>
+    keepLast(
+      log,
+      `+${Date.now() - started} ms ${kind}: ${text.slice(0, LOG_LINE)}`,
+    );
+  const say = (text: string): void => keepLast(said, text.slice(0, LOG_LINE));
+  page.on("pageerror", (error) => {
+    say(error.message);
+    note("pageerror", error.stack ?? error.message);
   });
-  page.on("requestfailed", (request) =>
-    said.push(`${request.url()}: ${request.failure()?.errorText ?? ""}`),
-  );
+  page.on("console", (message) => {
+    if (message.type() === "error") say(message.text());
+    if (message.type() === "error" || message.type() === "warning")
+      note(`console.${message.type()}`, message.text());
+  });
+  page.on("requestfailed", (request) => {
+    const failed = `${request.url()}: ${request.failure()?.errorText ?? ""}`;
+    say(failed);
+    note("requestfailed", failed);
+  });
+  page.on("response", (response) => {
+    if (response.status() >= 400)
+      note("response", `${response.status()} ${response.url()}`);
+  });
   pageErrors.set(page, said);
+  pageLogs.set(page, log);
   return page;
+}
+
+/** What a failed step on `page` needs beside its own message: the page's text now, and what the page has said since it was watched. */
+async function diagnosis(page: Page): Promise<string> {
+  const text = await page
+    .innerText("body", { timeout: 5_000 })
+    .then((body) => body.slice(0, TEXT_CHARS))
+    .catch((error: unknown) => `(unreadable: ${String(error)})`);
+  const log = pageLogs.get(page);
+  return [
+    `--- the page at ${page.isClosed() ? "(closed)" : page.url()}, the first ${TEXT_CHARS} characters of its text:`,
+    text,
+    `--- its pageerrors, console warnings and errors, failed requests and responses of 400 or more${log === undefined ? " (the page was not watched)" : ""}:`,
+    log === undefined || log.length === 0 ? "none" : log.join("\n"),
+    "--- end of the page's diagnosis",
+  ].join("\n");
+}
+
+/**
+ * Does `doing`; a failure of it is thrown again with the page's diagnosis after its message, once however many steps
+ * nest. An AssertionError keeps its actual and expected and takes the diagnosis in its message and in its stack, which
+ * is what node:test prints.
+ */
+export async function withDiagnosis<T>(
+  page: Page,
+  doing: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await doing();
+  } catch (error) {
+    if (typeof error === "object" && error !== null && diagnosed.has(error))
+      throw error;
+    if (error instanceof assert.AssertionError) {
+      const was = error.message;
+      const seen = await diagnosis(page);
+      error.message = `${was}\n${seen}`;
+      error.stack =
+        error.stack === undefined
+          ? error.message
+          : error.stack.includes(was)
+            ? error.stack.replace(was, () => error.message)
+            : `${error.stack}\n${seen}`;
+      diagnosed.add(error);
+      throw error;
+    }
+    const attached = new Error(
+      `${error instanceof Error ? error.message : String(error)}\n${await diagnosis(page)}`,
+      { cause: error },
+    );
+    diagnosed.add(attached);
+    throw attached;
+  }
 }
 
 /** The page's last changes of state, as `doing.ts` keeps them, with when they were read, for a failure's message. */
@@ -29,23 +113,25 @@ async function traceOf(page: Page): Promise<string> {
  * Waits for try/ to finish its step, `timeout` ms at most; a page that reports an error, or never finishes, fails with
  * what it said and how it came to its state.
  */
-export async function settled(page: Page, timeout = 120_000): Promise<void> {
-  try {
-    await page.waitForSelector(
-      'body[data-state="ready"], body[data-state="error"]',
-      { timeout },
-    );
-  } catch (error) {
-    throw new Error(
-      `try/ never finished: ${(pageErrors.get(page) ?? []).join("; ") || String(error)}\n${await traceOf(page).catch(() => "")}`,
-      { cause: error },
-    );
-  }
-  const state = await page.getAttribute("body", "data-state");
-  if (state !== "ready")
-    throw new Error(
-      `try/ is ${state ?? "in no state"} and says: ${(await page.textContent("main")) ?? ""} (because ${(await page.getAttribute("body", "data-error")) ?? "it gave no reason"}) ${(pageErrors.get(page) ?? []).join("; ")}\n${await traceOf(page)}`,
-    );
+export function settled(page: Page, timeout = 120_000): Promise<void> {
+  return withDiagnosis(page, async () => {
+    try {
+      await page.waitForSelector(
+        'body[data-state="ready"], body[data-state="error"]',
+        { timeout },
+      );
+    } catch (error) {
+      throw new Error(
+        `try/ never finished: ${(pageErrors.get(page) ?? []).join("; ") || String(error)}\n${await traceOf(page).catch(() => "")}`,
+        { cause: error },
+      );
+    }
+    const state = await page.getAttribute("body", "data-state");
+    if (state !== "ready")
+      throw new Error(
+        `try/ is ${state ?? "in no state"} and says: ${(await page.textContent("main")) ?? ""} (because ${(await page.getAttribute("body", "data-error")) ?? "it gave no reason"}) ${(pageErrors.get(page) ?? []).join("; ")}\n${await traceOf(page)}`,
+      );
+  });
 }
 
 /** Does `act`, then waits for try/ to finish its step, which must have drawn the page in place, never loading one. */

@@ -566,6 +566,7 @@
     "Building try/, when the tables cannot be read · looks()",
     "Moving the runtime pin · scripts/pin.mjs",
     "Annotating a red run's failures · failure-annotations.ts",
+    "Diagnosing a failed step on a watched page · shown.ts",
     "Tripwire: a code system's IRI stem written in a source file"
   ],
   "randomOrder": []
