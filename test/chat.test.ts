@@ -10,7 +10,13 @@ import { getRequestListener } from "@hono/node-server";
 import { loadHospital, loadStories } from "@the-cascade-protocol/sandbox/node";
 import { APICallError } from "ai";
 import { MockLanguageModelV4 } from "ai/test";
-import { openPod, type Pod, pullFiles, timelineIn } from "cascade-runtime";
+import {
+  openPod,
+  type Pod,
+  pullFiles,
+  textRow,
+  timelineIn,
+} from "cascade-runtime";
 import { withPod } from "cascade-runtime/tools";
 import { pulled } from "./hospitals.js";
 
@@ -373,7 +379,7 @@ describe("Answering a person's question with a model · POST /chat, GET /chat, c
         `/pods/${STATIN}/trend?test=18262-6&medication=617310`,
       );
       const lab = await pods.get(STATIN)!.ask("pod/My lab results");
-      const entries = new Set(lab.map((row) => entryId(row.entry!)));
+      const entries = new Set(lab.map((row) => entryId(textRow(row).entry!)));
       for (const each of findings) {
         assert.match(
           each.said,

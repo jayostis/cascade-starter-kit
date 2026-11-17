@@ -67,6 +67,7 @@ import {
   sourcesOf,
   tableId,
   testsIn,
+  textOf,
   trendInput,
   utcInstant,
   type VariantsSaid,
@@ -625,17 +626,20 @@ export function podApi(
       pod.ask(LABS),
     ]);
     const input = trendInput(
-      { changes: changesIn(medications, labs, { limit: 20 }), labs },
+      {
+        changes: changesIn(medications, labs, { limit: 20 }),
+        labs: labs.map(textOf),
+      },
       { test, medication },
     );
     if (input === undefined)
       throw new Refusal(`the pod ${name} holds no test results`);
     let series;
     try {
-      series = labSeriesIn(labs, input.test);
+      series = labSeriesIn(labs.map(textOf), input.test);
     } catch (error) {
       if (!(error instanceof Refusal)) throw error;
-      const tests = testsIn(labs).map(
+      const tests = testsIn(labs.map(textOf)).map(
         ({ code, notation, name: label }) =>
           `${notation ?? code}${label === undefined ? "" : ` (${label})`}`,
       );
@@ -684,7 +688,8 @@ export function podApi(
     const tables = await host.tables();
     const [about, elsewhere, heldNow] = await Promise.all([
       (async () => classesSaid(rows, { tables }))().catch(noop),
-      (async () => classedElsewhere(rows, medications, { tables }))().catch(
+      (async () =>
+        classedElsewhere(rows, medications.map(textOf), { tables }))().catch(
         noop,
       ),
       held(Promise.resolve(tables)).catch(() => []),

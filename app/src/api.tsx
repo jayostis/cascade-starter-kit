@@ -3,12 +3,12 @@
 import type { CompactAnswer } from "cascade-runtime/tools";
 import { createContext, useContext, type ComponentType } from "react";
 import type {
+  AnsweredRow,
   Answers,
   Checked,
   Failure,
   Finding,
   Person,
-  Row,
   Series,
 } from "../said.ts";
 import type { TableRead } from "./tables.tsx";
@@ -64,7 +64,7 @@ export interface PodApi extends WritesApi, HospitalsApi {
     format?: "rows" | "compact";
     entries?: string[];
   }): Promise<
-    | { question: string; total: number; offset?: number; rows: Row[] }
+    | { question: string; total: number; offset?: number; rows: AnsweredRow[] }
     | CompactAnswer
   >;
   setWorldDate(input: { date: string }): Promise<{ asOf?: string }>;

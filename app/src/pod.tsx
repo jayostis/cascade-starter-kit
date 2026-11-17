@@ -45,6 +45,7 @@ import {
   SMALL,
   SOURCES,
   stepWhenSaid,
+  textOf,
   timeOf,
   trendOfFinding,
   valuesSaid,
@@ -326,7 +327,7 @@ function Change({
 }) {
   const { key, unit, before, after, left, rows } = finding;
   const id = `change-${slug(key)}`;
-  const points = [...rows.before, ...rows.after].map((row) => ({
+  const points = [...rows.before, ...rows.after].map(textOf).map((row) => ({
     time: timeOf(row.performed),
     value: Number(row.value),
   }));
@@ -451,7 +452,7 @@ function Changed({
       </div>
       {shown.map((finding) => {
         const { rows } = finding;
-        const all = [...rows.before, ...rows.after, ...rows.left];
+        const all = [...rows.before, ...rows.after, ...rows.left].map(textOf);
         return (
           <Box
             key={finding.key}
