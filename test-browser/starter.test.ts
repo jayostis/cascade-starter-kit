@@ -1297,7 +1297,9 @@ describe("Connecting to a demo hospital · Sign in at", () => {
       );
       await again.close();
     } finally {
-      await own.stop();
+      await own.stop().catch((error: unknown) => {
+        console.error(`stopping the app failed: ${String(error)}`);
+      });
     }
   });
 

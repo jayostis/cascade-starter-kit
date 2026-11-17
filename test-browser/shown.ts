@@ -67,7 +67,11 @@ async function diagnosis(page: Page): Promise<string> {
   ].join("\n");
 }
 
-/** Does `doing`; a failure of it is thrown again with the page's diagnosis after its message, once however many steps nest. */
+/**
+ * Does `doing`; a failure of it is thrown again with the page's diagnosis after its message, once however many steps
+ * nest. An AssertionError keeps its actual and expected and takes the diagnosis in its message and in its stack, which
+ * is what node:test prints.
+ */
 export async function withDiagnosis<T>(
   page: Page,
   doing: () => Promise<T>,
@@ -78,7 +82,15 @@ export async function withDiagnosis<T>(
     if (typeof error === "object" && error !== null && diagnosed.has(error))
       throw error;
     if (error instanceof assert.AssertionError) {
-      error.message = `${error.message}\n${await diagnosis(page)}`;
+      const was = error.message;
+      const seen = await diagnosis(page);
+      error.message = `${was}\n${seen}`;
+      error.stack =
+        error.stack === undefined
+          ? error.message
+          : error.stack.includes(was)
+            ? error.stack.replace(was, () => error.message)
+            : `${error.stack}\n${seen}`;
       diagnosed.add(error);
       throw error;
     }
