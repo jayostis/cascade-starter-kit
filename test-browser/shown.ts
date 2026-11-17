@@ -11,29 +11,35 @@ const LOG_LINES = 200;
 const LOG_LINE = 500;
 const TEXT_CHARS = 2_000;
 
+/** Adds `line`, dropping the oldest when more than LOG_LINES are held: the lines nearest a failure are the ones a diagnosis needs. */
+function keepLast(lines: string[], line: string): void {
+  lines.push(line);
+  if (lines.length > LOG_LINES) lines.shift();
+}
+
 /** The page, with what went wrong in it, and when, collected from now for a failure's message. */
 export function watched(page: Page): Page {
   const said: string[] = [];
   const log: string[] = [];
   const started = Date.now();
-  const note = (kind: string, text: string): void => {
-    if (log.length < LOG_LINES)
-      log.push(
-        `+${Date.now() - started} ms ${kind}: ${text.slice(0, LOG_LINE)}`,
-      );
-  };
+  const note = (kind: string, text: string): void =>
+    keepLast(
+      log,
+      `+${Date.now() - started} ms ${kind}: ${text.slice(0, LOG_LINE)}`,
+    );
+  const say = (text: string): void => keepLast(said, text.slice(0, LOG_LINE));
   page.on("pageerror", (error) => {
-    said.push(error.message);
+    say(error.message);
     note("pageerror", error.stack ?? error.message);
   });
   page.on("console", (message) => {
-    if (message.type() === "error") said.push(message.text());
+    if (message.type() === "error") say(message.text());
     if (message.type() === "error" || message.type() === "warning")
       note(`console.${message.type()}`, message.text());
   });
   page.on("requestfailed", (request) => {
     const failed = `${request.url()}: ${request.failure()?.errorText ?? ""}`;
-    said.push(failed);
+    say(failed);
     note("requestfailed", failed);
   });
   page.on("response", (response) => {
@@ -71,6 +77,11 @@ export async function withDiagnosis<T>(
   } catch (error) {
     if (typeof error === "object" && error !== null && diagnosed.has(error))
       throw error;
+    if (error instanceof assert.AssertionError) {
+      error.message = `${error.message}\n${await diagnosis(page)}`;
+      diagnosed.add(error);
+      throw error;
+    }
     const attached = new Error(
       `${error instanceof Error ? error.message : String(error)}\n${await diagnosis(page)}`,
       { cause: error },
