@@ -1010,7 +1010,7 @@ const SAID: Readonly<Record<string, (item: Item, row: Row) => string>> = {
   "a member changed since it was judged": ({ name, one }) =>
     `${who(name, one)} was judged to be one ${one}, but a record in it has changed since.`,
   "retracted by someone other than who made it": ({ name, one }) =>
-    `A judgment about ${whom(name, one)} was taken back by someone other than the person or app that made it.`,
+    `A judgment about ${whom(name, one)} was taken back by someone other than the person who made it.`,
   "observed later": ({ name, one }) =>
     `The source's change time did not decide which version of ${whom(name, one)} is current, so the one seen later is shown.`,
   "no basis": ({ name, one }) =>
