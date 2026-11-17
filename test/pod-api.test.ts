@@ -1663,39 +1663,54 @@ const parkedOnce = once(async () => {
  * titles after the app is closed and opened again, and what each pod holds of the record.
  */
 const namedAfterBringIn = once(async () => {
-  const importing = (result: object) => (pod: object) =>
-    new Proxy(pod, {
-      get(target, key) {
-        const value = Reflect.get(target, key, target);
-        if (key === "import")
-          return async (...args: unknown[]) => ({
-            ...(await (value as (...a: unknown[]) => Promise<object>).apply(
-              target,
-              args,
-            )),
-            ...result,
-          });
-        return typeof value === "function" ? value.bind(target) : value;
-      },
-    });
+  /** What a pod's `import` gives with `result` laid over it, and its first `judge` failing when `judgeFails`. */
+  const doing =
+    ({ result, judgeFails }: { result?: object; judgeFails?: boolean }) =>
+    (pod: object) => {
+      let failing = judgeFails === true;
+      return new Proxy(pod, {
+        get(target, key) {
+          const value = Reflect.get(target, key, target);
+          if (key === "import" && result !== undefined)
+            return async (...args: unknown[]) => ({
+              ...(await (value as (...a: unknown[]) => Promise<object>).apply(
+                target,
+                args,
+              )),
+              ...result,
+            });
+          if (key === "judge" && failing)
+            return async (...args: unknown[]) => {
+              if (!failing)
+                return (value as (...a: unknown[]) => Promise<object>).apply(
+                  target,
+                  args,
+                );
+              failing = false;
+              throw new Error("no room to write the About");
+            };
+          return typeof value === "function" ? value.bind(target) : value;
+        },
+      });
+    };
   const brought = async (
     pod: string,
     make: (local: Api, at: string) => Promise<unknown>,
-    result?: object,
+    over?: { result?: object; judgeFails?: boolean },
   ) => {
     const at = await mkdtemp(join(tmpdir(), "pod-api-named-"));
     folders.push(at);
     const base = host(at);
     const local = api({
       ...base,
-      ...(result !== undefined && {
+      ...(over !== undefined && {
         pods: new Proxy(
           base.pods as unknown as { open(...a: unknown[]): Promise<object> },
           {
             get: (target, key) =>
               key === "open"
                 ? async (...args: unknown[]) =>
-                    importing(result)(await target.open(...args))
+                    doing(over)(await target.open(...args))
                 : Reflect.get(target, key, target),
           },
         ),
@@ -1705,10 +1720,26 @@ const namedAfterBringIn = once(async () => {
     await make(local, at);
     const { connection } = await connected(local, pod);
     const target = { pod, connection };
-    await local.bring(target);
-    await local.connection({ ...target, wait: true });
+    const logged = mock.method(console, "error", () => undefined);
+    let failedFirst: string | undefined;
+    try {
+      await local.bring(target);
+      const first = await local.connection({ ...target, wait: true });
+      failedFirst = first.failed;
+      if (first.retry) {
+        await local.bring(target);
+        await local.connection({ ...target, wait: true });
+      }
+    } finally {
+      logged.mock.restore();
+    }
     const held = {
-      imports: (await local.ask({ pod, question: IMPORTS })).rows.length,
+      failedFirst,
+      imports: new Set(
+        (await local.ask({ pod, question: IMPORTS })).rows.map(
+          ({ import: id }: Output) => id,
+        ),
+      ).size,
       medications: (await local.ask({ pod, question: MEDICATIONS })).rows
         .length,
     };
@@ -1759,9 +1790,12 @@ const namedAfterBringIn = once(async () => {
     untitled: await brought("rowan-ellery-marsh", untitled),
     titled: await brought("ada", (local) => local.makePod({ person: "Ada" })),
     refused: await brought("rowan-ellery-marsh", untitled, {
-      refused: "not a record",
+      result: { refused: "not a record" },
     }),
     disclaimed: await brought("rowan-ellery-marsh", disclaiming),
+    retried: await brought("rowan-ellery-marsh", untitled, {
+      judgeFails: true,
+    }),
   };
 });
 
@@ -1895,13 +1929,22 @@ const failedOnce = once(async () => {
   }
 });
 
-/** A bring-in over a pod whose `import` records the parts `onProgress` is told, as each begins. */
+/**
+ * A bring-in over a pod whose `import` records the parts `onProgress` is told, as each begins, and whose `judge` records
+ * the part the connection says it is at when a claim is filed.
+ */
 const partsOnce = once(async () => {
   const parts: string[] = [];
+  const at = { pod: "ada", connection: 0 };
   const recording = (pod: object) =>
     new Proxy(pod, {
       get(target, key) {
         const value = Reflect.get(target, key, target);
+        if (key === "judge")
+          return async (...args: unknown[]) => {
+            parts.push((await built.connection(at)).bringing.part);
+            return (value as (...a: unknown[]) => unknown).apply(target, args);
+          };
         if (key !== "import") {
           return typeof value === "function" ? value.bind(target) : value;
         }
@@ -1918,9 +1961,11 @@ const partsOnce = once(async () => {
           });
       },
     });
-  const { built } = await fresh((at) => ({
+  const { built } = await fresh((folder) => ({
     pods: new Proxy(
-      host(at).pods as unknown as { open(...a: unknown[]): Promise<object> },
+      host(folder).pods as unknown as {
+        open(...a: unknown[]): Promise<object>;
+      },
       {
         get: (target, key) =>
           key === "open"
@@ -1931,7 +1976,6 @@ const partsOnce = once(async () => {
     ),
   }));
   await built.makePod({ person: "Ada" });
-  const at = { pod: "ada", connection: 0 };
   at.connection = (await connected(built, "ada")).connection;
   await built.bring(at);
   await built.connection({ ...at, wait: true });
@@ -2080,7 +2124,7 @@ describe("Connecting a pod to a hospital and bringing its records in · api.hosp
       assert.deepEqual([...labels.values()], ["FHIR pull"]);
     });
 
-    it("reports loading the adapter, converting, saving and judging, in that order, through `onProgress`", async () => {
+    it("reports loading the adapter, converting, saving and judging, in that order, in the connection's `bringing`", async () => {
       const { parts } = await partsOnce();
       const each = parts.filter((part, at) => part !== parts[at - 1]);
       assert.deepEqual(each, [
@@ -2117,6 +2161,13 @@ describe("Connecting a pod to a hospital and bringing its records in · api.hosp
       assert.equal(disclaimed.imports, 1);
       assert.equal(disclaimed.medications, 0);
       assert.equal(disclaimed.title, "rowan-ellery-marsh");
+    });
+
+    it("claims a profile and titles the pod when a bring is tried again after its claim failed, though the second import files nothing", async () => {
+      const { retried, untitled } = await namedAfterBringIn();
+      assert.match(retried.failedFirst ?? "", /^Not brought in: /);
+      assert.equal(retried.title, "Ines Calloway");
+      assert.equal(retried.medications, untitled.medications);
     });
 
     it("does not retitle a pod, and logs nothing, when the person of the record has no name to give it", async () => {

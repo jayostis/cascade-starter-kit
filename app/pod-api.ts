@@ -303,6 +303,23 @@ interface Underway {
   retry?: boolean;
   imported?: boolean;
   broughtIn?: boolean;
+  /** What an import found and a bring has claimed of it, held until the bring is done, for a retry to finish. */
+  claiming?: { found: readonly string[]; claimed: Set<string> };
+}
+
+/** The owner's About for `profile`: the person says the hospital's patient is them. */
+async function claim(pod: Pod, profile: string) {
+  const { refused } =
+    await pod.judge(`@prefix cascade: <https://ns.cascadeprotocol.org/cascade#> .
+@prefix prov: <http://www.w3.org/ns/prov#> .
+<urn:cascade:this-judgment> a cascade:Judgment ;
+    cascade:verdict cascade:About ; cascade:subject <${pod.subject}> ; cascade:basis cascade:OwnerStatement ;
+    prov:hadMember <${profile}> ; prov:wasAttributedTo <${pod.owner}> ;
+    prov:wasGeneratedBy [ prov:qualifiedAssociation [ prov:agent <${pod.owner}> ; prov:hadRole cascade:PatientRole ] ] .
+<${pod.owner}> a prov:Person .
+`);
+  if (refused !== undefined)
+    throw new Error(`the About of ${profile} was refused: ${refused}`);
 }
 
 /** A connection's pull saved as files, or why there are none. */
@@ -1260,34 +1277,53 @@ export function podApi(
     connection.retry = undefined;
     connection.bringing = { part: "loading the adapter" };
     changed(connection);
-    pod
-      .import(files, {
-        claimProfiles: true,
-        onProgress: (part) => {
-          connection.bringing = part;
-          changed(connection);
-        },
-      })
-      .then(
-        async (done) => {
+    const told = (part: ImportProgress) => {
+      connection.bringing = part;
+      changed(connection);
+    };
+    // The sign-in was the patient's, which is the person's yes to each profile the pull names, so each one a counting
+    // About or NotAbout does not already answer is claimed once the import has filed it, and the matcher runs after.
+    // A retry after a failure past the import finds no profile, since a second import files nothing: it claims what
+    // the first try found and left, and the matcher then rechecks the whole pod.
+    void (async () => {
+      try {
+        const done = await pod.import(files, {
+          match: false,
+          onProgress: told,
+        });
+        if (done.refused !== undefined) {
           connection.imported = true;
-          if (done.refused === undefined) {
-            connection.broughtIn = true;
-            if (done.claimedProfiles.length > 0)
-              await titledAfter(name, pod, patientName(pulled!.bundle));
-          } else connection.failed = `Refused: ${done.refused}`;
-          last.delete(name);
-        },
-        (error: unknown) => {
-          globalThis.console.error(error);
-          connection.failed = NOT_BROUGHT_IN;
-          connection.retry = true;
-        },
-      )
-      .finally(() => {
+          connection.failed = `Refused: ${done.refused}`;
+          return;
+        }
+        const retried = connection.claiming !== undefined;
+        const { found, claimed } = (connection.claiming ??= {
+          found: done.unclaimedProfiles,
+          claimed: new Set(),
+        });
+        const left = found.filter((profile) => !claimed.has(profile));
+        told({ part: "judging", done: 0, of: left.length + 1 });
+        for (const [at, profile] of left.entries()) {
+          await claim(pod, profile);
+          claimed.add(profile);
+          told({ part: "judging", done: at + 1, of: left.length + 1 });
+        }
+        await pod.match(retried ? undefined : done.activity);
+        connection.claiming = undefined;
+        connection.imported = true;
+        connection.broughtIn = true;
+        if (found.length > 0)
+          await titledAfter(name, pod, patientName(pulled!.bundle));
+      } catch (error) {
+        globalThis.console.error(error);
+        connection.failed = NOT_BROUGHT_IN;
+        connection.retry = true;
+      } finally {
+        last.delete(name);
         connection.bringing = undefined;
         changed(connection);
-      });
+      }
+    })();
     return { step: "bringing in" };
   }
 
