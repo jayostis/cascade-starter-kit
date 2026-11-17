@@ -18,7 +18,7 @@ function fakePage(): Page {
 }
 
 describe("Diagnosing a failed step on a watched page · shown.ts", () => {
-  it("a failed assertion carries the page's text in its message and in its stack", async () => {
+  it("keeps the page's text in a failed assertion's message and stack", async () => {
     const page = watched(fakePage());
     const error = await withDiagnosis(page, () => {
       assert.equal(1, 2);
@@ -31,7 +31,7 @@ describe("Diagnosing a failed step on a watched page · shown.ts", () => {
     assert.equal(error.expected, 2);
   });
 
-  it("a failed assertion's diagnosis is there once however many steps nest", async () => {
+  it("gives the diagnosis once however many steps nest", async () => {
     const page = watched(fakePage());
     const error = (await withDiagnosis(page, () =>
       withDiagnosis(page, () => {
@@ -42,7 +42,7 @@ describe("Diagnosing a failed step on a watched page · shown.ts", () => {
     assert.equal((error.stack ?? "").split("--- the page at").length, 2);
   });
 
-  it("a failed assertion run under node:test is printed with the diagnosis", () => {
+  it("prints a failed assertion under node:test with the diagnosis", () => {
     const folder = mkdtempSync(join(tmpdir(), "shown-"));
     try {
       const file = join(folder, "fails.test.mjs");
