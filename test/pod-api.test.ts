@@ -19,6 +19,7 @@ import {
 } from "cascade-runtime";
 import { replayKit } from "cascade-runtime/fixtures";
 import { trendOf } from "cascade-runtime/tools";
+import { importClaimingEveryProfile } from "./claiming.js";
 import {
   type Alter,
   answering,
@@ -153,6 +154,7 @@ const ATORVASTATIN = "617310";
 const SECOND_ATORVASTATIN = "617314";
 const LABS = "pod/My lab results";
 const IMPORTS = "pod/What each import brought in";
+const MEDICATIONS = "pod/My medication history";
 
 let folder: string;
 /** The words that open the encrypted pod. */
@@ -472,9 +474,10 @@ before(async () => {
   )!;
   const { pull } = await pulled(north, story.patient);
   const statin = await openPod(join(folder, STATIN));
-  const imported = await statin.import(pullFiles(pull, "north"), {
-    claimProfiles: true,
-  });
+  const imported = await importClaimingEveryProfile(
+    statin,
+    pullFiles(pull, "north"),
+  );
   assert.equal(imported.refused, undefined);
   const labs = await statin.ask(LABS);
   iris.ldl = testsIn(labs).find(({ notation }) => notation === LDL)!.code;
@@ -1655,8 +1658,9 @@ const parkedOnce = once(async () => {
 });
 
 /**
- * A pod with no name on file and a pod made under one, each brought a record of another person, and a pod with no
- * name on file whose import is refused or claims no profile: their titles after the app is closed and opened again.
+ * A pod with no name on file and a pod made under one, each brought a record of another person, a pod with no name on
+ * file whose import is refused, and one whose owner said before the bring that the record's patient is not them: their
+ * titles after the app is closed and opened again, and what each pod holds of the record.
  */
 const namedAfterBringIn = once(async () => {
   const importing = (result: object) => (pod: object) =>
@@ -1703,6 +1707,11 @@ const namedAfterBringIn = once(async () => {
     const target = { pod, connection };
     await local.bring(target);
     await local.connection({ ...target, wait: true });
+    const held = {
+      imports: (await local.ask({ pod, question: IMPORTS })).rows.length,
+      medications: (await local.ask({ pod, question: MEDICATIONS })).rows
+        .length,
+    };
     await local.close();
     const again = api({ ...host(at), hospitals: northHospitals() });
     await (
@@ -1714,7 +1723,29 @@ const namedAfterBringIn = once(async () => {
     ).close();
     const { pods } = await again.pods({});
     await again.close();
-    return pods.find(({ name }: Output) => name === pod).title;
+    return {
+      ...held,
+      title: pods.find(({ name }: Output) => name === pod).title,
+    };
+  };
+  const disclaiming = async (_: Api, at: string) => {
+    const scratch = await openPod();
+    const { unclaimedProfiles } = await scratch.import(
+      pullFiles((await pulled(north, STATIN)).pull, "north"),
+      { match: false },
+    );
+    await scratch.close();
+    const owner = await openPod(join(at, "rowan-ellery-marsh"));
+    for (const profile of unclaimedProfiles)
+      await owner.judge(`@prefix cascade: <https://ns.cascadeprotocol.org/cascade#> .
+@prefix prov: <http://www.w3.org/ns/prov#> .
+<urn:cascade:this-judgment> a cascade:Judgment ;
+    cascade:verdict cascade:NotAbout ; cascade:subject <${owner.subject}> ;
+    prov:hadMember <${profile}> ; prov:wasAttributedTo <${owner.owner}> ;
+    prov:wasGeneratedBy [ prov:qualifiedAssociation [ prov:agent <${owner.owner}> ; prov:hadRole cascade:PatientRole ] ] .
+<${owner.owner}> a prov:Person .
+`);
+    await owner.close();
   };
   const untitled = async (_: Api, at: string) =>
     (
@@ -1730,9 +1761,7 @@ const namedAfterBringIn = once(async () => {
     refused: await brought("rowan-ellery-marsh", untitled, {
       refused: "not a record",
     }),
-    unclaimed: await brought("rowan-ellery-marsh", untitled, {
-      claimedProfiles: [],
-    }),
+    disclaimed: await brought("rowan-ellery-marsh", disclaiming),
   };
 });
 
@@ -2073,14 +2102,21 @@ describe("Connecting a pod to a hospital and bringing its records in · api.hosp
 
     it("titles a pod with no name on file for the person of the record brought in, still so when it is opened again, and leaves a name on file", async () => {
       const { untitled, titled } = await namedAfterBringIn();
-      assert.equal(untitled, "Ines Calloway");
-      assert.equal(titled, "Ada");
+      assert.equal(untitled.title, "Ines Calloway");
+      assert.equal(titled.title, "Ada");
     });
 
-    it("leaves the title of a pod when the import is refused or claims no profile", async () => {
-      const { refused, unclaimed } = await namedAfterBringIn();
-      assert.equal(refused, "rowan-ellery-marsh");
-      assert.equal(unclaimed, "rowan-ellery-marsh");
+    it("leaves the title of a pod when the import is refused", async () => {
+      const { refused } = await namedAfterBringIn();
+      assert.equal(refused.title, "rowan-ellery-marsh");
+    });
+
+    it("claims no profile its owner said is not them, so the pod is not titled and its views leave the record out, though the record is in it", async () => {
+      const { untitled, disclaimed } = await namedAfterBringIn();
+      assert.ok(untitled.medications > 0);
+      assert.equal(disclaimed.imports, 1);
+      assert.equal(disclaimed.medications, 0);
+      assert.equal(disclaimed.title, "rowan-ellery-marsh");
     });
 
     it("does not retitle a pod, and logs nothing, when the person of the record has no name to give it", async () => {
@@ -2811,12 +2847,12 @@ const paged = once(async () => {
         },
       });
   const pod = await openPod(join(at, "paged"));
-  const imported = await pod.import(
+  const imported = await importClaimingEveryProfile(
+    pod,
     new Map([
       ...files,
       ["north/bundle.json", new TextEncoder().encode(JSON.stringify(bundle))],
     ]),
-    { claimProfiles: true },
   );
   assert.equal(imported.refused, undefined);
   await pod.close();
@@ -2873,12 +2909,12 @@ const checks = once(async () => {
     },
   });
   const pod = await openPod(join(at, "two-atorvastatins"));
-  const imported = await pod.import(
+  const imported = await importClaimingEveryProfile(
+    pod,
     new Map([
       ...files,
       ["north/bundle.json", new TextEncoder().encode(JSON.stringify(bundle))],
     ]),
-    { claimProfiles: true },
   );
   assert.equal(imported.refused, undefined);
   await pod.close();

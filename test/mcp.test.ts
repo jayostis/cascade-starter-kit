@@ -7,6 +7,7 @@ import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { loadHospital, loadStories } from "@the-cascade-protocol/sandbox/node";
 import { openPod, type Pod, pullFiles, Refusal } from "cascade-runtime";
+import { importClaimingEveryProfile } from "./claiming.js";
 import { pulled } from "./hospitals.js";
 import { removed } from "./settled.js";
 
@@ -212,9 +213,10 @@ describe("Serving the pods to an MCP client · npm run mcp, podServer()", () => 
     )!;
     const { pull } = await pulled(north, story.patient);
     const statin = await openPod();
-    const imported = await statin.import(pullFiles(pull, "north"), {
-      claimProfiles: true,
-    });
+    const imported = await importClaimingEveryProfile(
+      statin,
+      pullFiles(pull, "north"),
+    );
     assert.equal(imported.refused, undefined);
     pods.set(STATIN, statin);
 

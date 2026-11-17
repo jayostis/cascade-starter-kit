@@ -38,6 +38,7 @@ import { installedParts } from "cascade-runtime/fixtures";
 import { codeStems, terms } from "cascade-runtime/terms";
 import { openPodWith } from "cascade-runtime/published";
 import { type Served, servePages } from "../try/build/serve.js";
+import { importClaimingEveryProfile } from "../test/claiming.js";
 import {
   allowAs,
   ANSWERS_KEPT,
@@ -323,7 +324,7 @@ async function nodeJoin(family: string): Promise<Joined> {
         hospitalId(loaded),
       );
       has.set(hospital.name, hasLines(hospital.name, await pod.look(files)));
-      const imported = await pod.import(files, { claimProfiles: true });
+      const imported = await importClaimingEveryProfile(pod, files);
       assert.equal(imported.refused, undefined);
     }
     const answers = await answersOf(pod);
@@ -1547,7 +1548,7 @@ describe("Importing files a person picks · pod.look(), pod.import()", () => {
           look: await node.look(path),
           after: await shownAfter(
             node,
-            await node.import(path, { claimProfiles: true }),
+            await importClaimingEveryProfile(node, path),
             QUESTIONS,
           ),
         });
@@ -1648,7 +1649,7 @@ describe("Importing files a person picks · pod.look(), pod.import()", () => {
         if (at === 0) workersAfterLook = workers;
         imports.push(
           await page.evaluate(
-            async ({ questions, source }) => {
+            async ({ questions, source, claimingSource }) => {
               const scope = globalThis as unknown as {
                 pod: Pod;
                 picked: Map<string, File>;
@@ -1658,13 +1659,21 @@ describe("Importing files a person picks · pod.look(), pod.import()", () => {
                 imported: Imported,
                 questions: readonly string[],
               ) => Promise<After>;
+              const claiming = new Function(`return ${claimingSource}`)() as (
+                pod: Pod,
+                files: Map<string, File>,
+              ) => Promise<Imported>;
               return run(
                 scope.pod,
-                await scope.pod.import(scope.picked, { claimProfiles: true }),
+                await claiming(scope.pod, scope.picked),
                 questions,
               );
             },
-            { questions: QUESTIONS, source: shownAfter.toString() },
+            {
+              questions: QUESTIONS,
+              source: shownAfter.toString(),
+              claimingSource: importClaimingEveryProfile.toString(),
+            },
           ),
         );
         loadedAfter.push(
