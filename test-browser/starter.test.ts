@@ -33,6 +33,8 @@ import {
   recordTools,
   type Registered,
   saysWhatEncryptionHides,
+  watched,
+  withDiagnosis,
 } from "./shown.js";
 
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
@@ -236,7 +238,7 @@ async function tradeLaunch(origin: string, launch: string) {
 async function newPage(options: Parameters<Browser["newContext"]>[0] = {}) {
   const context = await browser.newContext(options);
   await jarred(context);
-  const page = await context.newPage();
+  const page = watched(await context.newPage());
   page.on("close", () => void context.close().catch(() => undefined));
   return page;
 }
@@ -319,18 +321,20 @@ const podNames = async (): Promise<string[]> =>
 
 /** Opens the pod's page, finds Cascade North, signs in as Ines Calloway and waits for the connection's box. */
 async function signedInAsInes(page: Page, origin: string, pod: string) {
-  await page.goto(`${origin}/pods/${pod}/`);
-  await page.getByRole("link", { name: "Find a hospital" }).click();
-  await page
-    .getByRole("heading", { name: "Cascade North" })
-    .locator("xpath=..")
-    .getByRole("button", { name: "Sign in" })
-    .click();
-  await page.getByLabel("Calloway, Ines").check();
-  await page.getByRole("button", { name: "Allow" }).click();
-  const box = page.locator("#connection");
-  await box.getByRole("button", { name: /^Bring / }).waitFor();
-  return box;
+  return withDiagnosis(page, async () => {
+    await page.goto(`${origin}/pods/${pod}/`);
+    await page.getByRole("link", { name: "Find a hospital" }).click();
+    await page
+      .getByRole("heading", { name: "Cascade North" })
+      .locator("xpath=..")
+      .getByRole("button", { name: "Sign in" })
+      .click();
+    await page.getByLabel("Calloway, Ines").check();
+    await page.getByRole("button", { name: "Allow" }).click();
+    const box = page.locator("#connection");
+    await box.getByRole("button", { name: /^Bring / }).waitFor();
+    return box;
+  });
 }
 
 /** Brings Ines Calloway's record from Cascade North into the pod `pod` of the app at `origin`, as a person does, and waits for the page to say it is in. */
@@ -1232,10 +1236,12 @@ describe("Connecting to a demo hospital · Sign in at", () => {
         );
       },
     );
-    await box.getByRole("button", { name: /^Bring / }).click();
-    await page
-      .locator("main .note", { hasText: /^Brought in the record from / })
-      .waitFor({ timeout: 60_000 });
+    await withDiagnosis(page, async () => {
+      await box.getByRole("button", { name: /^Bring / }).click();
+      await page
+        .locator("main .note", { hasText: /^Brought in the record from / })
+        .waitFor({ timeout: 60_000 });
+    });
     /** What the page names the pod: its heading, its entry in the sidebar and its tab. */
     const named = async (on: Page) => ({
       heading: (await on.locator("main h1").first().textContent())?.trim(),
