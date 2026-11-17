@@ -1665,6 +1665,18 @@ const parkedOnce = once(async () => {
  * titles after the app is closed and opened again, and what each pod holds of the record.
  */
 const namedAfterBringIn = once(async () => {
+  /** A pod owner's NotAbout for `profile`: the person says the hospital's patient is not them. */
+  const notAbout = (
+    owner: { subject: string; owner: string },
+    profile: string,
+  ) => `@prefix cascade: <https://ns.cascadeprotocol.org/cascade#> .
+@prefix prov: <http://www.w3.org/ns/prov#> .
+<urn:cascade:this-judgment> a cascade:Judgment ;
+    cascade:verdict cascade:NotAbout ; cascade:subject <${owner.subject}> ;
+    prov:hadMember <${profile}> ; prov:wasAttributedTo <${owner.owner}> ;
+    prov:wasGeneratedBy [ prov:qualifiedAssociation [ prov:agent <${owner.owner}> ; prov:hadRole cascade:PatientRole ] ] .
+<${owner.owner}> a prov:Person .
+`;
   /**
    * What a pod's `import` gives with `result` laid over it, and its first `judge` failing when `judgeFails`, after the
    * person has said the profile it claims is not them when `disclaimsFirst`.
@@ -1701,60 +1713,86 @@ const namedAfterBringIn = once(async () => {
                 );
               failing = false;
               if (disclaimsFirst === true)
-                await (value as (...a: unknown[]) => Promise<object>).call(
-                  target,
-                  (args[0] as string)
-                    .replace("cascade:About", "cascade:NotAbout")
-                    .replace(" cascade:basis cascade:OwnerStatement", ""),
-                );
+                for (const { profile } of await (
+                  target as unknown as {
+                    ask(question: string): Promise<{ profile: string }[]>;
+                  }
+                ).ask(REVIEW))
+                  await (value as (...a: unknown[]) => Promise<object>).call(
+                    target,
+                    notAbout(target as never, profile),
+                  );
               throw new Error("no room to write the About");
             };
           return typeof value === "function" ? value.bind(target) : value;
         },
       });
     };
+  /**
+   * What `make` leaves in the pod, then a bring, tried again when it fails: on the same app, or, when `restarts`, on one
+   * opened again over the same folder, as after the app was stopped between the failed claim and the retry.
+   */
   const brought = async (
     pod: string,
     make: (local: Api, at: string) => Promise<unknown>,
-    over?: { result?: object; judgeFails?: boolean; disclaimsFirst?: boolean },
+    over?: {
+      result?: object;
+      judgeFails?: boolean;
+      disclaimsFirst?: boolean;
+      restarts?: boolean;
+    },
   ) => {
     const at = await mkdtemp(join(tmpdir(), "pod-api-named-"));
     folders.push(at);
-    const base = host(at);
-    const local = api({
-      ...base,
-      ...(over !== undefined && {
-        pods: new Proxy(
-          base.pods as unknown as { open(...a: unknown[]): Promise<object> },
-          {
-            get: (target, key) =>
-              key === "open"
-                ? async (...args: unknown[]) =>
-                    doing(over)(await target.open(...args))
-                : Reflect.get(target, key, target),
-          },
-        ),
-      }),
-      hospitals: northHospitals(),
-    });
-    await make(local, at);
-    const { connection } = await connected(local, pod);
-    const target = { pod, connection };
+    const opened = (doingOver?: typeof over) => {
+      const base = host(at);
+      return api({
+        ...base,
+        ...(doingOver !== undefined && {
+          pods: new Proxy(
+            base.pods as unknown as { open(...a: unknown[]): Promise<object> },
+            {
+              get: (target, key) =>
+                key === "open"
+                  ? async (...args: unknown[]) =>
+                      doing(doingOver)(await target.open(...args))
+                  : Reflect.get(target, key, target),
+            },
+          ),
+        }),
+        hospitals: northHospitals(),
+      });
+    };
+    let local = opened(over);
+    const made = await make(local, at);
+    let { connection } = await connected(local, pod);
+    let target = { pod, connection };
     const logged = mock.method(console, "error", () => undefined);
     let failedFirst: string | undefined;
+    let last: Output | undefined;
     try {
       await local.bring(target);
       const first = await local.connection({ ...target, wait: true });
       failedFirst = first.failed;
       if (first.retry) {
+        if (over?.restarts === true) {
+          await local.close();
+          local = opened();
+          ({ connection } = await connected(local, pod));
+          target = { pod, connection };
+        }
         await local.bring(target);
-        await local.connection({ ...target, wait: true });
+        last = await local.connection({ ...target, wait: true });
       }
     } finally {
       logged.mock.restore();
     }
+    const reviewed = (await local.ask({ pod, question: REVIEW })).rows;
     const held = {
+      made,
       failedFirst,
+      notClaimed: last?.notClaimed,
+      waiting: (await local.answers({ pod })).waiting,
       imports: new Set(
         (await local.ask({ pod, question: IMPORTS })).rows.map(
           ({ import: id }: Output) => id,
@@ -1762,7 +1800,8 @@ const namedAfterBringIn = once(async () => {
       ).size,
       medications: (await local.ask({ pod, question: MEDICATIONS })).rows
         .length,
-      unanswered: (await local.ask({ pod, question: REVIEW })).rows.length,
+      unanswered: reviewed.length,
+      unansweredProfiles: reviewed.map(({ profile }: Output) => profile),
     };
     await local.close();
     const again = api({ ...host(at), hospitals: northHospitals() });
@@ -1789,14 +1828,7 @@ const namedAfterBringIn = once(async () => {
     await scratch.close();
     const owner = await openPod(join(at, "rowan-ellery-marsh"));
     for (const profile of unclaimedProfiles)
-      await owner.judge(`@prefix cascade: <https://ns.cascadeprotocol.org/cascade#> .
-@prefix prov: <http://www.w3.org/ns/prov#> .
-<urn:cascade:this-judgment> a cascade:Judgment ;
-    cascade:verdict cascade:NotAbout ; cascade:subject <${owner.subject}> ;
-    prov:hadMember <${profile}> ; prov:wasAttributedTo <${owner.owner}> ;
-    prov:wasGeneratedBy [ prov:qualifiedAssociation [ prov:agent <${owner.owner}> ; prov:hadRole cascade:PatientRole ] ] .
-<${owner.owner}> a prov:Person .
-`);
+      await owner.judge(notAbout(owner, profile));
     await owner.close();
   };
   const untitled = async (_: Api, at: string) =>
@@ -1810,11 +1842,12 @@ const namedAfterBringIn = once(async () => {
   /** The pod already holds another pull of the same hospital, filed and claimed by no one. */
   const holdingAnotherPull = async (_: Api, at: string) => {
     const owner = await openPod(join(at, "rowan-ellery-marsh"));
-    await owner.import(
+    const { unclaimedProfiles } = await owner.import(
       pullFiles((await pulled(north, SIDE_EFFECT)).pull, "north"),
       { match: false },
     );
     await owner.close();
+    return unclaimedProfiles;
   };
   return {
     untitled: await brought("rowan-ellery-marsh", untitled),
@@ -1833,6 +1866,10 @@ const namedAfterBringIn = once(async () => {
     ),
     disclaimedBeforeTheRetry: await brought("rowan-ellery-marsh", untitled, {
       disclaimsFirst: true,
+    }),
+    retriedAfterARestart: await brought("rowan-ellery-marsh", untitled, {
+      judgeFails: true,
+      restarts: true,
     }),
   };
 });
@@ -2211,7 +2248,10 @@ describe("Connecting a pod to a hospital and bringing its records in · api.hosp
     it("claims on a retry only the profiles its own pull's import filed, leaving another pull's of the same hospital for the person to answer", async () => {
       const { retriedBesideAnotherPull, retried } = await namedAfterBringIn();
       assert.equal(retried.unanswered, 0);
-      assert.equal(retriedBesideAnotherPull.unanswered, 1);
+      assert.deepEqual(
+        retriedBesideAnotherPull.unansweredProfiles,
+        retriedBesideAnotherPull.made,
+      );
       assert.equal(retriedBesideAnotherPull.medications, retried.medications);
     });
 
@@ -2220,6 +2260,23 @@ describe("Connecting a pod to a hospital and bringing its records in · api.hosp
       assert.match(kept.failedFirst ?? "", /^Not brought in: /);
       assert.equal(kept.medications, 0);
       assert.equal(kept.title, "rowan-ellery-marsh");
+    });
+
+    it("claims nothing, and tells in the connection's `notClaimed` and the pod's `waiting` what waits, when a bring is tried again on an app opened again over the same folder", async () => {
+      const { retriedAfterARestart: restarted, retried } =
+        await namedAfterBringIn();
+      assert.match(restarted.failedFirst ?? "", /^Not brought in: /);
+      assert.equal(restarted.medications, 0);
+      assert.equal(restarted.title, "rowan-ellery-marsh");
+      assert.equal(restarted.unansweredProfiles.length, 1);
+      assert.deepEqual(
+        restarted.notClaimed.map(({ profile }: Output) => profile),
+        restarted.unansweredProfiles,
+      );
+      assert.match(restarted.notClaimed[0].hospital, /^Cascade North/);
+      assert.ok(restarted.notClaimed[0].records > 0);
+      assert.deepEqual(restarted.waiting, restarted.notClaimed);
+      assert.equal(retried.notClaimed, undefined);
     });
 
     it("does not retitle a pod, and logs nothing, when the person of the record has no name to give it", async () => {

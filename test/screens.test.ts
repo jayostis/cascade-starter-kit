@@ -343,6 +343,28 @@ describe("Reading a pod as a person's record · PodPage", () => {
       .map((line) => textOf(line))
       .filter(Boolean);
 
+    it("says which patient profiles wait for an answer under What needs review, and draws no note when none does", () => {
+      const waiting = [
+        {
+          profile: "urn:uuid:p1",
+          label: "Patient profile",
+          hospital: "Cascade North Demo Hospital",
+          records: 8,
+        },
+      ];
+      const said = (shown: object) =>
+        podPage({ answers, about, ...shown })
+          .replace(/<[^>]*>/g, "\n")
+          .split("\n")
+          .map((line) => textOf(line))
+          .filter((line) => line.startsWith("Waiting for an answer"));
+      assert.deepEqual(said({ waiting }), [
+        "Waiting for an answer under What needs review: a patient profile that no one has said is Alex Rivera's. Its records are in this pod but in none of its views (Patient profile: 8 records from Cascade North).",
+      ]);
+      assert.deepEqual(said({ waiting: [] }), []);
+      assert.deepEqual(said({}), []);
+    });
+
     it("names a row by the first of its codes the tables name", () => {
       for (const shown of [
         "Unspecified asthma, uncomplicated",

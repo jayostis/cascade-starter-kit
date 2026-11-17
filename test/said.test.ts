@@ -1302,8 +1302,9 @@ describe("Saying what ClinVar says of a variant and of each report · variantSai
  * A pod is a folder named from a person's name, and its screens show that name, and the places records came from,
  * as a person would say them rather than as a folder or an import states them. `gradePerson()` grades how surely a
  * hospital's patient is the pod's subject, so the app can warn before another person's records are brought in.
+ * `waitingSaid()` says what waits for an answer, so a person is told when a profile's records are in no view.
  */
-describe("Naming pods, people and places as a person says them · slug(), personName(), placeOf(), demoPeople(), familyFirst(), gradePerson(), didNote()", () => {
+describe("Naming pods, people and places as a person says them · slug(), personName(), placeOf(), demoPeople(), familyFirst(), gradePerson(), didNote(), waitingSaid()", () => {
   const north = { name: "Cascade North Demo Hospital", fhirBase: "https://n" };
   const south = { name: "Cascade South Demo Hospital", fhirBase: "https://s" };
   const patient = (family: string, given: string[], birthDate: string) => ({
@@ -1640,6 +1641,38 @@ describe("Naming pods, people and places as a person says them · slug(), person
 
     it("returns undefined for a query that says neither", () => {
       assert.equal(noted("pod=alex-rivera"), undefined);
+    });
+  });
+
+  describe("waitingSaid(who, waiting)", () => {
+    const row = { profile: "urn:p:1", label: "Ines Calloway", records: 3 };
+
+    it("returns undefined when nothing waits", () => {
+      assert.equal(said.waitingSaid("Ada", []), undefined);
+    });
+
+    it("names the profile, the hospital and how many records wait, and says they are in no view", () => {
+      assert.equal(
+        said.waitingSaid("Ada", [
+          { ...row, hospital: "Cascade North Demo Hospital" },
+        ]),
+        "Waiting for an answer under What needs review: a patient profile that no one has said is Ada's. Its records are in this pod but in none of its views (Ines Calloway: 3 records from Cascade North).",
+      );
+    });
+
+    it("counts a profile once however many hospitals name it, and says a profile with no label or hospital without them", () => {
+      assert.equal(
+        said.waitingSaid("Ada", [
+          { profile: "urn:p:1", records: 1 },
+          {
+            profile: "urn:p:1",
+            hospital: "Cascade South Demo Hospital",
+            records: 2,
+          },
+          { profile: "urn:p:2", label: "Rex", records: 1 },
+        ]),
+        "Waiting for an answer under What needs review: 2 patient profiles that no one has said are Ada's. Their records are in this pod but in none of its views (a patient: 1 record; a patient: 2 records from Cascade South; Rex: 1 record).",
+      );
     });
   });
 });
