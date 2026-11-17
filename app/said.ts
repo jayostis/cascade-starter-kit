@@ -14,15 +14,35 @@ import {
   type ToolTier,
 } from "cascade-runtime/tools";
 
-/** A question's row: each variable it binds, as text. */
+/** A row of a question as the pod gives it: each variable it binds, as text, or as its values for a declared list column. */
+export type AnsweredRow = Readonly<Record<string, string | readonly string[]>>;
+/** The text columns of a question's row, which is every column of a question that declares no list column. */
 export type Row = Readonly<Record<string, string>>;
 /** A row a section shows: a question's row, or one a section builds, with its tags and, for a variant, its reports. */
 export type SectionRow = Row & {
   readonly tags?: readonly string[];
   readonly reports?: number;
 };
-/** The rows of each question, by question. */
-export type Answers = Readonly<Record<string, readonly Row[]>>;
+/** The rows of each question, by question, as the pod gave them. */
+export type Answers = Readonly<Record<string, readonly AnsweredRow[]>>;
+
+/**
+ * A row's text columns: a list column is left out, which nothing that reads a row as text reads. A section's own `tags`
+ * and `reports`, which a question has no column for, stay.
+ */
+export const textOf = (row: AnsweredRow | SectionRow): SectionRow =>
+  Object.fromEntries(
+    Object.entries(row).filter(
+      ([column, value]) =>
+        typeof value === "string" || column === "tags" || column === "reports",
+    ),
+  ) as SectionRow;
+
+/** The rows `answers` hold for `question`, as text; none for a question it holds none of. */
+export const rowsOf = (
+  answers: Answers,
+  question: string,
+): readonly SectionRow[] => (answers[question] ?? []).map(textOf);
 
 /** A name the tables give a code, and the table version that gave it. */
 export interface Naming {
@@ -238,9 +258,9 @@ export interface Finding {
   readonly after: { readonly mean: number; readonly count: number };
   readonly left: Left;
   readonly rows: {
-    readonly before: readonly Row[];
-    readonly after: readonly Row[];
-    readonly left: readonly Row[];
+    readonly before: readonly AnsweredRow[];
+    readonly after: readonly AnsweredRow[];
+    readonly left: readonly AnsweredRow[];
   };
   readonly test: Coded & { readonly code: string };
   readonly medication: Coded & {
@@ -652,7 +672,7 @@ export function tagsOf({
 
 /** The entries `answers` say need review. */
 export const reviewed = (answers: Answers) =>
-  new Set((answers[REVIEW] ?? []).map((row) => row.entry));
+  new Set(rowsOf(answers, REVIEW).map((row) => row.entry));
 
 const SEEN = "pod/What was seen more than once";
 export const VARIANTS = "pod/My genetic variants";
@@ -691,7 +711,7 @@ export function sectionRows(
   said?: VariantsSaid,
 ): readonly SectionRow[] {
   if (section.rows !== undefined) return section.rows(answers, said);
-  const rows = answers[section.question!] ?? [];
+  const rows = rowsOf(answers, section.question!);
   return section.shows === undefined ? rows : rows.filter(section.shows);
 }
 
@@ -710,7 +730,7 @@ export function codesOf(answers: Answers): string[] {
         section.codes.map((column) => row[column]),
       ),
     ),
-    ...(answers[HISTORY] ?? []).map((row) => row.code),
+    ...rowsOf(answers, HISTORY).map((row) => row.code),
   ];
   return [...new Set(codes.filter(isCode))];
 }
@@ -767,7 +787,12 @@ export function named(
   answers: Answers,
   about: Abouts,
 ): Record<string, readonly SectionRow[]> {
-  const renamed: Record<string, readonly SectionRow[]> = { ...answers };
+  const renamed: Record<string, readonly SectionRow[]> = Object.fromEntries(
+    Object.keys(answers).map((question) => [
+      question,
+      rowsOf(answers, question),
+    ]),
+  );
   const review = reviewed(answers);
   for (const section of SECTIONS) {
     if (
@@ -1077,7 +1102,7 @@ export interface Seen {
  */
 export function seenAt(answers: Answers): Map<string, Seen> {
   const seen = new Map<string, Seen>();
-  for (const row of answers[SEEN] ?? []) {
+  for (const row of rowsOf(answers, SEEN)) {
     if (!seen.has(row.entry))
       seen.set(row.entry, { places: [], across: Number(row.places) });
     const { places } = seen.get(row.entry)!;
@@ -1129,7 +1154,7 @@ export function worthALook(
         one: section.one,
       });
   const review = new Map<string, Line>();
-  for (const row of answers[REVIEW] ?? [])
+  for (const row of rowsOf(answers, REVIEW))
     review.set(reviewKey(row), {
       sentence: reviewSaid(
         row,
@@ -1144,8 +1169,8 @@ export function worthALook(
       ? []
       : reportsDifferingFromClinVar(
           {
-            variants: answers[VARIANTS] ?? [],
-            reports: answers[REPORTS] ?? [],
+            variants: rowsOf(answers, VARIANTS),
+            reports: rowsOf(answers, REPORTS),
           },
           { says: said.says, verdicts: said.verdicts },
         ).map(({ entry, report }) => {
@@ -1260,7 +1285,7 @@ const DIGITS = [
 export function variantsAsked(answers: Answers): Map<string, VariantAsked> {
   const asked = new Map<string, VariantAsked>();
   const genes = new Map<string, Set<string>>();
-  for (const row of answers[VARIANTS] ?? []) {
+  for (const row of rowsOf(answers, VARIANTS)) {
     const variant = asked.get(row.variant) ?? { hgvs: [], variations: [] };
     asked.set(row.variant, variant);
     if (row.hgvs !== undefined && !variant.hgvs.includes(row.hgvs))
@@ -1454,7 +1479,7 @@ export async function variantsSaid(
   },
 ): Promise<VariantsSaid | undefined> {
   const asked = variantsAsked(answers);
-  const reports = answers[REPORTS] ?? [];
+  const reports = rowsOf(answers, REPORTS);
   if (asked.size === 0 && reports.length === 0) return undefined;
   const says = new Map(
     await Promise.all(
@@ -1501,9 +1526,9 @@ export function variantReports(
   said?: VariantsSaid,
   held: readonly Series[] = [],
 ): Map<string, VariantReport> {
-  const sources = answers[SOURCES] ?? [];
+  const sources = rowsOf(answers, SOURCES);
   const reported = new Map<string, Row[]>();
-  for (const report of answers[REPORTS] ?? [])
+  for (const report of rowsOf(answers, REPORTS))
     reported.set(report.variant, [
       ...(reported.get(report.variant) ?? []),
       report,
@@ -1958,7 +1983,7 @@ export function suggestedQuestions(
     shown.length > 0 || worthALook(answers, about, said).length > 0
       ? ["Find anything interesting in this pod"]
       : [];
-  const last = (answers[HISTORY] ?? []).some((row) => row.ended)
+  const last = rowsOf(answers, HISTORY).some((row) => row.ended)
     ? ["Which medications have I stopped?"]
     : [];
   const changed = [
@@ -2016,9 +2041,9 @@ const STATUSES: ReadonlySet<string> = new Set(Object.values(terms.statusOf));
 export async function withImportHistory(
   answers: Answers,
   changes: readonly Finding[],
-  ask: (question: string) => Promise<readonly Row[]>,
+  ask: (question: string) => Promise<readonly AnsweredRow[]>,
 ): Promise<Answers> {
-  const imports = new Set((answers[IMPORTS] ?? []).map((row) => row.import));
+  const imports = new Set(rowsOf(answers, IMPORTS).map((row) => row.import));
   const shown = changes.some(
     ({ direction, medication }) =>
       direction !== "not enough results" && medication.entry,
@@ -2050,7 +2075,7 @@ export function howOf(
     string,
     { label: string; started: string; records: Set<string> }
   >();
-  for (const row of answers[IMPORTS] ?? []) {
+  for (const row of rowsOf(answers, IMPORTS)) {
     const each = imports.get(row.import) ?? {
       label: row.importLabel,
       started: row.started,
@@ -2060,7 +2085,7 @@ export function howOf(
     imports.set(row.import, each);
   }
   if (imports.size < 2) return undefined;
-  const arrivals = answers[REVISIONS] ?? [];
+  const arrivals = rowsOf(answers, REVISIONS);
   const pulls = [...imports].map(([id, each]) => {
     const own = arrivals.filter((row) => row.import === id);
     const document = own.find(
@@ -2088,7 +2113,7 @@ export function howOf(
     };
   });
   const stated = new Map<string, Map<string, string[]>>();
-  for (const row of answers[VERSIONS] ?? []) {
+  for (const row of rowsOf(answers, VERSIONS)) {
     const fields = stated.get(row.version) ?? new Map<string, string[]>();
     fields.set(
       row.field,
@@ -2108,7 +2133,7 @@ export function howOf(
   ];
   const revisions = medications.flatMap((finding) => {
     const records = new Set(
-      (answers[SOURCES] ?? [])
+      rowsOf(answers, SOURCES)
         .filter((row) => row.entry === finding.medication.entry)
         .map((row) => row.record),
     );
@@ -2318,7 +2343,7 @@ function variantFacts(
   ).get(entry)!;
   const genes = [
     ...new Set(
-      (answers[VARIANTS] ?? [])
+      rowsOf(answers, VARIANTS)
         .filter((row) => row.variant === entry)
         .flatMap(({ gene }) => gene ?? []),
     ),
@@ -2329,11 +2354,11 @@ function variantFacts(
   ];
   const series = held.find(({ iri }) => iri === said?.says.get(entry)?.series);
   const dates = new Map(
-    (answers[REPORTS] ?? []).map(({ report, date }) => [report, date]),
+    rowsOf(answers, REPORTS).map(({ report, date }) => [report, date]),
   );
   const issued = new Map<string, string>();
   for (const { report } of reports)
-    for (const row of answers[SOURCES] ?? [])
+    for (const row of rowsOf(answers, SOURCES))
       if (
         row.entry === report &&
         row.document !== undefined &&
@@ -2410,7 +2435,7 @@ export function entryOf(
     joined?: ReadonlyMap<string, readonly string[]>;
   } = {},
 ): Entry | undefined {
-  const sources = answers[SOURCES] ?? [];
+  const sources = rowsOf(answers, SOURCES);
   const entry = sources.find((row) => entryId(row.entry) === id)?.entry;
   if (entry === undefined) return undefined;
   const ofEntry = <R extends Row>(rows: readonly R[]) =>
@@ -2427,7 +2452,7 @@ export function entryOf(
   const label = [
     ...rows,
     ...ofEntry(sources),
-    ...ofEntry(answers[REVIEW] ?? []),
+    ...ofEntry(rowsOf(answers, REVIEW)),
   ]
     .map((row) => row.entryLabel)
     .find((each) => each !== undefined);
@@ -2470,7 +2495,7 @@ export function entryOf(
   for (const at of matched)
     known.push({ from: at, fromLead: "Also matched using" });
   const reviews = new Map<string, string>();
-  for (const row of ofEntry(answers[REVIEW] ?? []))
+  for (const row of ofEntry(rowsOf(answers, REVIEW)))
     reviews.set(
       reviewKey(row),
       capitalised(reviewSaid(row, { name: title, one: kind })),

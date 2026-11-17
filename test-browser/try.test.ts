@@ -608,7 +608,14 @@ async function shownAfter(
           .sort(([a], [b]) => (a < b ? -1 : 1))
           .map(
             ([column, value]) =>
-              `${column}=${value.startsWith(pod.address) ? value.slice(pod.address.length) : value}`,
+              `${column}=${[value]
+                .flat()
+                .map((each) =>
+                  each.startsWith(pod.address)
+                    ? each.slice(pod.address.length)
+                    : each,
+                )
+                .join("; ")}`,
           ),
       ]);
   return {
