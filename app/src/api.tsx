@@ -10,6 +10,7 @@ import type {
   Finding,
   Person,
   Series,
+  Waiting,
 } from "../said.ts";
 import type { TableRead } from "./tables.tsx";
 
@@ -27,6 +28,8 @@ export interface Answered {
   readonly answers: Answers;
   readonly changes: readonly Finding[];
   readonly unheld?: readonly string[];
+  /** The patient profiles no one has said whether they are the subject's. */
+  readonly waiting?: readonly Waiting[];
 }
 
 /** What the tables say of a pod's codes and variants, as PodApi sends it: each `Map` as its pairs. */

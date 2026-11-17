@@ -43,6 +43,7 @@ import {
   tiles,
   watched,
 } from "../dist/test-browser/shown.js";
+import { importClaimingEveryProfile } from "../dist/test/claiming.js";
 
 /** What the tables the app holds now name each code, set once the app is installed. */
 let heldNames: (
@@ -627,7 +628,8 @@ const connection = await connect(
 const pod = await openPod();
 const files = pullFiles(await pull(connection, DEMO_PLAN), "expected");
 const look = await pod.look(files);
-await pod.import(files, { claimProfiles: true });
+const importClaimingEveryProfile = ${importClaimingEveryProfile};
+await importClaimingEveryProfile(pod, files);
 const allergens = (await pod.ask(${JSON.stringify(ALLERGIES)})).map(({ allergenName }) => allergenName).sort();
 await pod.close();
 const south = await loadHospital("cascade-south");
@@ -2890,8 +2892,9 @@ if (release === undefined) {
     await writeFile(
       script,
       `import { openPod } from "cascade-runtime";
+const importClaimingEveryProfile = ${importClaimingEveryProfile};
 const pod = await openPod("pods/alex-rivera");
-const { refused } = await pod.import(${JSON.stringify(C_CDA)}, { claimProfiles: true });
+const { refused } = await importClaimingEveryProfile(pod, ${JSON.stringify(C_CDA)});
 await pod.close();
 if (refused !== undefined) throw new Error(refused);
 `,

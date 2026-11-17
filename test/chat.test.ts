@@ -18,6 +18,7 @@ import {
   timelineIn,
 } from "cascade-runtime";
 import { withPod } from "cascade-runtime/tools";
+import { importClaimingEveryProfile } from "./claiming.js";
 import { pulled } from "./hospitals.js";
 
 type Chunk = { type: string; [key: string]: unknown };
@@ -108,9 +109,10 @@ function apiOverStatin(): Promise<Api> {
     )!;
     const { pull } = await pulled(north, story.patient);
     const statin = await openPod();
-    const imported = await statin.import(pullFiles(pull, "north"), {
-      claimProfiles: true,
-    });
+    const imported = await importClaimingEveryProfile(
+      statin,
+      pullFiles(pull, "north"),
+    );
     assert.equal(imported.refused, undefined);
     pods.set(STATIN, statin);
     const atorvastatin = timelineIn(await statin.ask(HISTORY)).find(

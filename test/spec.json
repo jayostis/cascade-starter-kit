@@ -32,7 +32,7 @@
     "What a pod's screen says is worth a look · worthALook()",
     "Naming and ordering the rows of a pod's tables · codesOf(), codesSaid(), rounded(), compare(), openingOrder()",
     "Saying what ClinVar says of a variant and of each report · variantSaid(), rowSaid(), variantsSaid(), variantReports()",
-    "Naming pods, people and places as a person says them · slug(), personName(), placeOf(), demoPeople(), familyFirst(), gradePerson(), didNote()",
+    "Naming pods, people and places as a person says them · slug(), personName(), placeOf(), demoPeople(), familyFirst(), gradePerson(), didNote(), waitingSaid()",
     "Grouping reference tables by publisher, and saying what a check did · sourcesOf(), pageNumber(), checkedNote()",
     "Questions the chat offers before a person types · firstQuestion(), suggestedQuestions()",
     "Tools a model may call, by consent tier · TOOLS, NEVER",

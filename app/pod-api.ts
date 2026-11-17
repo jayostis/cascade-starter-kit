@@ -72,6 +72,7 @@ import {
   utcInstant,
   type VariantsSaid,
   variantsSaid,
+  type Waiting,
   withImportHistory,
   worldInstant,
   worthALook,
@@ -301,8 +302,55 @@ interface Underway {
   /** Why the pod holds no record of the connect, when it does not; the pull goes on. */
   notRecorded?: string;
   retry?: boolean;
+  /** The profiles this pull's own import filed, of which a retry claims those still unanswered. */
+  profiles?: readonly string[];
   imported?: boolean;
   broughtIn?: boolean;
+}
+
+/** Each profile no one has said whether it is the subject's, with each hospital whose records name it. */
+async function waitingForAnswer(pod: Pod): Promise<Waiting[]> {
+  return (await pod.ask("profile/What needs review")).flatMap((row) =>
+    row.saidAbout === undefined &&
+    row.saidNotAbout === undefined &&
+    typeof row.profile === "string"
+      ? [
+          {
+            profile: row.profile,
+            ...(typeof row.profileLabel === "string" && {
+              label: row.profileLabel,
+            }),
+            ...(typeof row.hospital === "string" && {
+              hospital: row.hospital,
+            }),
+            records: Number(row.records),
+          },
+        ]
+      : [],
+  );
+}
+
+/** Those of `profiles` that no one has said whether they are the subject's. */
+async function awaitingAnswer(pod: Pod, profiles: readonly string[]) {
+  const waiting = new Set(
+    (await waitingForAnswer(pod)).map(({ profile }) => profile),
+  );
+  return profiles.filter((profile) => waiting.has(profile));
+}
+
+/** The owner's About for `profile`: the person says the hospital's patient is them. */
+async function claim(pod: Pod, profile: string) {
+  const { refused } =
+    await pod.judge(`@prefix cascade: <https://ns.cascadeprotocol.org/cascade#> .
+@prefix prov: <http://www.w3.org/ns/prov#> .
+<urn:cascade:this-judgment> a cascade:Judgment ;
+    cascade:verdict cascade:About ; cascade:subject <${pod.subject}> ; cascade:basis cascade:OwnerStatement ;
+    prov:hadMember <${profile}> ; prov:wasAttributedTo <${pod.owner}> ;
+    prov:wasGeneratedBy [ prov:qualifiedAssociation [ prov:agent <${pod.owner}> ; prov:hadRole cascade:PatientRole ] ] .
+<${pod.owner}> a prov:Person .
+`);
+  if (refused !== undefined)
+    throw new Error(`the About of ${profile} was refused: ${refused}`);
 }
 
 /** A connection's pull saved as files, or why there are none. */
@@ -524,6 +572,7 @@ export function podApi(
       ),
       changes,
       unheld: await pod.unheldTableVersions(),
+      waiting: await waitingForAnswer(pod),
     };
   }
   type Answered = Awaited<ReturnType<typeof asked>>;
@@ -1260,34 +1309,59 @@ export function podApi(
     connection.retry = undefined;
     connection.bringing = { part: "loading the adapter" };
     changed(connection);
-    pod
-      .import(files, {
-        claimProfiles: true,
-        onProgress: (part) => {
-          connection.bringing = part;
-          changed(connection);
-        },
-      })
-      .then(
-        async (done) => {
+    const told = (part: ImportProgress) => {
+      connection.bringing = part;
+      changed(connection);
+    };
+    // The sign-in was the patient's, which is the person's yes to each profile the pull names, so each one a counting
+    // About or NotAbout does not already answer is claimed once the import has filed it, and the matcher runs after.
+    // An import of a pull the pod already holds files nothing and so finds no profile: a bring retried after its claim
+    // failed claims what is left of the profiles this pull's own import filed, and the matcher then rechecks the whole
+    // pod. No hospital's other profile is claimed: the sign-in was the person's yes for this patient only. A pull the
+    // pod held before this connection's import is claimed nothing: no question tells which import brought a pull's
+    // documents (`pod/What each import brought in` names records, not documents). The pod's page lists what waits
+    // (`waiting`): a stopgap until the runtime can name a pull's profiles (runtime-js#858).
+    void (async () => {
+      try {
+        const done = await pod.import(files, {
+          match: false,
+          onProgress: told,
+        });
+        if (done.refused !== undefined) {
           connection.imported = true;
-          if (done.refused === undefined) {
-            connection.broughtIn = true;
-            if (done.claimedProfiles.length > 0)
-              await titledAfter(name, pod, patientName(pulled!.bundle));
-          } else connection.failed = `Refused: ${done.refused}`;
-          last.delete(name);
-        },
-        (error: unknown) => {
-          globalThis.console.error(error);
-          connection.failed = NOT_BROUGHT_IN;
-          connection.retry = true;
-        },
-      )
-      .finally(() => {
+          connection.failed = `Refused: ${done.refused}`;
+          return;
+        }
+        const filed = done.wrote.length > 0;
+        connection.profiles = [
+          ...new Set([
+            ...(connection.profiles ?? []),
+            ...done.unclaimedProfiles,
+          ]),
+        ];
+        const profiles = await awaitingAnswer(pod, connection.profiles);
+        told({ part: "judging", done: 0, of: profiles.length + 1 });
+        for (const [at, profile] of profiles.entries()) {
+          await claim(pod, profile);
+          told({ part: "judging", done: at + 1, of: profiles.length + 1 });
+        }
+        // A profile's label names no patient, so the title is the bundle's first Patient's: right when one profile was filed
+        // (a two-Patient pull with one of them filed is titled after the first even if the second was filed), and never when two were.
+        if (profiles.length > 0 && connection.profiles.length === 1)
+          await titledAfter(name, pod, patientName(pulled!.bundle));
+        await pod.match(filed ? done.activity : undefined);
+        connection.imported = true;
+        connection.broughtIn = true;
+      } catch (error) {
+        globalThis.console.error(error);
+        connection.failed = NOT_BROUGHT_IN;
+        connection.retry = true;
+      } finally {
+        last.delete(name);
         connection.bringing = undefined;
         changed(connection);
-      });
+      }
+    })();
     return { step: "bringing in" };
   }
 

@@ -11,6 +11,7 @@ import {
   codeStems,
   terms,
 } from "cascade-runtime";
+import { importClaimingEveryProfile } from "./claiming.js";
 import { pulled } from "./hospitals.js";
 
 export const said = await import(
@@ -199,9 +200,10 @@ export function storyPods(): Promise<Map<string, Story>> {
     for (const { patient } of await loadStories()) {
       const { pull } = await pulled(north, patient);
       const pod = await openPod();
-      const imported = await pod.import(pullFiles(pull, "north"), {
-        claimProfiles: true,
-      });
+      const imported = await importClaimingEveryProfile(
+        pod,
+        pullFiles(pull, "north"),
+      );
       assert.equal(imported.refused, undefined, patient);
       const answers = Object.fromEntries(
         await Promise.all(
