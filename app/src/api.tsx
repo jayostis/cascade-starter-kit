@@ -10,6 +10,7 @@ import type {
   Finding,
   Person,
   Series,
+  Waiting,
 } from "../said.ts";
 import type { TableRead } from "./tables.tsx";
 
@@ -27,6 +28,8 @@ export interface Answered {
   readonly answers: Answers;
   readonly changes: readonly Finding[];
   readonly unheld?: readonly string[];
+  /** The patient profiles no one has said whether they are the subject's. */
+  readonly waiting?: readonly Waiting[];
 }
 
 /** What the tables say of a pod's codes and variants, as PodApi sends it: each `Map` as its pairs. */
@@ -108,6 +111,8 @@ export interface ConnectionNow {
   /** Why the pod holds no record of the connect, when it does not. */
   readonly notRecorded?: string;
   readonly broughtIn?: boolean;
+  /** What waits for an answer when the bring could not tell which profiles were this pull's, so claimed none. */
+  readonly notClaimed?: readonly Waiting[];
 }
 
 /** The operations of the hospitals and a connection's box. */

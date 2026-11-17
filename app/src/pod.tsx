@@ -50,6 +50,8 @@ import {
   trendOfFinding,
   valuesSaid,
   type VariantsSaid,
+  type Waiting,
+  waitingSaid,
   worthALook,
   leftSaid,
 } from "../said.ts";
@@ -81,6 +83,8 @@ export interface PodShown {
   readonly changes?: readonly Finding[];
   /** Undefined while not known, which draws no note, as none missing does. */
   readonly unheld?: readonly string[];
+  /** The patient profiles no one has said whether they are the subject's. */
+  readonly waiting?: readonly Waiting[];
   /** The tables' names of the pod's codes; undefined while still asked, empty when they cannot say. */
   readonly about?: Abouts;
   readonly said?: VariantsSaid;
@@ -548,6 +552,7 @@ export function PodPage({
     said,
     changes,
     unheld = [],
+    waiting = [],
     from,
   } = shown;
   const entryHref = (entry: string) => address.entry(pod, entry);
@@ -613,6 +618,9 @@ export function PodPage({
           this app does not hold, and is matched without{" "}
           {unheld.length === 1 ? "it" : "them"}.
         </p>
+      )}
+      {waiting.length > 0 && (
+        <p className={note}>{waitingSaid(personName(pod, titles), waiting)}</p>
       )}
       <Worth
         lines={worthALook(answers, names, said)}

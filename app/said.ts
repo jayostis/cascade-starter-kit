@@ -963,9 +963,31 @@ export function personName(pod: string, titles?: Titles): string {
   );
 }
 
+/** A patient profile no one has said whether it is the subject's, with a hospital whose records name it and how many. */
+export interface Waiting {
+  readonly profile: string;
+  readonly label?: string;
+  readonly hospital?: string;
+  readonly records: number;
+}
+
 /** A hospital's name as a person says it: `Cascade North Demo Hospital` is `Cascade North`. */
 export function hospitalName(name: string): string {
   return name.replace(/ Demo Hospital$/, "");
+}
+
+/** What waits under What needs review, as a note on `who`'s pod: the profiles, each with what names it; none for none. */
+export function waitingSaid(
+  who: string,
+  waiting: readonly Waiting[],
+): string | undefined {
+  if (waiting.length === 0) return undefined;
+  const profiles = new Set(waiting.map(({ profile }) => profile)).size;
+  const each = waiting.map(
+    ({ label, hospital, records }) =>
+      `${label ?? "a patient"}: ${records} ${records === 1 ? "record" : "records"}${hospital === undefined ? "" : ` from ${hospitalName(hospital)}`}`,
+  );
+  return `Waiting for an answer under What needs review: ${profiles === 1 ? "a patient profile" : `${profiles} patient profiles`} that no one has said ${profiles === 1 ? "is" : "are"} ${who}'s. ${profiles === 1 ? "Its" : "Their"} records are in this pod but in none of its views (${each.join("; ")}).`;
 }
 
 /** Where a row of "Where it came from" came from, as a person would say it: see `placeName`. */

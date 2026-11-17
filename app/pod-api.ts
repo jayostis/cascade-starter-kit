@@ -72,6 +72,7 @@ import {
   utcInstant,
   type VariantsSaid,
   variantsSaid,
+  type Waiting,
   withImportHistory,
   worldInstant,
   worthALook,
@@ -303,20 +304,38 @@ interface Underway {
   retry?: boolean;
   /** The profiles this pull's own import filed, of which a retry claims those still unanswered. */
   profiles?: readonly string[];
+  /** What waits for an answer after a bring that could not tell which profiles were this pull's, so claimed none. */
+  notClaimed?: readonly Waiting[];
   imported?: boolean;
   broughtIn?: boolean;
+}
+
+/** Each profile no one has said whether it is the subject's, with each hospital whose records name it. */
+async function waitingForAnswer(pod: Pod): Promise<Waiting[]> {
+  return (await pod.ask("profile/What needs review")).flatMap((row) =>
+    row.saidAbout === undefined &&
+    row.saidNotAbout === undefined &&
+    typeof row.profile === "string"
+      ? [
+          {
+            profile: row.profile,
+            ...(typeof row.profileLabel === "string" && {
+              label: row.profileLabel,
+            }),
+            ...(typeof row.hospital === "string" && {
+              hospital: row.hospital,
+            }),
+            records: Number(row.records),
+          },
+        ]
+      : [],
+  );
 }
 
 /** Those of `profiles` that no one has said whether they are the subject's. */
 async function awaitingAnswer(pod: Pod, profiles: readonly string[]) {
   const waiting = new Set(
-    (await pod.ask("profile/What needs review")).flatMap((row) =>
-      row.saidAbout === undefined &&
-      row.saidNotAbout === undefined &&
-      typeof row.profile === "string"
-        ? [row.profile]
-        : [],
-    ),
+    (await waitingForAnswer(pod)).map(({ profile }) => profile),
   );
   return profiles.filter((profile) => waiting.has(profile));
 }
@@ -555,6 +574,7 @@ export function podApi(
       ),
       changes,
       unheld: await pod.unheldTableVersions(),
+      waiting: await waitingForAnswer(pod),
     };
   }
   type Answered = Awaited<ReturnType<typeof asked>>;
@@ -1274,6 +1294,9 @@ export function podApi(
       ...(patient !== undefined && { patient }),
       patientNames: patientNames(pulled.bundle),
       ...(connection.broughtIn && { broughtIn: true }),
+      ...(connection.notClaimed !== undefined && {
+        notClaimed: connection.notClaimed,
+      }),
     };
   }
 
@@ -1289,6 +1312,7 @@ export function podApi(
       return { step: stepOf(connection) };
     connection.failed = undefined;
     connection.retry = undefined;
+    connection.notClaimed = undefined;
     connection.bringing = { part: "loading the adapter" };
     changed(connection);
     const told = (part: ImportProgress) => {
@@ -1301,7 +1325,8 @@ export function podApi(
     // failed claims what is left of the profiles this pull's own import filed, and the matcher then rechecks the whole
     // pod. No hospital's other profile is claimed: the sign-in was the person's yes for this patient only. A pull the
     // pod held before this connection's import is claimed nothing: no question tells which import brought a pull's
-    // documents (`pod/What each import brought in` names records, not documents).
+    // documents (`pod/What each import brought in` names records, not documents). Such a bring says what waits
+    // (`notClaimed`), and the pod's page lists it: a stopgap until the runtime can name a pull's profiles (runtime-js#858).
     void (async () => {
       try {
         const done = await pod.import(files, {
@@ -1326,10 +1351,17 @@ export function podApi(
           await claim(pod, profile);
           told({ part: "judging", done: at + 1, of: profiles.length + 1 });
         }
-        // The pod is named after the pull's Patient only when the pull names one patient, so that it is the one claimed.
+        // A profile's label names no patient, so the title is the bundle's first Patient's: right when one profile was filed
+        // (a two-Patient pull with one of them filed is titled after the first even if the second was filed), and never when two were.
         if (profiles.length > 0 && connection.profiles.length === 1)
           await titledAfter(name, pod, patientName(pulled!.bundle));
         await pod.match(filed ? done.activity : undefined);
+        // Only this process knows a pull's profiles: a bring that files nothing after a restart, or after a first import
+        // cut off midway, cannot say which are this pull's, so it says what waits instead (runtime-js#858 names them).
+        if (!filed && connection.profiles.length === 0) {
+          const waiting = await waitingForAnswer(pod);
+          if (waiting.length > 0) connection.notClaimed = waiting;
+        }
         connection.imported = true;
         connection.broughtIn = true;
       } catch (error) {
