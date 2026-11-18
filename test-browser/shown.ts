@@ -314,10 +314,14 @@ export const KEPT_PLAIN: readonly string[] = [
 /** Every other path of a stored encrypted pod: a generation of the sealed index, or a sealed file named by a keyed hash, in a folder of its first two letters. */
 const SEALED_PATH = /^sealed\/(?:index\/\d+|[0-9a-f]{2}\/[0-9a-f]{62})$/;
 
-/** The files the runtime keeps a pod's answers, its title and its build in, beside the pod, under these names whatever the pod holds. */
+/**
+ * The files the runtime keeps a pod's answers, its title and its build in, beside the pod, under these names whatever the
+ * pod holds: its build as its working copy, or, from a runtime before that, as the derived state alone.
+ */
 export const ANSWERS_KEPT: readonly string[] = [
   "answers.json",
   "pod.json",
+  "build.trig",
   "build.nt",
 ];
 
