@@ -5,6 +5,7 @@ import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, it, mock } from "node:test";
+import { setTimeout as delay } from "node:timers/promises";
 import { getRequestListener } from "@hono/node-server";
 import { loadHospital, loadStories } from "@the-cascade-protocol/sandbox/node";
 import { Hono } from "hono";
@@ -655,6 +656,66 @@ describe("Reading a pod for its screens · api.pods(), api.pod(), api.answers(),
         (await reviewing().answers({ pod: "reviewed" })).unheld,
         ["urn:x:ingredient-map-2"],
       );
+    });
+
+    it("returns no `adopting` for a pod whose open had nothing newer to take in", () => {
+      assert.equal(read.adopting, undefined);
+    });
+  });
+
+  describe("api.answers({ pod, wait }), given a pod that takes in the app's newer tables after it opens", () => {
+    let calls: string[];
+    let first: Output;
+    let waitedEarly: boolean;
+    let waited: Output;
+    before(async () => {
+      calls = [];
+      let release!: () => void;
+      const opened = new Promise<undefined>((resolve) => {
+        release = () => resolve(undefined);
+      });
+      const adopting = crossing(
+        api({
+          ...host(),
+          pods: {
+            names: async () => ["adopting"],
+            title: async () => undefined,
+            open: async () => ({
+              opened,
+              ask: async (question: string) => {
+                calls.push(question);
+                return [];
+              },
+              unheldTableVersions: async () => {
+                calls.push("unheldTableVersions");
+                return [];
+              },
+              close: async () => {},
+            }),
+          },
+        }),
+      );
+      first = await adopting.answers({ pod: "adopting" });
+      const waiting = adopting.answers({ pod: "adopting", wait: true });
+      waitedEarly = await Promise.race([
+        waiting.then(() => true),
+        delay(50).then(() => false),
+      ]);
+      release();
+      waited = await waiting;
+    });
+
+    it("returns `adopting` with the answers given before that open is done", () => {
+      assert.equal(first.adopting, true);
+    });
+
+    it("asks for the unheld versions as it asks the questions, not after their answers", () => {
+      assert.equal(calls[0], "unheldTableVersions");
+    });
+
+    it("with `wait`, returns once that open is done, without `adopting`", () => {
+      assert.equal(waitedEarly, false);
+      assert.equal(waited.adopting, undefined);
     });
   });
 
