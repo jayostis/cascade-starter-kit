@@ -2436,6 +2436,7 @@ if (release === undefined) {
             password: words,
             username: pod,
           });
+          await api(server, "lock");
           const stored = join(app, "pods", pod);
           const kept = new Set([
             "settings/encryption.json",
