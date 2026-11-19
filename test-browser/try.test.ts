@@ -3156,7 +3156,7 @@ describe("Keeping the reference tables current in a browser · cascade-runtime.j
         openPod(name: string): Promise<{
           subject: string;
           owner: string;
-          opened?: { refused?: string; unheld: string[] };
+          opened: Promise<{ refused?: string; unheld: string[] } | undefined>;
           enter(turtle: string): Promise<{ refused?: string }>;
           ask(
             question: string | { query: string },
@@ -3207,10 +3207,15 @@ ${shots.join("\n")}`);
           )) as Runtime;
           const checked = await runtime.checkTables();
           const pod = await runtime.openPod("tables-proof");
+          // Read while the pod is drawn from its kept answers: it settles with the open a question then starts.
+          const opening = pod.opened;
           try {
-            const current = await pod.ask({
+            const versionQuery = {
               query: `SELECT ?version WHERE { <${series}> <http://purl.org/pav/hasCurrentVersion> ?version }`,
-            });
+            };
+            const asOpened = await pod.ask(versionQuery);
+            const opened = await opening;
+            const current = await pod.ask(versionQuery);
             const sames = await pod.ask({
               query: `SELECT ?used ?counts (GROUP_CONCAT(STR(?code); separator=" ") AS ?codes) WHERE {
               ?judgment <${terms.justification}> <${terms.SameMappedCodeAndDate}> ;
@@ -3222,7 +3227,8 @@ ${shots.join("\n")}`);
             });
             return {
               kept: checked.flatMap(({ kept }) => kept),
-              opened: pod.opened,
+              opened,
+              asOpened,
               current,
               sames,
               databases: (await indexedDB.databases()).map(
@@ -3261,6 +3267,12 @@ ${shots.join("\n")}`);
           assert.equal(after.opened?.refused, undefined);
           assert.deepEqual(after.opened?.unheld, []);
           assert.deepEqual(after.current, [{ version: second }]);
+        },
+      );
+      await t.test(
+        "answers a question asked as the pod opens over the pod as it was, before it takes in the version",
+        async () => {
+          assert.deepEqual(after.asOpened, [{ version: first }]);
         },
       );
       await t.test(
