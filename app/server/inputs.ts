@@ -32,7 +32,7 @@ export const INPUT_SCHEMAS = {
   pods: input({}),
   held: input({}),
   pod: input({ pod: string }),
-  answers: input({ pod: string }),
+  answers: input({ pod: string, wait: boolean }),
   said: input({ pod: string, entry: string }),
   trend: input({
     pod: string,

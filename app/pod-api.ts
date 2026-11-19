@@ -174,7 +174,7 @@ export const INPUTS: Readonly<
   pods: {},
   held: {},
   pod: { pod: string },
-  answers: { pod: string },
+  answers: { pod: string, wait: boolean },
   said: { pod: string, entry: string },
   trend: { pod: string, test: string, medication: string, named: boolean },
   classes: { pod: string },
@@ -353,6 +353,13 @@ async function claim(pod: Pod, profile: string) {
     throw new Error(`the About of ${profile} was refused: ${refused}`);
 }
 
+/** A pod's open of the app's newer tables as `answers` follows it, which `adoptionOf` in `podApi` describes. */
+interface Adoption {
+  done: boolean;
+  changed: boolean;
+  settled: Promise<void>;
+}
+
 /** A connection's pull saved as files, or why there are none. */
 type Saved =
   | { pulled: Pull; files: ReadonlyMap<string, Uint8Array>; failed?: never }
@@ -384,6 +391,8 @@ export function podApi(
   const titles = new Map<string, string>();
   /** The last answers given for each pod, by name, as `answers` gave them. */
   const last = new Map<string, Answered>();
+  /** Each pod's open of newer tables, once `answers` has followed it. */
+  const adoptions = new WeakMap<Pod, Adoption>();
   /** The pods the folder was last seen to hold, so one page scans it once: a pod seen needs no second scan. */
   const seen = new Set<string>();
   /** The six words of each encrypted pod being made, and the person's name as typed, by the pod's name, until checked. */
@@ -558,6 +567,11 @@ export function podApi(
   }
 
   async function asked(pod: Pod) {
+    // Asked with the questions, so that they take their place before the pod's open of newer tables.
+    const unheld = pod.unheldTableVersions();
+    const waiting = waitingForAnswer(pod);
+    unheld.catch(() => undefined);
+    waiting.catch(() => undefined);
     const answers: Answers = Object.fromEntries(
       await Promise.all(
         QUESTIONS.map(async (question) => [question, await pod.ask(question)]),
@@ -571,19 +585,68 @@ export function podApi(
         pod.ask(question),
       ),
       changes,
-      unheld: await pod.unheldTableVersions(),
-      waiting: await waitingForAnswer(pod),
+      unheld: await unheld,
+      waiting: await waiting,
     };
   }
-  type Answered = Awaited<ReturnType<typeof asked>>;
+  type Answered = Awaited<ReturnType<typeof asked>> & {
+    readonly adopting?: true;
+  };
 
-  async function answers({ pod: given }: Input<"answers">) {
+  /**
+   * The pod's open of the app's newer tables, which runs after the pod opens (`pod.opened`), as `answers` follows it:
+   * `done` once it has settled, either way, when the answers last given for the pod are dropped, and `changed` unless
+   * it had nothing to take in.
+   */
+  function adoptionOf(name: string, pod: Pod): Adoption {
+    let adoption = adoptions.get(pod);
+    if (adoption === undefined) {
+      const following = {
+        done: false,
+        changed: true,
+        settled: Promise.resolve(),
+      };
+      following.settled = Promise.resolve(pod.opened).then(
+        (opened) => {
+          following.changed = opened !== undefined;
+          following.done = true;
+          last.delete(name);
+        },
+        () => {
+          following.done = true;
+          last.delete(name);
+        },
+      );
+      adoptions.set(pod, following);
+      adoption = following;
+    }
+    return adoption;
+  }
+
+  /**
+   * The pod's answers; `adopting` while its open of newer tables has not settled, when they are the pod's as it was
+   * opened, or when that open settled while they were asked. With `wait`, once that open has settled.
+   */
+  async function answers({
+    pod: given,
+    wait = false,
+  }: Input<"answers">): Promise<Answered> {
     const name = await known(given);
     const pod = await podNamed(name);
+    const adoption = adoptionOf(name, pod);
+    if (wait) await adoption.settled;
     const kept = bringingInto(name) ? last.get(name) : undefined;
     if (kept !== undefined) return kept;
-    const answered = await asked(pod);
-    last.set(name, answered);
+    const settledBefore = adoption.done;
+    const asking = await asked(pod);
+    // Answers asked across the end of an open that changed the pod mix the pod as it was with the pod after it.
+    const mixed = !settledBefore && adoption.changed;
+    if (adoption.done && !mixed) {
+      last.set(name, asking);
+      return asking;
+    }
+    const answered: Answered = { ...asking, adopting: true };
+    if (!adoption.done) last.set(name, answered);
     return answered;
   }
 

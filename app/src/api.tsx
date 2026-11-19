@@ -30,6 +30,8 @@ export interface Answered {
   readonly unheld?: readonly string[];
   /** The patient profiles no one has said whether they are the subject's. */
   readonly waiting?: readonly Waiting[];
+  /** While the pod takes in the app's newer tables, after it opened: these are its answers as it was opened. */
+  readonly adopting?: true;
 }
 
 /** What the tables say of a pod's codes and variants, as PodApi sends it: each `Map` as its pairs. */
@@ -45,7 +47,8 @@ export interface PodApi extends WritesApi, HospitalsApi {
     encrypted: boolean;
     locked?: string;
   }>;
-  answers(input: { pod: string }): Promise<Answered>;
+  /** With `wait`, once the pod has taken in the app's newer tables. */
+  answers(input: { pod: string; wait?: boolean }): Promise<Answered>;
   said(input: { pod: string; entry?: string }): Promise<SaidSent>;
   trend(input: {
     pod: string;

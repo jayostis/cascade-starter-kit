@@ -85,6 +85,8 @@ export interface PodShown {
   readonly unheld?: readonly string[];
   /** The patient profiles no one has said whether they are the subject's. */
   readonly waiting?: readonly Waiting[];
+  /** While the pod takes in the app's newer tables: the page is read again once it has. */
+  readonly adopting?: true;
   /** The tables' names of the pod's codes; undefined while still asked, empty when they cannot say. */
   readonly about?: Abouts;
   readonly said?: VariantsSaid;
@@ -806,6 +808,25 @@ function useFollowed(
   return now !== undefined && now.of === read ? now.now : read;
 }
 
+/** While the pod takes in the app's newer tables, the page is read again once it has. */
+function useAdopted(pod: string, adopting: boolean): void {
+  const { api } = useHost();
+  const { revalidate } = useRevalidator();
+  useEffect(() => {
+    if (!adopting) return;
+    let live = true;
+    api.answers({ pod, wait: true }).then(
+      () => {
+        if (live) void revalidate();
+      },
+      () => undefined,
+    );
+    return () => {
+      live = false;
+    };
+  }, [api, pod, adopting, revalidate]);
+}
+
 /** The pod the address names, drawn from its answers, then filled in once the tables can say what they say of them. */
 export function PodScreen() {
   const { shown, named } = useRead<PodRead>();
@@ -813,6 +834,7 @@ export function PodScreen() {
   const said = useLate(named);
   const tables = useLate(held);
   const connection = useFollowed(shown.pod, shown.connection);
+  useAdopted(shown.pod, shown.adopting === true);
   return (
     <PodPage
       shown={{
