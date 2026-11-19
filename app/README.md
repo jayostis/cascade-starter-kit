@@ -81,6 +81,7 @@ asks you to confirm. Help has "About": this app's name and version, the
 
 The server answers on `127.0.0.1` only, at the port in `PORT`, or 3000. It sees
 a pod loaded while it runs; after `pod:reset` of a pod it has shown, restart it.
+On Windows a pod it has open cannot be removed: stop it before that `pod:reset`.
 Stop it with Ctrl+C in its terminal.
 
 ## Bring in a record from a hospital

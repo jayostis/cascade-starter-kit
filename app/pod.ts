@@ -69,7 +69,16 @@ async function reset() {
   const name = checkName(positionals[0]);
   if (!existsSync(podFolder(name)) && !existsSync(answersFolder(name)))
     refuse(`there is no pod ${name}`);
-  await deletePod(name);
+  try {
+    await deletePod(name);
+  } catch (error) {
+    const { code } = error as { code?: unknown };
+    if (code === "EBUSY" || code === "EPERM")
+      refuse(
+        `the pod ${name} is open in the running app, which holds its files: stop the app, then run \`npm run pod:reset ${name}\` again`,
+      );
+    throw error;
+  }
   stdout.write(`Removed the pod ${name}. If the app is running, restart it.\n`);
 }
 
