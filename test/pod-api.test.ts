@@ -663,7 +663,7 @@ describe("Reading a pod for its screens · api.pods(), api.pod(), api.answers(),
     });
   });
 
-  describe("api.answers({ pod, wait }), given a pod that takes in the app's newer tables after it opens", () => {
+  describe("given a pod that takes in the app's newer tables after it opens, api.answers({ pod, wait })", () => {
     let calls: string[];
     let first: Output;
     let waitedEarly: boolean;
@@ -713,7 +713,7 @@ describe("Reading a pod for its screens · api.pods(), api.pod(), api.answers(),
       assert.equal(calls[0], "unheldTableVersions");
     });
 
-    it("with `wait`, returns once that open is done, without `adopting`", () => {
+    it("returns, given `wait`, once that open is done, without `adopting`", () => {
       assert.equal(waitedEarly, false);
       assert.equal(waited.adopting, undefined);
     });
