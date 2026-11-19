@@ -1443,10 +1443,7 @@ if (release === undefined) {
       const answers = join(app, "pods", ".answers", "scratch");
       assert.equal((await npm("run", "pod:new", "scratch")).code, 0);
       assert.deepEqual(await asked(ALLERGIES, "scratch"), []);
-      assert.ok(
-        existsSync(join(answers, "answers.json")),
-        "no answer was kept",
-      );
+      assert.ok(existsSync(join(answers, "pod.db")), "no pod.db was kept");
       assert.equal((await npm("run", "pod:reset", "scratch")).code, 0);
       assert.equal(existsSync(join(app, "pods", "scratch")), false);
       assert.equal(existsSync(answers), false);
