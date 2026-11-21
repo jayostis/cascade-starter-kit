@@ -30,7 +30,7 @@ const ADD_ONS = join(ROOT, "add-ons");
 export const LOCKS = join(ROOT, "locks");
 const COMMAND = "create-cascade-app";
 const RELEASES =
-  "https://github.com/jayostis/cascade-starter-kit/releases/download";
+  "https://github.com/the-cascade-protocol/cascade-starter-kit/releases/download";
 const PROJECT_NAME = /^[a-z0-9][a-z0-9._-]*$/;
 const USAGE = `usage: ${COMMAND} <folder> [--with <add-on>,…] [--tarball <address>]`;
 /** What the template holds that a made app does not get: what an app makes or installs, and its secrets. */

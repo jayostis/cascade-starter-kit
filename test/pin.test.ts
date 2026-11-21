@@ -31,7 +31,7 @@ const { lockWithoutRuntime, pinnedTo } = (await import(
 const OLD = "a".repeat(40);
 const NEW = "b".repeat(40);
 const pin = (sha: string) =>
-  `https://github.com/jayostis/cascade-runtime-js/releases/download/build-${sha}/cascade-runtime-0.0.0-commit-${sha}.tgz`;
+  `https://github.com/the-cascade-protocol/cascade-runtime-js/releases/download/build-${sha}/cascade-runtime-0.0.0-commit-${sha}.tgz`;
 
 describe("Moving the runtime pin · scripts/pin.mjs", () => {
   describe("lockWithoutRuntime(lock)", () => {

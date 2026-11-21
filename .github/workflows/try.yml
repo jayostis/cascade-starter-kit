@@ -58,7 +58,7 @@ jobs:
       - name: The runtime's report writer and shape check
         uses: actions/checkout@v7
         with:
-          repository: jayostis/cascade-runtime-js
+          repository: the-cascade-protocol/cascade-runtime-js
           ref: main
           path: runtime-js
           sparse-checkout: |
@@ -180,7 +180,7 @@ jobs:
           key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-shell
       - run: npm run test:live
         env:
-          PAGES_URL: https://jayostis.github.io/cascade-starter-kit/
+          PAGES_URL: https://the-cascade-protocol.github.io/cascade-starter-kit/
           COMMIT: ${{ github.sha }}
 
   # try/ in Chromium against the SMART launcher, a server this project did not write, over the network: nightly and by

@@ -1,7 +1,7 @@
 # cascade-starter-kit — Agent Context
 
 The app a person starts from on
-[cascade-runtime](https://github.com/jayostis/cascade-runtime-js), and the
+[cascade-runtime](https://github.com/the-cascade-protocol/cascade-runtime-js), and the
 command that makes it; [`README.md`](README.md) names the parts. The contract is
 the runtime's: its exports, its guide (`guide/AGENTS.md` in the installed
 package) and the vocabulary behind it. This repository reaches the runtime only
@@ -16,7 +16,7 @@ through what the installed package exports.
 - **It moves by pull request, by a local script,** never by hand on main. On a
   branch, `node scripts/pin.mjs <runtime-js commit>` (the commit of a
   `build-<sha>` pre-release, e.g. the newest of `gh release list -R
-jayostis/cascade-runtime-js`) rewrites it and `package-lock.json`; it refuses
+the-cascade-protocol/cascade-runtime-js`) rewrites it and `package-lock.json`; it refuses
   a commit with no release and leaves both files as they were if the install
   fails. Commit the two files and open a pull request: its checks run on the
   new build.
@@ -31,12 +31,12 @@ jayostis/cascade-runtime-js`) rewrites it and `package-lock.json`; it refuses
   `compatibility` job needs), so a runtime-js change that breaks the starter is
   seen before it merges.
 - **A breaking runtime change pairs by `Depends-On:`.** Its runtime-js PR body
-  carries `Depends-On: https://github.com/jayostis/cascade-starter-kit/pull/N`
+  carries `Depends-On: https://github.com/the-cascade-protocol/cascade-starter-kit/pull/N`
   (the full URL; the short `owner/repo#N` form is rejected); the check then
   runs that PR's head instead of main. The runtime PR merges first, then the
   pair here moves the pin onto the new build.
 - **The pair here names the runtime PR back** (`Depends-On:
-https://github.com/jayostis/cascade-runtime-js/pull/N`). While that PR is
+https://github.com/the-cascade-protocol/cascade-runtime-js/pull/N`). While that PR is
   open, every check here runs on the tarball its runtime-js check packed at its
   head (`.github/actions/runtime`), pinned in the checkout and never pushed;
   once it merges, the pin moves onto its build by `scripts/pin.mjs` on the

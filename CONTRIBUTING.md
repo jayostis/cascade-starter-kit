@@ -1,7 +1,7 @@
 # Contributing to cascade-starter-kit
 
 Thank you for helping. This repository holds the app a person starts from on
-[cascade-runtime](https://github.com/jayostis/cascade-runtime-js): the template, the same app in a browser (`try/`),
+[cascade-runtime](https://github.com/the-cascade-protocol/cascade-runtime-js): the template, the same app in a browser (`try/`),
 the two add-ons (a chat with a model, and an MCP server), and `create-cascade-app`, the command that makes an app from
 them. [`README.md`](README.md) names the parts, and [`CLAUDE.md`](CLAUDE.md) (with [`AGENTS.md`](AGENTS.md)) holds the
 rules a change here follows; read it before you add a test or touch the runtime pin.
@@ -20,7 +20,7 @@ npm ci
 
 Dependencies are pinned exactly. The one that matters most is the runtime: `app/package.json` pins
 `cascade-runtime`, a `build-<sha>` pre-release of
-[cascade-runtime-js](https://github.com/jayostis/cascade-runtime-js), and every test runs on it. Do not edit the pin by
+[cascade-runtime-js](https://github.com/the-cascade-protocol/cascade-runtime-js), and every test runs on it. Do not edit the pin by
 hand. On a branch, `node scripts/pin.mjs <runtime-js commit>` moves it and `package-lock.json` together; commit the two
 files and open a pull request, and its checks run on the new build.
 
@@ -76,7 +76,7 @@ a change in cascade-runtime-js first, and the two are a pair of pull requests. E
 on a line of its own, with the full URL:
 
 ```
-Depends-On: https://github.com/jayostis/cascade-runtime-js/pull/123
+Depends-On: https://github.com/the-cascade-protocol/cascade-runtime-js/pull/123
 ```
 
 Use the full URL; the short `owner/repo#123` form is not read. While the runtime's pull request is open, every check here runs on the
@@ -88,7 +88,7 @@ cascade-runtime-js's own check fails a named pull request that is from a fork, s
 that repository asks a maintainer to open the counterpart.
 
 The full rules are in cascade-bridge-spec's
-[`compatibility.md`](https://github.com/jayostis/cascade-bridge-spec/blob/main/compatibility.md).
+[`compatibility.md`](https://github.com/the-cascade-protocol/cascade-bridge-spec/blob/main/compatibility.md).
 
 ## Licence
 

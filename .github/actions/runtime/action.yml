@@ -27,11 +27,11 @@ runs:
         [ -n "$PULL" ] || exit 0
         body=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PULL}" --jq '.body // ""')
         pair=$(printf '%s\n' "$body" | tr -d '\r' \
-          | grep -iEo '^[[:space:]]*Depends-On:[[:space:]]*https://github\.com/jayostis/cascade-runtime-js/pull/[0-9]+' \
+          | grep -iEo '^[[:space:]]*Depends-On:[[:space:]]*https://github\.com/the-cascade-protocol/cascade-runtime-js/pull/[0-9]+' \
           | head -n 1 | grep -Eo '[0-9]+$' || true)
         [ -n "$pair" ] || exit 0
-        named="jayostis/cascade-runtime-js#${pair}"
-        read -r state merged head < <(gh api "repos/jayostis/cascade-runtime-js/pulls/${pair}" \
+        named="the-cascade-protocol/cascade-runtime-js#${pair}"
+        read -r state merged head < <(gh api "repos/the-cascade-protocol/cascade-runtime-js/pulls/${pair}" \
           --jq '[.state, (.merged | tostring), .head.sha] | join(" ")')
         if [ "$merged" = true ]; then
           echo "::notice title=runtime::${named}, named on Depends-On, has merged: the pin is the runtime"
@@ -44,9 +44,9 @@ runs:
         deadline=$((SECONDS + 40 * 60))
         while :; do
           run="" status=""
-          read -r run status < <(gh api "repos/jayostis/cascade-runtime-js/actions/runs?head_sha=${head}&event=pull_request&per_page=100" \
+          read -r run status < <(gh api "repos/the-cascade-protocol/cascade-runtime-js/actions/runs?head_sha=${head}&event=pull_request&per_page=100" \
             --jq '[.workflow_runs[] | select(.path == ".github/workflows/check.yml")] | sort_by(.id) | last | "\(.id // "") \(.status // "")"') || true
-          if [ -n "$run" ] && gh api "repos/jayostis/cascade-runtime-js/actions/runs/${run}/artifacts" \
+          if [ -n "$run" ] && gh api "repos/the-cascade-protocol/cascade-runtime-js/actions/runs/${run}/artifacts" \
             --jq '.artifacts[] | select(.name == "package" and (.expired | not)) | .id' | grep -q .; then
             break
           fi
@@ -62,7 +62,7 @@ runs:
         done
         folder="${RUNNER_TEMP}/runtime"
         rm -rf "$folder"
-        gh run download "$run" -R jayostis/cascade-runtime-js -n package -D "$folder"
+        gh run download "$run" -R the-cascade-protocol/cascade-runtime-js -n package -D "$folder"
         tarball=$(cd "$folder" && node -p "require('node:path').resolve(process.argv[1]).replaceAll('\\\\', '/')" cascade-runtime-*.tgz)
         echo "::notice title=runtime::the runtime is ${named}'s, packed by its check run ${run} at ${head}"
         echo "The runtime of ${named} at ${head}, from its check run ${run}" >> "$GITHUB_STEP_SUMMARY"
