@@ -1,7 +1,7 @@
 # cascade-starter-kit
 
 The app a person starts from on
-[cascade-runtime](https://github.com/jayostis/cascade-runtime-js): the
+[cascade-runtime](https://github.com/the-cascade-protocol/cascade-runtime-js): the
 template, the same app in a browser, and the command that makes one.
 
 Status: a draft, as the runtime is. No compatibility is promised before a
@@ -9,10 +9,10 @@ numbered v1, and no claim is made that it is fit for clinical use.
 
 ## Docs
 
-- [The Cascade hub](https://jayostis.github.io/cascade-runtime-js/): where to go for each thing, and every repository.
-- [Quick start](https://jayostis.github.io/cascade-runtime-js/start.html): how to start an app on the runtime.
-- [API](https://jayostis.github.io/cascade-runtime-js/api/): the API an app calls.
-- [Try a pod in the browser](https://jayostis.github.io/cascade-starter-kit/try/): try a pod in the browser.
+- [The Cascade hub](https://the-cascade-protocol.github.io/cascade-runtime-js/): where to go for each thing, and every repository.
+- [Quick start](https://the-cascade-protocol.github.io/cascade-runtime-js/start.html): how to start an app on the runtime.
+- [API](https://the-cascade-protocol.github.io/cascade-runtime-js/api/): the API an app calls.
+- [Try a pod in the browser](https://the-cascade-protocol.github.io/cascade-starter-kit/try/): try a pod in the browser.
 
 ## What is here
 
@@ -74,7 +74,7 @@ Each commit on main is released as the pre-release `build-<sha>`; its notes
 give the one line that makes an app from it:
 
 ```sh
-npx --yes --package=https://github.com/jayostis/cascade-starter-kit/releases/download/build-<sha>/create-cascade-app-0.0.0-commit-<sha>.tgz create-cascade-app my-app
+npx --yes --package=https://github.com/the-cascade-protocol/cascade-starter-kit/releases/download/build-<sha>/create-cascade-app-0.0.0-commit-<sha>.tgz create-cascade-app my-app
 ```
 
 The made app installs from npm's registry and the runtime's tarball, with no
@@ -111,7 +111,7 @@ base, `--with chat` and `--with mcp` on both systems to run their
 try/ in Chromium: `npm run build:try` writes `build/pages/` (try/, the four
 samples, a root page that sends a visitor to try/), then `npm run test:browser`;
 `npm run serve:pages` serves it as Pages does. Pages deploys it from main to
-<https://jayostis.github.io/cascade-starter-kit/try/>.
+<https://the-cascade-protocol.github.io/cascade-starter-kit/try/>.
 
 [`AGENTS.md`](AGENTS.md) holds the rules a change follows.
 

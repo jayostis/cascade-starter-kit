@@ -66,7 +66,7 @@ const PAGES = join(ROOT, "build", "pages");
 /** The components the page serves, as the package carries them. */
 const SERVED = join(PAGES, "try", "cascade-runtime", "components");
 /** The hub, the front page of the runtime's site, which try/ is a row of. */
-const HUB = "https://jayostis.github.io/cascade-runtime-js/";
+const HUB = "https://the-cascade-protocol.github.io/cascade-runtime-js/";
 
 /** The page's addresses: paths under its base, try/. */
 const AT = {
@@ -1443,7 +1443,7 @@ describe("Menus and the About box · File, Help, #about", () => {
       await t.test("links The code to this repository", async () => {
         assert.equal(
           await page.getAttribute('#about a:has-text("The code")', "href"),
-          "https://github.com/jayostis/cascade-starter-kit",
+          "https://github.com/the-cascade-protocol/cascade-starter-kit",
         );
       });
       const hubLinks = (on: Page): Promise<(string | null)[]> =>

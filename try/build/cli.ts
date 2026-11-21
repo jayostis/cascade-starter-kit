@@ -58,8 +58,8 @@ async function buildTry(samples: readonly string[], version: string) {
   Object.assign(env, {
     CASCADE_NAME: "Cascade try",
     CASCADE_VERSION: version,
-    CASCADE_CODE: "https://github.com/jayostis/cascade-starter-kit",
-    CASCADE_HUB: "https://jayostis.github.io/cascade-runtime-js/",
+    CASCADE_CODE: "https://github.com/the-cascade-protocol/cascade-starter-kit",
+    CASCADE_HUB: "https://the-cascade-protocol.github.io/cascade-runtime-js/",
     CASCADE_SAMPLES: samples.join(" "),
   });
   await build({

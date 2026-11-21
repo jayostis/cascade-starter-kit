@@ -39,7 +39,7 @@ jobs:
         if: ${{ !cancelled() && steps.runtime.outcome == 'success' }}
         uses: actions/checkout@v7
         with:
-          repository: jayostis/cascade-runtime-js
+          repository: the-cascade-protocol/cascade-runtime-js
           ref: main
           path: runtime-js
           sparse-checkout: |
